@@ -1,23 +1,15 @@
 # Tado CE - Custom Integration for Home Assistant
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Home%20Assistant-2024.x-blue?style=flat-square&logo=home-assistant" alt="Home Assistant">
-  <img src="https://img.shields.io/badge/Tado-V3%2FV3%2B-orange?style=flat-square" alt="Tado">
-  <img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License">
-  <img src="https://img.shields.io/badge/Version-1.0.0-purple?style=flat-square" alt="Version">
-</p>
+<div align="center">
 
-<p align="center">
-  A lightweight custom integration for Tado smart thermostats with <strong>real API rate limit tracking</strong> from Tado's response headers.
-</p>
+![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.x-blue?style=for-the-badge&logo=home-assistant)
+![Tado](https://img.shields.io/badge/Tado-V3%2FV3%2B-orange?style=for-the-badge)
+![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-1.0.0-purple?style=for-the-badge)
 
-<p align="center">
-  <a href="#-features">Features</a> •
-  <a href="#-quick-start">Quick Start</a> •
-  <a href="#-entities">Entities</a> •
-  <a href="#-services">Services</a> •
-  <a href="#-troubleshooting">Troubleshooting</a>
-</p>
+**A lightweight custom integration for Tado smart thermostats with real API rate limit tracking from Tado's response headers.**
+
+[Features](#-features) • [Quick Start](#-quick-start) • [Entities](#-entities) • [Services](#-services) • [Troubleshooting](#-troubleshooting)
 
 ---
 
@@ -28,6 +20,8 @@
 </a>
 
 *If this integration saves you from rate limit headaches, consider buying me a coffee! ☕*
+
+</div>
 
 ---
 
@@ -171,9 +165,9 @@ The exact numbers depend on your Tado setup (zones, devices, etc.).
 
 Once set up, you'll see the Tado CE Hub device with all sensors:
 
-<p align="center">
+<div align="center">
   <img src="images/device-info.png" alt="Tado CE Hub Device" width="800">
-</p>
+</div>
 
 ---
 
@@ -537,7 +531,7 @@ If this integration saved you from rate limit headaches, consider buying me a co
 
 ## ⚖️ Disclaimer
 
-This project is not affiliated with, endorsed by, or connected to tado° GmbH or Home Assistant. 
+This project is not affiliated with, endorsed by, or connected to tado° GmbH or Home Assistant.
 
 - **tado°** and the tado° logo are registered trademarks of tado° GmbH.
 - **Home Assistant** is a trademark of Nabu Casa, Inc.
