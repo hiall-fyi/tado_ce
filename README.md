@@ -21,19 +21,13 @@
 
 ---
 
-<p align="center">
-  🎯 <strong>Created by Joe Yiu (<a href="https://github.com/hiall-fyi">@hiall-fyi</a>)</strong>
-</p>
+### 🎯 Created by Joe Yiu ([@hiall-fyi](https://github.com/hiall-fyi))
 
-<p align="center">
-  <a href="https://buymeacoffee.com/hiallfyi" target="_blank">
-    <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;">
-  </a>
-</p>
+<a href="https://buymeacoffee.com/hiallfyi" target="_blank">
+  <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;">
+</a>
 
-<p align="center">
-  <em>If this integration saves you from rate limit headaches, consider buying me a coffee! ☕</em>
-</p>
+*If this integration saves you from rate limit headaches, consider buying me a coffee! ☕*
 
 ---
 
@@ -517,7 +511,11 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 If you find this integration useful, please consider giving it a star!
 
+[![Star History Chart](https://api.star-history.com/svg?repos=hiall-fyi/tado_ce&type=Date)](https://star-history.com/#hiall-fyi/tado_ce&Date)
+
 ---
+
+<div align="center">
 
 ### 💖 Support This Project
 
@@ -527,13 +525,13 @@ If this integration saved you from rate limit headaches, consider buying me a co
 
 **Made with ❤️ by Joe Yiu ([@hiall-fyi](https://github.com/hiall-fyi))**
 
+</div>
+
 ---
 
-<p align="center">
-  <strong>Version:</strong> 1.0.0<br>
-  <strong>Last Updated:</strong> 2026-01-17<br>
-  <strong>Tested On:</strong> Home Assistant 2024.x (HAOS, Docker, Core)
-</p>
+**Version**: 1.0.0  
+**Last Updated**: 2026-01-17  
+**Tested On**: Home Assistant 2024.x (HAOS, Docker, Core)
 
 ---
 
