@@ -26,10 +26,13 @@
 </p>
 
 <p align="center">
-  If this integration saves you from rate limit headaches, consider buying me a coffee! ☕<br>
-  <a href="https://buymeacoffee.com/hiall">
-    <img src="https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me A Coffee">
+  <a href="https://buymeacoffee.com/hiallfyi" target="_blank">
+    <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;">
   </a>
+</p>
+
+<p align="center">
+  <em>If this integration saves you from rate limit headaches, consider buying me a coffee! ☕</em>
 </p>
 
 ---
@@ -516,21 +519,15 @@ If you find this integration useful, please consider giving it a star!
 
 ---
 
-## 💖 Support This Project
+### 💖 Support This Project
 
 If this integration saved you from rate limit headaches, consider buying me a coffee!
 
-<p align="center">
-  <a href="https://buymeacoffee.com/hiall">
-    <img src="https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me A Coffee">
-  </a>
-</p>
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Support-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/hiallfyi)
+
+**Made with ❤️ by Joe Yiu ([@hiall-fyi](https://github.com/hiall-fyi))**
 
 ---
-
-<p align="center">
-  Made with ❤️ by Joe Yiu (<a href="https://github.com/hiall-fyi">@hiall-fyi</a>)
-</p>
 
 <p align="center">
   <strong>Version:</strong> 1.0.0<br>

@@ -50,7 +50,7 @@ def get_hub_device_info():
         manufacturer="Joe Yiu (@hiall-fyi)",
         model="Tado CE Integration",
         sw_version="1.0.0",
-        configuration_url="https://buymeacoffee.com/hiall",
+        configuration_url="https://buymeacoffee.com/hiallfyi",
     )
 
 
