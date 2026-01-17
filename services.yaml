@@ -1,0 +1,183 @@
+# Tado CE Services
+
+set_climate_timer:
+  name: Set Climate Timer
+  description: Set heating/cooling with a timer that automatically ends after the specified duration, or until the next schedule block.
+  target:
+    entity:
+      integration: tado_ce
+      domain: climate
+  fields:
+    temperature:
+      name: Temperature
+      description: Target temperature in Celsius.
+      required: true
+      example: 21
+      selector:
+        number:
+          min: 5
+          max: 30
+          step: 0.5
+          unit_of_measurement: "°C"
+    duration:
+      name: Duration
+      description: Duration in minutes before returning to schedule. Leave empty if using overlay.
+      required: false
+      example: 60
+      selector:
+        number:
+          min: 5
+          max: 1440
+          step: 5
+          unit_of_measurement: "min"
+    overlay:
+      name: Overlay Type
+      description: When to end the override. Use 'next_time_block' to end at next schedule change.
+      required: false
+      example: "next_time_block"
+      selector:
+        select:
+          options:
+            - label: "Until next schedule block"
+              value: "next_time_block"
+            - label: "Manual (until changed)"
+              value: "manual"
+
+set_water_heater_timer:
+  name: Set Water Heater Timer
+  description: Turn on hot water with a timer that automatically turns off after the specified duration.
+  target:
+    entity:
+      integration: tado_ce
+      domain: water_heater
+  fields:
+    duration:
+      name: Duration
+      description: Duration in minutes before turning off.
+      required: true
+      example: 30
+      selector:
+        number:
+          min: 5
+          max: 180
+          step: 5
+          unit_of_measurement: "min"
+
+resume_schedule:
+  name: Resume Schedule
+  description: Delete any manual override and return to the automatic schedule.
+  target:
+    entity:
+      integration: tado_ce
+      domain:
+        - climate
+        - water_heater
+
+set_temperature_offset:
+  name: Set Temperature Offset
+  description: Set the temperature offset (calibration) for a Tado device.
+  fields:
+    entity_id:
+      name: Entity
+      description: The climate entity to set offset for.
+      required: true
+      example: climate.tado_ce_lounge
+      selector:
+        entity:
+          integration: tado_ce
+          domain: climate
+    offset:
+      name: Offset
+      description: Temperature offset in Celsius (-10 to +10).
+      required: true
+      example: 0.5
+      selector:
+        number:
+          min: -10
+          max: 10
+          step: 0.1
+          unit_of_measurement: "°C"
+
+add_meter_reading:
+  name: Add Meter Reading
+  description: Add an energy meter reading for Energy IQ.
+  fields:
+    reading:
+      name: Reading
+      description: The meter reading value.
+      required: true
+      example: 12345
+      selector:
+        number:
+          min: 0
+          max: 999999999
+          mode: box
+    date:
+      name: Date
+      description: The date of the reading (YYYY-MM-DD). Defaults to today.
+      required: false
+      example: "2026-01-17"
+      selector:
+        date:
+
+
+identify_device:
+  name: Identify Device
+  description: Make a Tado device flash its LED to help identify it.
+  fields:
+    device_serial:
+      name: Device Serial
+      description: The short serial number of the device (e.g., VA1234567890).
+      required: true
+      example: "VA1234567890"
+      selector:
+        text:
+
+set_away_configuration:
+  name: Set Away Configuration
+  description: Configure what temperature to use when everyone is away from home.
+  fields:
+    entity_id:
+      name: Entity
+      description: The climate entity to configure away settings for.
+      required: true
+      example: climate.tado_ce_lounge
+      selector:
+        entity:
+          integration: tado_ce
+          domain: climate
+    mode:
+      name: Mode
+      description: Away mode - 'auto' for Tado's smart adjustment, 'manual' for fixed temperature, 'off' to turn off heating.
+      required: true
+      example: "auto"
+      selector:
+        select:
+          options:
+            - label: "Auto (Eco/Balance/Comfort)"
+              value: "auto"
+            - label: "Manual Temperature"
+              value: "manual"
+            - label: "Off"
+              value: "off"
+    temperature:
+      name: Temperature
+      description: Target temperature when away (only for manual mode).
+      required: false
+      example: 16
+      selector:
+        number:
+          min: 5
+          max: 25
+          step: 0.5
+          unit_of_measurement: "°C"
+    comfort_level:
+      name: Comfort Level
+      description: Comfort level for auto mode (0=Eco, 50=Balance, 100=Comfort).
+      required: false
+      example: 50
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 50

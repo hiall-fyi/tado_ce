@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Tado CE Setup",
+        "description": "This integration reads Tado data from JSON files.\n\nBefore adding, run this command in SSH:\n```\npython3 /config/custom_components/tado_ce/tado_api.py auth\n```\n\nClick Submit to continue."
+      }
+    },
+    "abort": {
+      "already_configured": "Tado CE is already configured"
+    }
+  }
+}
