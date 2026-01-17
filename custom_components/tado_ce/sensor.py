@@ -30,15 +30,26 @@ WEATHER_STATE_MAP = {
     "WINDY": "Windy",
 }
 
+# Cached home_id to avoid blocking calls in event loop
+_CACHED_HOME_ID = None
 
-def get_home_id():
-    """Get home ID from config."""
+
+def _load_home_id():
+    """Load home ID from config file (blocking, run in executor)."""
     try:
         with open(CONFIG_FILE) as f:
             config = json.load(f)
             return config.get('home_id', 'unknown')
     except Exception:
         return 'unknown'
+
+
+def get_home_id():
+    """Get cached home ID."""
+    global _CACHED_HOME_ID
+    if _CACHED_HOME_ID is None:
+        _CACHED_HOME_ID = 'unknown'
+    return _CACHED_HOME_ID
 
 
 def get_hub_device_info():
@@ -67,6 +78,10 @@ def get_zone_names():
 
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     """Set up Tado CE sensors from a config entry."""
+    # Load home_id in executor to avoid blocking event loop
+    global _CACHED_HOME_ID
+    _CACHED_HOME_ID = await hass.async_add_executor_job(_load_home_id)
+    
     zone_names = await hass.async_add_executor_job(get_zone_names)
     
     sensors = []
