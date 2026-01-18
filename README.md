@@ -183,9 +183,8 @@ Once set up, you'll see the Tado CE Hub device with all sensors:
 
 | Entity | Description |
 |--------|-------------|
-| `sensor.tado_ce_api_usage` | API calls used today (limit from API header) |
-| `sensor.tado_ce_api_reset` | Minutes until rate limit reset |
-| `sensor.tado_ce_api_reset_time` | Exact datetime when rate limit resets (timestamp) |
+| `sensor.tado_ce_api_usage` | API calls used today (e.g. "142/5000") |
+| `sensor.tado_ce_api_reset` | Time until rate limit resets (e.g. "5h 30m") |
 
 ### Weather Sensors
 
