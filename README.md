@@ -5,7 +5,7 @@
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.x-blue?style=for-the-badge&logo=home-assistant)
 ![Tado](https://img.shields.io/badge/Tado-V3%2FV3%2B-orange?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
-![Version](https://img.shields.io/badge/Version-1.0.0-purple?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-1.0.1-purple?style=for-the-badge)
 
 **A lightweight custom integration for Tado smart thermostats with real API rate limit tracking from Tado's response headers.**
 
@@ -527,8 +527,8 @@ If this integration saved you from rate limit headaches, consider buying me a co
 
 ---
 
-**Version**: 1.0.0  
-**Last Updated**: 2026-01-17  
+**Version**: 1.0.1  
+**Last Updated**: 2026-01-18  
 **Tested On**: Home Assistant 2024.x (HAOS, Docker, Core)
 
 ---
