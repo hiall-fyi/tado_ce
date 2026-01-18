@@ -90,6 +90,12 @@ The official Home Assistant Tado integration doesn't show your actual API usage 
 | 🔄 **Rolling 24h Reset** | Automatically detects when your rate limit resets |
 | ⚡ **Smart Day/Night Polling** | More frequent during day, less at night to save API calls |
 
+<div align="center">
+  <img src="images/api-usage.png" alt="API Usage Tracking" width="400">
+  <img src="images/api-reset.png" alt="API Reset Countdown" width="400">
+  <p><em>Real-time API usage tracking and reset countdown</em></p>
+</div>
+
 ---
 
 ## 📋 Prerequisites
@@ -166,7 +172,7 @@ The exact numbers depend on your Tado setup (zones, devices, etc.).
 Once set up, you'll see the Tado CE Hub device with all sensors:
 
 <div align="center">
-  <img src="images/device-info.png" alt="Tado CE Hub Device" width="800">
+  <img src="images/hub-overview.png" alt="Tado CE Hub Device" width="800">
 </div>
 
 ---
@@ -461,8 +467,6 @@ Device trackers only appear for mobile devices with geo tracking enabled in the 
 | **Reset Time Tracking** | ❌ | ✅ |
 | **Dynamic Limit Detection** | ❌ | ✅ |
 | **Smart Day/Night Polling** | ❌ | ✅ |
-
----
 
 ## 📚 Resources
 
