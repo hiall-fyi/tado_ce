@@ -4,7 +4,7 @@
 
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.x-blue?style=for-the-badge&logo=home-assistant)
 ![Tado](https://img.shields.io/badge/Tado-V3%2FV3%2B-orange?style=for-the-badge)
-![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
+![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge)
 ![Version](https://img.shields.io/badge/Version-1.0.1-purple?style=for-the-badge)
 
 **A lightweight custom integration for Tado smart thermostats with real API rate limit tracking from Tado's response headers.**
@@ -489,7 +489,31 @@ For issues and questions:
 
 ## 📄 License
 
-MIT License - see [LICENSE](LICENSE) file for details.
+This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**.
+
+### What this means:
+
+- ✅ **Free to use** - Use this integration for personal or commercial purposes
+- ✅ **Free to modify** - Adapt the code to your needs
+- ✅ **Free to distribute** - Share with others
+
+### Requirements:
+
+- 📖 **Open Source** - Any modifications or derivative works must also be open source under AGPL-3.0
+- 🙏 **Attribution** - You must give appropriate credit to the original author
+- 🔗 **Source Available** - If you run a modified version as a network service, you must make the source code available
+
+### Credits
+
+**Original Author:** Joe Yiu ([@hiall-fyi](https://github.com/hiall-fyi))
+
+If you use or modify this code, please include attribution:
+```
+Based on Tado CE by Joe Yiu (@hiall-fyi)
+https://github.com/hiall-fyi/tado_ce
+```
+
+See [LICENSE](LICENSE) file for full details.
 
 ---
 
