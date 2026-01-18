@@ -521,6 +521,10 @@ See [LICENSE](LICENSE) file for full details.
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
+By contributing, you agree that your contributions will be licensed under the AGPL-3.0 license.
+
+Check the [Roadmap](ROADMAP.md) for planned features and ideas.
+
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
 3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
