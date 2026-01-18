@@ -33,7 +33,6 @@ WEATHER_STATE_MAP = {
 # Cached home_id to avoid blocking calls in event loop
 _CACHED_HOME_ID = None
 
-
 def _load_home_id():
     """Load home ID from config file (blocking, run in executor)."""
     try:
@@ -43,14 +42,12 @@ def _load_home_id():
     except Exception:
         return 'unknown'
 
-
 def get_home_id():
     """Get cached home ID."""
     global _CACHED_HOME_ID
     if _CACHED_HOME_ID is None:
         _CACHED_HOME_ID = 'unknown'
     return _CACHED_HOME_ID
-
 
 def get_hub_device_info():
     """Get device info for Tado CE Hub."""
@@ -64,7 +61,6 @@ def get_hub_device_info():
         configuration_url="https://buymeacoffee.com/hiallfyi",
     )
 
-
 def get_zone_names():
     """Load zone names from API data."""
     try:
@@ -74,7 +70,6 @@ def get_zone_names():
     except Exception as e:
         _LOGGER.warning(f"Failed to load zone names: {e}")
         return DEFAULT_ZONE_NAMES
-
 
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     """Set up Tado CE sensors from a config entry."""
@@ -91,7 +86,6 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     sensors.append(TadoApiUsageSensor())
     sensors.append(TadoApiLimitSensor())
     sensors.append(TadoApiResetSensor())
-    sensors.append(TadoApiResetTimeSensor())
     sensors.append(TadoApiStatusSensor())
     sensors.append(TadoTokenStatusSensor())
     sensors.append(TadoZoneCountSensor())
@@ -160,7 +154,6 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     async_add_entities(sensors, True)
     _LOGGER.warning(f"Tado CE sensors loaded: {len(sensors)}")
 
-
 def _load_zones_file():
     """Load zones file (blocking)."""
     try:
@@ -168,7 +161,6 @@ def _load_zones_file():
             return json.load(f)
     except Exception:
         return None
-
 
 def _load_zones_info_file():
     """Load zones info file (blocking)."""
@@ -178,7 +170,6 @@ def _load_zones_info_file():
     except Exception:
         return None
 
-
 def _load_weather_file():
     """Load weather file (blocking)."""
     try:
@@ -187,7 +178,6 @@ def _load_weather_file():
     except Exception:
         return None
 
-
 def _load_mobile_devices_file():
     """Load mobile devices file (blocking)."""
     try:
@@ -195,7 +185,6 @@ def _load_mobile_devices_file():
             return json.load(f)
     except Exception:
         return None
-
 
 # ============ Hub Sensors (Tado CE Hub Device) ============
 
@@ -219,7 +208,6 @@ class TadoHomeIdSensor(SensorEntity):
                 self._attr_available = self._attr_native_value is not None
         except Exception:
             self._attr_available = False
-
 
 class TadoApiUsageSensor(SensorEntity):
     """Sensor for Tado API usage tracking."""
@@ -268,7 +256,6 @@ class TadoApiUsageSensor(SensorEntity):
         except Exception:
             self._attr_available = False
 
-
 class TadoApiResetSensor(SensorEntity):
     """Sensor showing time until API rate limit reset."""
     
@@ -310,35 +297,6 @@ class TadoApiResetSensor(SensorEntity):
         except Exception:
             self._attr_available = False
 
-
-class TadoApiResetTimeSensor(SensorEntity):
-    """Sensor showing exact reset time for API rate limit."""
-    
-    def __init__(self):
-        self._attr_name = "Tado CE API Reset Time"
-        self._attr_unique_id = "tado_ce_api_reset_time"
-        self._attr_icon = "mdi:clock-outline"
-        self._attr_device_class = SensorDeviceClass.TIMESTAMP
-        self._attr_device_info = get_hub_device_info()
-        self._attr_available = False
-        self._attr_native_value = None
-    
-    def update(self):
-        try:
-            from datetime import datetime
-            with open(RATELIMIT_FILE) as f:
-                data = json.load(f)
-                reset_at = data.get("reset_at")
-                if reset_at:
-                    # Parse ISO format: 2026-01-18T11:29:00Z
-                    self._attr_native_value = datetime.fromisoformat(reset_at.replace('Z', '+00:00'))
-                    self._attr_available = True
-                else:
-                    self._attr_available = False
-        except Exception:
-            self._attr_available = False
-
-
 class TadoApiLimitSensor(SensorEntity):
     """Sensor showing Tado API daily limit."""
     
@@ -360,7 +318,6 @@ class TadoApiLimitSensor(SensorEntity):
                 self._attr_available = self._attr_native_value is not None
         except Exception:
             self._attr_available = False
-
 
 class TadoApiStatusSensor(SensorEntity):
     """Sensor showing Tado API status."""
@@ -389,7 +346,6 @@ class TadoApiStatusSensor(SensorEntity):
         except Exception:
             self._attr_native_value = "error"
             self._attr_available = True
-
 
 class TadoTokenStatusSensor(SensorEntity):
     """Sensor showing Tado token status."""
@@ -420,7 +376,6 @@ class TadoTokenStatusSensor(SensorEntity):
         except Exception:
             self._attr_native_value = "error"
             self._attr_available = True
-
 
 class TadoZoneCountSensor(SensorEntity):
     """Sensor showing number of Tado zones."""
@@ -458,7 +413,6 @@ class TadoZoneCountSensor(SensorEntity):
         except Exception:
             self._attr_available = False
 
-
 class TadoLastSyncSensor(SensorEntity):
     """Sensor showing last sync time."""
     
@@ -485,7 +439,6 @@ class TadoLastSyncSensor(SensorEntity):
                     self._attr_available = False
         except Exception:
             self._attr_available = False
-
 
 # ============ Weather Sensors ============
 
@@ -517,7 +470,6 @@ class TadoOutsideTemperatureSensor(SensorEntity):
         except Exception:
             self._attr_available = False
 
-
 class TadoSolarIntensitySensor(SensorEntity):
     """Solar intensity from Tado weather data."""
     
@@ -545,7 +497,6 @@ class TadoSolarIntensitySensor(SensorEntity):
                 self._attr_available = self._attr_native_value is not None
         except Exception:
             self._attr_available = False
-
 
 class TadoWeatherStateSensor(SensorEntity):
     """Weather state from Tado weather data."""
@@ -597,7 +548,6 @@ class TadoWeatherStateSensor(SensorEntity):
         except Exception:
             self._attr_available = False
 
-
 # ============ Zone Sensors ============
 
 class TadoBaseSensor(SensorEntity):
@@ -629,7 +579,6 @@ class TadoBaseSensor(SensorEntity):
     def _update_from_zone_data(self, zone_data):
         pass
 
-
 class TadoTemperatureSensor(TadoBaseSensor):
     """Current temperature sensor."""
     
@@ -648,7 +597,6 @@ class TadoTemperatureSensor(TadoBaseSensor):
             .get('celsius')
         )
 
-
 class TadoHumiditySensor(TadoBaseSensor):
     """Humidity sensor."""
     
@@ -666,7 +614,6 @@ class TadoHumiditySensor(TadoBaseSensor):
             .get('humidity', {})
             .get('percentage')
         )
-
 
 class TadoHeatingPowerSensor(TadoBaseSensor):
     """Heating power sensor."""
@@ -687,7 +634,6 @@ class TadoHeatingPowerSensor(TadoBaseSensor):
         )
         self._attr_native_value = power if power is not None else 0
 
-
 class TadoACPowerSensor(TadoBaseSensor):
     """AC power sensor."""
     
@@ -707,7 +653,6 @@ class TadoACPowerSensor(TadoBaseSensor):
         )
         self._attr_native_value = power if power is not None else 0
 
-
 class TadoTargetTempSensor(TadoBaseSensor):
     """Target temperature sensor."""
     
@@ -725,7 +670,6 @@ class TadoTargetTempSensor(TadoBaseSensor):
             self._attr_native_value = setting.get('temperature', {}).get('celsius')
         else:
             self._attr_native_value = None
-
 
 class TadoOverlaySensor(TadoBaseSensor):
     """Overlay status sensor (Manual/Schedule)."""
@@ -769,7 +713,6 @@ class TadoOverlaySensor(TadoBaseSensor):
         else:
             self._next_change = None
             self._next_temp = None
-
 
 # ============ Device Sensors ============
 
@@ -826,7 +769,6 @@ class TadoBatterySensor(SensorEntity):
             self._attr_available = False
         except Exception:
             self._attr_available = False
-
 
 class TadoDeviceConnectionSensor(SensorEntity):
     """Device connection state sensor."""
