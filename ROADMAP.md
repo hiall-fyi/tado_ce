@@ -10,6 +10,10 @@ Feature requests and planned improvements for Tado CE.
 ### Home/Away Control
 - [ ] Add Away Mode switch to manually toggle Home/Away status
 
+### Climate Entity Enhancements
+- [ ] Add `current_humidity` attribute to climate entities
+- [ ] Add preset mode support (Home/Away) to climate entities
+
 ---
 
 ## Considering (Need More Feedback)
