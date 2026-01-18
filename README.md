@@ -472,6 +472,7 @@ Device trackers only appear for mobile devices with geo tracking enabled in the 
 - [Tado API Rate Limit Announcement](https://community.home-assistant.io/t/tado-rate-limiting-api-calls/928751)
 - [Official Tado Integration](https://www.home-assistant.io/integrations/tado/)
 - [Tado API Documentation (Community)](https://github.com/kritsel/tado-openapispec-v2)
+- [Roadmap & Feature Requests](ROADMAP.md)
 
 ---
 
