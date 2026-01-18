@@ -35,7 +35,6 @@ MOBILE_DEVICES_FILE = DATA_DIR / "mobile_devices.json"
 LOG_FILE = DATA_DIR / "api.log"
 
 CLIENT_ID = "1bb50063-6b0c-4d11-bd99-387f4a91cc46"
-DEFAULT_HOME_ID = "1194932"
 
 # Setup logging
 logging.basicConfig(
@@ -65,13 +64,13 @@ class TadoClient:
     def _load_config(self) -> dict:
         """Load config from file."""
         if not CONFIG_FILE.exists():
-            return {"home_id": DEFAULT_HOME_ID, "refresh_token": None}
+            return {"home_id": None, "refresh_token": None}
         try:
             with open(CONFIG_FILE) as f:
                 return json.load(f)
         except Exception as e:
             log.warning(f"Failed to load config: {e}")
-            return {"home_id": DEFAULT_HOME_ID, "refresh_token": None}
+            return {"home_id": None, "refresh_token": None}
     
     def _save_config(self):
         """Save config to file."""
@@ -365,13 +364,59 @@ class TadoClient:
             log.error(f"Device auth failed: {e}")
             return False
     
+    def fetch_home_id(self) -> str:
+        """Fetch home ID from Tado API using /me endpoint."""
+        if not self.access_token:
+            if not self.refresh_access_token():
+                raise TadoAPIError("Not authenticated")
+        
+        log.info("Fetching home ID from API...")
+        
+        try:
+            data, _ = self._http_request(
+                "https://my.tado.com/api/v2/me",
+                headers={"Authorization": f"Bearer {self.access_token}"},
+                parse_ratelimit=False
+            )
+            
+            homes = data.get("homes", [])
+            if not homes:
+                raise TadoAPIError("No homes found for this account")
+            
+            # Use the first home (most users have only one)
+            home_id = str(homes[0].get("id"))
+            home_name = homes[0].get("name", "Unknown")
+            
+            log.info(f"Found home: {home_name} (ID: {home_id})")
+            
+            if len(homes) > 1:
+                log.warning(f"Multiple homes found ({len(homes)}), using first one: {home_name}")
+                for h in homes:
+                    log.info(f"  - {h.get('name')} (ID: {h.get('id')})")
+            
+            return home_id
+            
+        except TadoAPIError as e:
+            if "401" in str(e):
+                log.info("Token expired, refreshing...")
+                if self.refresh_access_token():
+                    return self.fetch_home_id()
+            raise
+
     def api_call(self, endpoint: str) -> dict:
         """Make authenticated API call."""
         if not self.access_token:
             if not self.refresh_access_token():
                 raise TadoAPIError("Not authenticated")
         
-        home_id = self.config.get("home_id", DEFAULT_HOME_ID)
+        home_id = self.config.get("home_id")
+        if not home_id:
+            # Auto-fetch home ID if not set
+            home_id = self.fetch_home_id()
+            self.config["home_id"] = home_id
+            self._save_config()
+            log.info(f"Home ID saved to config: {home_id}")
+        
         url = f"https://my.tado.com/api/v2/homes/{home_id}/{endpoint}"
         
         try:
