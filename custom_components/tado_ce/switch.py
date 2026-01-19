@@ -6,9 +6,10 @@ from urllib.request import Request, urlopen
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import DeviceInfo
 
 from .const import (
-    ZONES_INFO_FILE, CONFIG_FILE,
+    DOMAIN, ZONES_INFO_FILE, CONFIG_FILE, MOBILE_DEVICES_FILE,
     TADO_API_BASE, TADO_AUTH_URL, CLIENT_ID
 )
 
@@ -71,12 +72,27 @@ def _get_home_id():
         return None
 
 
+def get_hub_device_info():
+    """Get device info for Tado CE Hub."""
+    home_id = _get_home_id() or "unknown"
+    return DeviceInfo(
+        identifiers={(DOMAIN, f"tado_ce_hub_{home_id}")},
+        name="Tado CE Hub",
+        manufacturer="Tado",
+        model="Tado CE Integration",
+        sw_version="1.1.0",
+    )
+
+
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     """Set up Tado CE switches from a config entry."""
     _LOGGER.warning("Tado CE switch: Setting up...")
     zones_info = await hass.async_add_executor_job(_load_zones_info_file)
     
     switches = []
+    
+    # Add Away Mode switch (global, 1 API call per toggle)
+    switches.append(TadoAwayModeSwitch())
     
     if zones_info:
         for zone in zones_info:
@@ -108,6 +124,100 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
         _LOGGER.warning("Tado CE: No switches found")
 
 
+class TadoAwayModeSwitch(SwitchEntity):
+    """Tado CE Away Mode Switch Entity.
+    
+    Allows manual control of Home/Away status.
+    Uses 1 API call per toggle.
+    """
+    
+    def __init__(self):
+        self._attr_name = "Tado CE Away Mode"
+        self._attr_unique_id = "tado_ce_away_mode"
+        self._attr_icon = "mdi:home-export-outline"
+        self._attr_is_on = False  # False = Home, True = Away
+        self._attr_available = True
+        self._attr_device_info = get_hub_device_info()
+        self._presence_locked = False
+    
+    @property
+    def icon(self):
+        return "mdi:home-export-outline" if self._attr_is_on else "mdi:home"
+    
+    @property
+    def extra_state_attributes(self):
+        return {
+            "description": "Toggle Home/Away mode manually",
+            "presence_locked": self._presence_locked,
+            "api_calls_per_toggle": 1,
+        }
+    
+    def update(self):
+        """Update away mode state from mobile devices file."""
+        try:
+            with open(MOBILE_DEVICES_FILE) as f:
+                mobile_devices = json.load(f)
+                
+                # Check if any device is at home
+                any_at_home = False
+                for device in mobile_devices:
+                    location = device.get('location', {})
+                    if location and location.get('atHome', False):
+                        any_at_home = True
+                        break
+                
+                # Away mode is ON when no one is home
+                self._attr_is_on = not any_at_home
+                self._attr_available = True
+                
+        except Exception as e:
+            _LOGGER.debug(f"Failed to update away mode: {e}")
+            # Keep last known state
+    
+    def turn_on(self, **kwargs):
+        """Set Away mode (everyone away)."""
+        self._set_presence_lock("AWAY")
+    
+    def turn_off(self, **kwargs):
+        """Set Home mode (someone home)."""
+        self._set_presence_lock("HOME")
+    
+    def _set_presence_lock(self, state: str) -> bool:
+        """Set presence lock via API.
+        
+        Args:
+            state: "HOME" or "AWAY"
+        """
+        try:
+            token = _get_access_token()
+            if not token:
+                _LOGGER.error("Failed to get access token")
+                return False
+            
+            home_id = _get_home_id()
+            if not home_id:
+                _LOGGER.error("No home_id configured")
+                return False
+            
+            url = f"{TADO_API_BASE}/homes/{home_id}/presenceLock"
+            payload = {"homePresence": state}
+            
+            data = json.dumps(payload).encode()
+            req = Request(url, data=data, method="PUT")
+            req.add_header("Authorization", f"Bearer {token}")
+            req.add_header("Content-Type", "application/json")
+            
+            with urlopen(req, timeout=10) as resp:
+                _LOGGER.info(f"Presence lock set to {state}")
+                self._attr_is_on = (state == "AWAY")
+                self._presence_locked = True
+                return True
+                
+        except Exception as e:
+            _LOGGER.error(f"Failed to set presence lock: {e}")
+            return False
+
+
 class TadoEarlyStartSwitch(SwitchEntity):
     """Tado CE Early Start Switch Entity."""
     
@@ -120,6 +230,7 @@ class TadoEarlyStartSwitch(SwitchEntity):
         self._attr_icon = "mdi:clock-fast"
         self._attr_is_on = initial_state
         self._attr_available = True
+        self._attr_device_info = get_hub_device_info()
     
     @property
     def icon(self):
@@ -192,6 +303,7 @@ class TadoChildLockSwitch(SwitchEntity):
         self._attr_icon = "mdi:lock"
         self._attr_is_on = initial_state
         self._attr_available = True
+        self._attr_device_info = get_hub_device_info()
     
     @property
     def icon(self):

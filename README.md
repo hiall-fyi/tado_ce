@@ -5,7 +5,7 @@
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.x-blue?style=for-the-badge&logo=home-assistant)
 ![Tado](https://img.shields.io/badge/Tado-V3%2FV3%2B-orange?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge)
-![Version](https://img.shields.io/badge/Version-1.0.1-purple?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-1.1.0-purple?style=for-the-badge)
 
 **A lightweight custom integration for Tado smart thermostats with real API rate limit tracking from Tado's response headers.**
 
@@ -66,10 +66,12 @@ The official Home Assistant Tado integration doesn't show your actual API usage 
 | 🚿 **Hot Water Control** | Turn hot water on/off with timer support |
 | ⏱️ **Timer Support** | Set heating/cooling/hot water for specific duration or until next schedule |
 | 🔥 **Heating Power** | See current heating demand percentage (0-100%) |
+| 💧 **Humidity** | Current humidity displayed on climate entities |
 | ⏰ **Early Start** | Smart pre-heating to reach target temperature on time |
 | 🪟 **Open Window** | Automatic detection when windows are open |
 | 🏠 **Home/Away** | Geofencing support with configurable away temperature |
-| 🏃 **Away Configuration** | Set temperature/mode when everyone is away |
+| 🏃 **Away Mode Switch** | Manually toggle Home/Away status |
+| 🎯 **Preset Mode** | Home/Away presets on climate entities |
 | 📍 **Presence Detection** | Track mobile devices with geo tracking enabled |
 | 🌤️ **Weather Data** | Outside temperature, solar intensity, weather conditions |
 | 🌡️ **Temperature Offset** | Calibrate device temperature readings |
@@ -210,10 +212,11 @@ Once set up, you'll see the Tado CE Hub device with all sensors:
 
 ### Switches
 
-| Entity | Description |
-|--------|-------------|
-| `switch.tado_ce_{zone}_child_lock` | Enable/disable child lock |
-| `switch.tado_ce_{zone}_early_start` | Enable/disable smart pre-heating |
+| Entity | Description | API Calls |
+|--------|-------------|-----------|
+| `switch.tado_ce_away_mode` | Toggle Home/Away mode manually | 1 per toggle |
+| `switch.tado_ce_{zone}_child_lock` | Enable/disable child lock | 1 per toggle |
+| `switch.tado_ce_{zone}_early_start` | Enable/disable smart pre-heating | 1 per toggle |
 
 ### Other Entities
 
@@ -473,6 +476,7 @@ Device trackers only appear for mobile devices with geo tracking enabled in the 
 - [Official Tado Integration](https://www.home-assistant.io/integrations/tado/)
 - [Tado API Documentation (Community)](https://github.com/kritsel/tado-openapispec-v2)
 - [Roadmap & Feature Requests](ROADMAP.md)
+- [Complete Entities Reference](ENTITIES.md)
 
 ---
 
@@ -555,8 +559,8 @@ If this integration saved you from rate limit headaches, consider buying me a co
 
 ---
 
-**Version**: 1.0.1  
-**Last Updated**: 2026-01-18  
+**Version**: 1.1.0  
+**Last Updated**: 2026-01-19  
 **Tested On**: Home Assistant 2024.x (HAOS, Docker, Core)
 
 ---

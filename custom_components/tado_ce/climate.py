@@ -16,17 +16,50 @@ from homeassistant.components.climate.const import (
     FAN_LOW,
     SWING_ON,
     SWING_OFF,
+    PRESET_HOME,
+    PRESET_AWAY,
 )
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import DeviceInfo
 
 from .const import (
-    ZONES_FILE, ZONES_INFO_FILE, CONFIG_FILE,
+    DOMAIN, ZONES_FILE, ZONES_INFO_FILE, CONFIG_FILE, MOBILE_DEVICES_FILE,
     TADO_API_BASE, TADO_AUTH_URL, CLIENT_ID, DEFAULT_ZONE_NAMES
 )
 
 _LOGGER = logging.getLogger(__name__)
 SCAN_INTERVAL = timedelta(seconds=30)
+
+# Cache for home_id
+_CACHED_HOME_ID = None
+
+
+def get_home_id():
+    """Get home ID from config file."""
+    global _CACHED_HOME_ID
+    if _CACHED_HOME_ID:
+        return _CACHED_HOME_ID
+    try:
+        with open(CONFIG_FILE) as f:
+            config = json.load(f)
+            _CACHED_HOME_ID = config.get("home_id", "unknown")
+            return _CACHED_HOME_ID
+    except Exception:
+        return "unknown"
+
+
+def get_hub_device_info():
+    """Get device info for Tado CE Hub."""
+    home_id = get_home_id()
+    return DeviceInfo(
+        identifiers={(DOMAIN, f"tado_ce_hub_{home_id}")},
+        name="Tado CE Hub",
+        manufacturer="Tado",
+        model="Tado CE Integration",
+        sw_version="1.1.0",
+    )
+
 
 # Tado AC modes mapping
 TADO_TO_HA_HVAC_MODE = {
@@ -177,12 +210,15 @@ class TadoClimate(ClimateEntity):
         self._attr_name = f"Tado CE {zone_name}"
         self._attr_unique_id = f"tado_ce_{zone_name.lower().replace(' ', '_')}_climate"
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
+        self._attr_device_info = get_hub_device_info()
         self._attr_supported_features = (
             ClimateEntityFeature.TARGET_TEMPERATURE |
             ClimateEntityFeature.TURN_OFF |
-            ClimateEntityFeature.TURN_ON
+            ClimateEntityFeature.TURN_ON |
+            ClimateEntityFeature.PRESET_MODE
         )
         self._attr_hvac_modes = [HVACMode.HEAT, HVACMode.OFF, HVACMode.AUTO]
+        self._attr_preset_modes = [PRESET_HOME, PRESET_AWAY]
         self._attr_min_temp = 5
         self._attr_max_temp = 25
         self._attr_target_temperature_step = 0.5
@@ -192,10 +228,12 @@ class TadoClimate(ClimateEntity):
         self._attr_hvac_mode = None
         self._attr_hvac_action = None
         self._attr_available = False
+        self._attr_current_humidity = None
         
         # Extra attributes
         self._overlay_type = None
         self._heating_power = None
+        self._attr_preset_mode = PRESET_HOME
 
     @property
     def extra_state_attributes(self):
@@ -227,6 +265,13 @@ class TadoClimate(ClimateEntity):
                     zone_data.get('sensorDataPoints', {})
                     .get('insideTemperature', {})
                     .get('celsius')
+                )
+                
+                # Current humidity
+                self._attr_current_humidity = (
+                    zone_data.get('sensorDataPoints', {})
+                    .get('humidity', {})
+                    .get('percentage')
                 )
                 
                 # Heating power
@@ -262,10 +307,71 @@ class TadoClimate(ClimateEntity):
                     self._attr_hvac_action = HVACAction.OFF
                 
                 self._attr_available = True
+            
+            # Update preset mode from mobile devices
+            self._update_preset_mode()
                 
         except Exception as e:
             _LOGGER.debug(f"Failed to update {self.name}: {e}")
             self._attr_available = False
+    
+    def _update_preset_mode(self):
+        """Update preset mode based on mobile device presence."""
+        try:
+            with open(MOBILE_DEVICES_FILE) as f:
+                mobile_devices = json.load(f)
+                
+                # Check if any device is at home
+                any_at_home = False
+                for device in mobile_devices:
+                    location = device.get('location', {})
+                    if location and location.get('atHome', False):
+                        any_at_home = True
+                        break
+                
+                self._attr_preset_mode = PRESET_HOME if any_at_home else PRESET_AWAY
+        except Exception:
+            # Keep last known preset mode
+            pass
+
+    def set_preset_mode(self, preset_mode: str):
+        """Set preset mode (Home/Away).
+        
+        Uses 1 API call to set presence lock.
+        """
+        if preset_mode == PRESET_AWAY:
+            self._set_presence_lock("AWAY")
+        else:
+            self._set_presence_lock("HOME")
+    
+    def _set_presence_lock(self, state: str) -> bool:
+        """Set presence lock via API."""
+        if not self._home_id:
+            _LOGGER.error("No home_id configured")
+            return False
+        
+        try:
+            token = get_access_token()
+            if not token:
+                _LOGGER.error("Failed to get access token")
+                return False
+            
+            url = f"{TADO_API_BASE}/homes/{self._home_id}/presenceLock"
+            payload = {"homePresence": state}
+            
+            data = json.dumps(payload).encode()
+            req = Request(url, data=data, method="PUT")
+            req.add_header("Authorization", f"Bearer {token}")
+            req.add_header("Content-Type", "application/json")
+            
+            with urlopen(req, timeout=10) as resp:
+                _LOGGER.info(f"Presence lock set to {state}")
+                self._attr_preset_mode = PRESET_AWAY if state == "AWAY" else PRESET_HOME
+                return True
+                
+        except Exception as e:
+            _LOGGER.error(f"Failed to set presence lock: {e}")
+            return False
 
     def set_temperature(self, **kwargs):
         """Set new target temperature."""
@@ -449,6 +555,7 @@ class TadoACClimate(ClimateEntity):
         self._attr_name = f"Tado CE {zone_name}"
         self._attr_unique_id = f"tado_ce_{zone_name.lower().replace(' ', '_')}_ac_climate"
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
+        self._attr_device_info = get_hub_device_info()
         
         # Build supported features based on capabilities
         features = ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.TURN_OFF | ClimateEntityFeature.TURN_ON
@@ -486,6 +593,7 @@ class TadoACClimate(ClimateEntity):
         self._attr_fan_mode = None
         self._attr_swing_mode = None
         self._attr_available = False
+        self._attr_current_humidity = None
         
         self._overlay_type = None
         self._ac_power_percentage = None
@@ -520,6 +628,13 @@ class TadoACClimate(ClimateEntity):
                     zone_data.get('sensorDataPoints', {})
                     .get('insideTemperature', {})
                     .get('celsius')
+                )
+                
+                # Current humidity
+                self._attr_current_humidity = (
+                    zone_data.get('sensorDataPoints', {})
+                    .get('humidity', {})
+                    .get('percentage')
                 )
                 
                 # AC power percentage

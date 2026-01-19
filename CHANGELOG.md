@@ -5,6 +5,22 @@ All notable changes to Tado CE will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-01-19
+
+### Added
+- **Away Mode switch**: New `switch.tado_ce_away_mode` to manually toggle Home/Away status (1 API call per toggle)
+- **Preset mode support**: Climate entities now support Home/Away presets (1 API call per change)
+- **Humidity on climate**: Climate entities now show `current_humidity` attribute (no extra API calls - uses existing data)
+
+### Changed
+- **Device organization**: All entities (climate, switches, sensors) are now linked to the Tado CE Hub device for better organization in Home Assistant
+- Updated all entity `device_info` to reference the Hub device
+
+### API Usage Notes
+- Away Mode switch: 1 API call per toggle
+- Preset mode change: 1 API call per change
+- Humidity attribute: No additional API calls (uses existing zone data)
+
 ## [1.0.1] - 2026-01-18
 
 ### Fixed

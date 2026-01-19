@@ -57,7 +57,7 @@ def get_hub_device_info():
         name="Tado CE Hub",
         manufacturer="Joe Yiu (@hiall-fyi)",
         model="Tado CE Integration",
-        sw_version="1.0.0",
+        sw_version="1.1.0",
         configuration_url="https://buymeacoffee.com/hiallfyi",
     )
 
