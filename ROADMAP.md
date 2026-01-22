@@ -2,15 +2,34 @@
 
 Feature requests and planned improvements for Tado CE.
 
+## Planned for v1.4.0
+
+- [ ] Change weather sensors default to OFF (saves 1 API call per sync)
+- [ ] Change mobile device tracking default to OFF (saves 1 API call per sync)
+- [ ] Improve initial reset time estimation
+
+**Note**: Existing users who want to keep weather/mobile tracking will need to manually re-enable in integration options after upgrade.
+
+---
+
 ## Considering (Need More Feedback)
 
 - Air Comfort sensors (humidity comfort level)
 - Boost button entity
 - Multiple homes support
+- Auto-assign devices to Areas during setup ([#14](https://github.com/hiall-fyi/tado_ce/issues/14))
+- Apply for HACS default repository inclusion
 
 ---
 
 ## Completed
+
+### v1.2.1 (2026-01-22)
+
+**Hotfix Release:**
+- [x] Fixed duplicate hub cleanup race condition (Issue #10)
+- [x] Fixed confusing entity names for multi-device zones (Issue #11)
+- [x] Improved migration handling (missing zones_info.json)
 
 ### v1.2.0 (2026-01-21)
 
