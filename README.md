@@ -975,6 +975,8 @@ After adding this, restart Home Assistant and check **Settings → System → Lo
 | **Dynamic Limit Detection** | ❌ | ✅ |
 | **Smart Day/Night Polling** | ❌ | ✅ |
 | **API Call Tracking** | ❌ | ✅ |
+| **API History Retention** | ❌ | ✅ |
+| **Test Mode Switch** | ❌ | ✅ |
 | **Customizable Polling** | ❌ | ✅ |
 | **Immediate Refresh** | ❌ | ✅ |
 
