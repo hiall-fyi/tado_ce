@@ -170,9 +170,9 @@ This will:
 
 ---
 
-## 🔄 Migrating from v1.1.0 to v1.2.0
+## 🔄 Migrating from v1.1.0 to v1.2.x
 
-**⚠️ IMPORTANT: v1.2.0 includes breaking changes. Please read carefully before upgrading.**
+**⚠️ IMPORTANT: v1.2.0+ includes breaking changes. Please read carefully before upgrading.**
 
 ### What's Changed
 
@@ -247,7 +247,7 @@ This was an issue when upgrading from v1.1.0 to v1.2.0. **Fixed in v1.2.1** with
 
 **If you're on v1.2.1+**: The integration will automatically remove duplicate entries on startup.
 
-**If you're still on v1.2.0 with duplicates**:
+**If you're still on v1.2.0 with duplicates**: Update to v1.2.1 first, or:
 1. Remove BOTH integration entries (Settings → Devices & Services → Tado CE → Delete)
 2. Restart Home Assistant
 3. Re-add the integration
@@ -989,7 +989,7 @@ After adding this, restart Home Assistant and check **Settings → System → Lo
 - [Tado API Documentation (Community)](https://github.com/kritsel/tado-openapispec-v2)
 - [Roadmap & Feature Requests](ROADMAP.md)
 - [Complete Entities Reference](ENTITIES.md)
-- [Release Credits & Community Contributors](RELEASE_CREDITS_v1.2.0.md)
+- [Release Credits & Community Contributors](RELEASE_CREDITS.md)
 
 ---
 
@@ -1083,8 +1083,8 @@ If this integration has saved you from rate limit headaches, made your Tado setu
 
 ---
 
-**Version**: 1.2.0  
-**Last Updated**: 2026-01-21  
+**Version**: 1.2.1  
+**Last Updated**: 2026-01-22  
 **Tested On**: Home Assistant 2026.1.2 (HAOS, Docker, Core)
 
 ---
