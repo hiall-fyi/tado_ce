@@ -4,12 +4,13 @@ Feature requests and planned improvements for Tado CE.
 
 ## Planned for v1.5.0
 
-- [ ] Async architecture (migrate from urllib to aiohttp)
-- [ ] Centralize all API URLs in const.py (remove hardcoded URLs from switch.py, __init__.py, tado_api.py, config_flow.py)
-- [ ] `get_temperature_offset` service - on-demand fetch of current offset ([#24](https://github.com/hiall-fyi/tado_ce/issues/24) - @pisolofin)
-- [ ] Optional `offset_celsius` attribute on climate entities - for template-based automations ([#25](https://github.com/hiall-fyi/tado_ce/issues/25) - @ohipe)
-- [ ] Frequent mobile device sync option - sync presence every quick sync instead of every 6 hours ([#28](https://github.com/hiall-fyi/tado_ce/issues/28) - @beltrao)
-- [ ] Fix blocking I/O warning for manifest.json read ([#27](https://github.com/hiall-fyi/tado_ce/issues/27))
+- [x] Async architecture (migrate from urllib to aiohttp) - entity control methods now use non-blocking aiohttp
+- [x] Centralize all API URLs in const.py (hardcoded fallbacks kept in tado_api.py for standalone mode)
+- [x] `tado_ce.get_temperature_offset` service - on-demand fetch of current offset for automations ([#24](https://github.com/hiall-fyi/tado_ce/issues/24) - @pisolofin)
+- [x] Optional `offset_celsius` attribute on climate entities - enable in options, synced during full sync ([#25](https://github.com/hiall-fyi/tado_ce/issues/25) - @ohipe)
+- [x] HVAC mode logic: show `auto` when following schedule (even if scheduled OFF) - match official Tado integration behavior ([#25](https://github.com/hiall-fyi/tado_ce/issues/25) - @ohipe)
+- [x] Frequent mobile device sync option - sync presence every quick sync instead of every 6 hours ([#28](https://github.com/hiall-fyi/tado_ce/issues/28) - @beltrao)
+- [x] Fix blocking I/O warning for manifest.json read ([#27](https://github.com/hiall-fyi/tado_ce/issues/27))
 
 ---
 
