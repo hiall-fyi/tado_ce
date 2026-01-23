@@ -5,6 +5,7 @@ Feature requests and planned improvements for Tado CE.
 ## Planned for v1.4.0
 
 - [x] New Device Authorization setup flow (no more SSH required - setup entirely in HA UI)
+- [x] Home selection during setup (supports accounts with multiple homes)
 - [x] Change weather sensors default to OFF (saves 1 API call per sync)
 - [x] Change mobile device tracking default to OFF (saves 1 API call per sync)
 - [x] API Reset sensor now uses Tado API's actual reset time (not calculated from history)
@@ -27,9 +28,19 @@ Feature requests and planned improvements for Tado CE.
 
 - Air Comfort sensors (humidity comfort level)
 - Boost button entity
-- Multiple homes support
 - Auto-assign devices to Areas during setup ([#14](https://github.com/hiall-fyi/tado_ce/issues/14))
 - Apply for HACS default repository inclusion
+
+### Multiple Homes (Simultaneous)
+
+v1.4.0 supports selecting a home during setup, but only one home per integration entry. To support multiple homes simultaneously (add integration multiple times), the following changes would be needed:
+
+1. **Unique ID**: Change from `tado_ce_integration` to `tado_ce_{home_id}`
+2. **Data files**: Per-home files (`config_{home_id}.json`, `zones_{home_id}.json`)
+3. **Hub device identifier**: Change from `tado_ce_hub` to `tado_ce_hub_{home_id}`
+4. **Migration**: Existing users would need migration to new identifiers
+
+**Note**: Entity IDs should remain stable if entity `unique_id` is unchanged. Low priority as multi-home use cases are rare.
 
 ---
 
