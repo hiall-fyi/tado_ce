@@ -12,6 +12,7 @@ Feature requests and planned improvements for Tado CE.
 - [x] Added `next_poll` and `current_interval_minutes` attributes to API Reset sensor
 - [x] Cleaned up API Usage sensor (removed redundant reset attributes)
 - [x] Improve initial reset time estimation
+- [x] Logging levels cleanup (setup messages from `warning` to `debug`/`info`)
 
 **Note**: Existing users who want to keep weather/mobile tracking will need to manually re-enable in integration options after upgrade.
 
