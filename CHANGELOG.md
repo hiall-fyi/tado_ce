@@ -5,6 +5,37 @@ All notable changes to Tado CE will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-01-23
+
+### Added
+- **New Device Authorization setup flow**: Setup now happens entirely in Home Assistant UI. No more SSH required to run `tado_api.py auth` manually. Users authorize via Tado's OAuth2 device flow with a link and code.
+- **Home selection during setup**: Accounts with multiple homes can now select which home to configure.
+
+### Changed
+- **Weather sensors default to OFF**: New installations will have weather sensors disabled by default (saves 1 API call per sync). Existing users' settings are preserved.
+- **Mobile device tracking default to OFF**: New installations will have mobile device tracking disabled by default (saves 1 API call per full sync). Existing users' settings are preserved.
+
+### Fixed
+- **Logging levels cleanup**: Changed setup messages from `warning` to `debug`/`info` for cleaner logs. Normal operations no longer flood logs with warnings.
+- **Options not saving properly**: Fixed inconsistent default values between config_flow.py and config_manager.py causing weather/mobile checkboxes to revert after saving.
+- **Day/Night Start Hour checkboxes**: Changed from `vol.Optional` to `vol.Required` to remove confusing enable/disable checkboxes that caused values to not save (Issue #17).
+- **Uniform polling mode**: Setting Day Start Hour = Night Start Hour now enables uniform 24/7 polling using day interval (Issue #17).
+- **Boiler Flow Temperature sensor**: Now auto-detects if your system has boiler flow temperature data. Sensor only appears if you have OpenTherm connection between Tado and boiler. Moved to Hub device with `source_zone` attribute (Issue #15).
+- **Climate preset mode stuck on Away**: Fixed bug where preset mode used mobile device location data instead of actual Tado home state. Now correctly reflects Home/Away regardless of geo-tracking settings (Issue #22).
+
+### Enhanced
+- **API Reset sensor improvements**: 
+  - Now uses Tado API's actual reset time from response headers instead of calculating from call history
+  - Added `next_poll` and `current_interval_minutes` attributes to show when the next API poll will occur
+  - Improved initial reset time estimation
+- **API Usage sensor cleanup**: Removed `reset_human` and `reset_at` attributes (now in API Reset sensor where they belong)
+
+### Community Credits
+- **Issue #16**: @ChrisMarriott38 (API Reset time confusion after re-authentication)
+- **Issue #17**: @ChrisMarriott38 (Options UI fixes, uniform polling mode suggestion)
+- **Issue #15**: @ChrisMarriott38 (Boiler Flow Temperature sensor fixes)
+- **Issue #22**: @jeverley (Climate preset mode stuck on Away)
+
 ## [1.2.1] - 2026-01-22
 
 ### Fixed
@@ -66,12 +97,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **[@StreborStrebor](https://github.com/StreborStrebor)**: Immediate refresh feature, AC controls feedback
 - **[@donnie-darko](https://github.com/donnie-darko)**: Hot water service compatibility, timer features
 
-See [RELEASE_NOTES_v1.2.0.md](RELEASE_NOTES_v1.2.0.md) for complete details and [RELEASE_CREDITS_v1.2.0.md](RELEASE_CREDITS_v1.2.0.md) for full credits.
-
 ## [1.1.0] - 2026-01-19
 
 ### Added
-- **Away Mode switch**: New `switch.tado_ce_away_mode` to manually toggle Home/Away status (1 API call per toggle)
+- **Away Mode switch**: New `switch.tado_ce_away_mode` to manually toggle Home/Away status (1 API call per toggle) (Issue #3)
 - **Preset mode support**: Climate entities now support Home/Away presets (1 API call per change)
 - **Humidity on climate**: Climate entities now show `current_humidity` attribute (no extra API calls - uses existing data)
 
@@ -83,6 +112,10 @@ See [RELEASE_NOTES_v1.2.0.md](RELEASE_NOTES_v1.2.0.md) for complete details and 
 - Away Mode switch: 1 API call per toggle
 - Preset mode change: 1 API call per change
 - Humidity attribute: No additional API calls (uses existing zone data)
+
+### Community Credits
+- **Issue #2**: @hapklaar (Humidity attribute and preset mode suggestion)
+- **Issue #3**: @MJWMJW2 (Away Mode switch request)
 
 ## [1.0.1] - 2026-01-18
 

@@ -25,7 +25,7 @@ def _load_mobile_devices_file():
 
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     """Set up Tado CE device trackers from a config entry."""
-    _LOGGER.warning("Tado CE device_tracker: Setting up...")
+    _LOGGER.debug("Tado CE device_tracker: Setting up...")
     mobile_devices = await hass.async_add_executor_job(_load_mobile_devices_file)
     
     trackers = []
@@ -44,9 +44,9 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     
     if trackers:
         async_add_entities(trackers, True)
-        _LOGGER.warning(f"Tado CE device trackers loaded: {len(trackers)}")
+        _LOGGER.info(f"Tado CE device trackers loaded: {len(trackers)}")
     else:
-        _LOGGER.warning("Tado CE: No devices with geo tracking enabled")
+        _LOGGER.info("Tado CE: No devices with geo tracking enabled")
 
 
 class TadoDeviceTracker(TrackerEntity):

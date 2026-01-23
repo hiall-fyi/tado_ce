@@ -79,6 +79,14 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     sensors.append(TadoZoneCountSensor())
     sensors.append(TadoLastSyncSensor())
     
+    # Boiler Flow Temperature sensor (Hub device - only if data available)
+    # This requires OpenTherm connection between Tado and boiler
+    if await hass.async_add_executor_job(_has_boiler_flow_temperature_data):
+        _LOGGER.info("Boiler flow temperature data detected - creating sensor")
+        sensors.append(TadoBoilerFlowTemperatureSensor())
+    else:
+        _LOGGER.debug("No boiler flow temperature data found - sensor not created (requires OpenTherm)")
+    
     # Weather sensors (optional based on configuration)
     if config_manager.get_weather_enabled():
         sensors.append(TadoOutsideTemperatureSensor())
@@ -119,7 +127,6 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
                 elif zone_type == 'HOT_WATER':
                     sensors.extend([
                         TadoTemperatureSensor(zone_id, zone_name, zone_type),
-                        TadoBoilerFlowTemperatureSensor(zone_id, zone_name, zone_type),
                         TadoOverlaySensor(zone_id, zone_name, zone_type),
                     ])
     except Exception as e:
@@ -148,7 +155,7 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
         _LOGGER.debug(f"Failed to load device info: {e}")
     
     async_add_entities(sensors, True)
-    _LOGGER.warning(f"Tado CE sensors loaded: {len(sensors)}")
+    _LOGGER.info(f"Tado CE sensors loaded: {len(sensors)}")
 
 def _load_zones_file():
     """Load zones file (blocking)."""
@@ -181,6 +188,32 @@ def _load_mobile_devices_file():
             return json.load(f)
     except Exception:
         return None
+
+def _has_boiler_flow_temperature_data():
+    """Check if any zone has boiler flow temperature data (requires OpenTherm).
+    
+    This is used during setup to determine if the boiler flow temperature
+    sensor should be created. Only systems with OpenTherm connection between
+    Tado and the boiler will have this data.
+    """
+    try:
+        with open(ZONES_FILE) as f:
+            data = json.load(f)
+        
+        for zone_id, zone_data in data.get('zoneStates', {}).items():
+            flow_temp = (
+                zone_data.get('activityDataPoints', {})
+                .get('boilerFlowTemperature', {})
+                .get('celsius')
+            )
+            if flow_temp is not None:
+                _LOGGER.debug(f"Found boilerFlowTemperature in zone {zone_id}: {flow_temp}°C")
+                return True
+        
+        return False
+    except Exception as e:
+        _LOGGER.debug(f"Error checking boiler flow temperature data: {e}")
+        return False
 
 # ============ Hub Sensors (Tado CE Hub Device) ============
 
@@ -233,8 +266,6 @@ class TadoApiUsageSensor(SensorEntity):
         attrs = {
             "limit": self._data.get("limit"),
             "remaining": self._data.get("remaining"),
-            "reset_human": self._data.get("reset_human"),
-            "reset_at": self._data.get("reset_at"),
             "percentage_used": self._data.get("percentage_used"),
             "last_updated": self._data.get("last_updated"),
             "status": self._data.get("status"),
@@ -307,105 +338,74 @@ class TadoApiResetSensor(SensorEntity):
         self._attr_available = False
         self._attr_native_value = None
         self._reset_human = None
-        self._reset_minutes = None
+        self._reset_seconds = None
         self._status = None
+        self._next_poll = None
+        self._current_interval = None
     
     @property
     def extra_state_attributes(self):
         return {
-            "reset_timestamp": self._attr_native_value.strftime("%Y-%m-%d %H:%M:%S") if self._attr_native_value else None,
             "time_until_reset": self._reset_human,
-            "minutes_until_reset": self._reset_minutes,
+            "reset_seconds": self._reset_seconds,
             "status": self._status,
+            "next_poll": self._next_poll,
+            "current_interval_minutes": self._current_interval,
         }
     
     def update(self):
         try:
-            from datetime import datetime, timedelta, timezone
+            from datetime import datetime, timezone, timedelta
             
-            # Load API call history to calculate reset time
-            try:
-                with open(API_CALL_HISTORY_FILE) as f:
-                    history = json.load(f)
-                    
-                    # Flatten all calls
-                    all_calls = []
-                    for calls in history.values():
-                        all_calls.extend(calls)
-                    
-                    if all_calls:
-                        # Find oldest call in last 24 hours
-                        now = datetime.now(timezone.utc)
-                        cutoff = now - timedelta(hours=24)
-                        recent_calls = [
-                            c for c in all_calls
-                            if datetime.fromisoformat(c["timestamp"]).replace(tzinfo=timezone.utc) > cutoff
-                        ]
-                        
-                        if recent_calls:
-                            # Sort by timestamp
-                            recent_calls.sort(key=lambda c: c["timestamp"])
-                            oldest_call = recent_calls[0]
-                            oldest_time = datetime.fromisoformat(oldest_call["timestamp"]).replace(tzinfo=timezone.utc)
-                            
-                            # Reset time is 24 hours after oldest call
-                            reset_time = oldest_time + timedelta(hours=24)
-                            self._attr_native_value = reset_time
-                            
-                            # Calculate minutes until reset
-                            time_until_reset = reset_time - now
-                            self._reset_minutes = int(time_until_reset.total_seconds() / 60)
-                            
-                            # Format human readable
-                            hours = self._reset_minutes // 60
-                            mins = self._reset_minutes % 60
-                            self._reset_human = f"{hours}h {mins}m"
-                            
-                            self._attr_available = True
-                        else:
-                            # No calls in last 24h
-                            self._attr_native_value = None
-                            self._reset_minutes = None
-                            self._reset_human = "No calls in last 24h"
-                            self._attr_available = True
-                    else:
-                        # No history yet
-                        self._attr_native_value = None
-                        self._reset_minutes = None
-                        self._reset_human = "No history"
-                        self._attr_available = True
-            except Exception as e:
-                _LOGGER.debug(f"Failed to calculate reset time from history: {e}")
-                # Fallback to ratelimit.json
-                with open(RATELIMIT_FILE) as f:
-                    data = json.load(f)
-                    self._reset_human = data.get("reset_human", "unknown")
-                    reset_at = data.get("reset_at")
-                    
-                    if reset_at and reset_at != "unknown":
-                        try:
-                            reset_time = datetime.fromisoformat(reset_at.replace('Z', '+00:00'))
-                            self._attr_native_value = reset_time.astimezone()
-                        except:
-                            self._attr_native_value = None
-                    else:
-                        self._attr_native_value = None
-                    
-                    reset_seconds = data.get("reset_seconds")
-                    if reset_seconds and reset_seconds != "unknown":
-                        self._reset_minutes = int(reset_seconds) // 60
-                    else:
-                        self._reset_minutes = None
-                    
+            with open(RATELIMIT_FILE) as f:
+                data = json.load(f)
+                
+            self._reset_human = data.get("reset_human")
+            self._reset_seconds = data.get("reset_seconds")
+            self._status = data.get("status", "unknown")
+            
+            reset_at = data.get("reset_at")
+            if reset_at and reset_at != "unknown":
+                try:
+                    reset_time = datetime.fromisoformat(reset_at.replace('Z', '+00:00'))
+                    self._attr_native_value = reset_time
                     self._attr_available = True
+                except Exception as e:
+                    _LOGGER.debug(f"Failed to parse reset_at: {e}")
+                    self._attr_native_value = None
+                    self._attr_available = False
+            else:
+                self._attr_native_value = None
+                self._attr_available = False
             
-            # Get status from ratelimit.json
+            # Calculate next poll time
             try:
-                with open(RATELIMIT_FILE) as f:
-                    data = json.load(f)
-                    self._status = data.get("status", "unknown")
-            except:
-                self._status = "unknown"
+                last_updated = data.get("last_updated")
+                if last_updated:
+                    last_sync = datetime.fromisoformat(last_updated.replace('Z', '+00:00'))
+                    
+                    # Get current polling interval from config
+                    from homeassistant.config_entries import ConfigEntry
+                    entries = self.hass.config_entries.async_entries(DOMAIN) if self.hass else []
+                    if entries:
+                        from .config_manager import ConfigurationManager
+                        from . import get_polling_interval
+                        config_manager = ConfigurationManager(entries[0])
+                        self._current_interval = get_polling_interval(config_manager)
+                        
+                        # Calculate next poll time
+                        next_poll_time = last_sync + timedelta(minutes=self._current_interval)
+                        self._next_poll = next_poll_time.strftime("%Y-%m-%d %H:%M:%S")
+                    else:
+                        self._next_poll = None
+                        self._current_interval = None
+                else:
+                    self._next_poll = None
+                    self._current_interval = None
+            except Exception as e:
+                _LOGGER.debug(f"Failed to calculate next poll time: {e}")
+                self._next_poll = None
+                self._current_interval = None
                 
         except Exception as e:
             _LOGGER.debug(f"Failed to update API reset sensor: {e}")
@@ -814,36 +814,56 @@ class TadoACPowerSensor(TadoBaseSensor):
         )
         self._attr_native_value = power if power is not None else 0
 
-class TadoBoilerFlowTemperatureSensor(TadoBaseSensor):
-    """Boiler flow temperature sensor for hot water zones."""
+class TadoBoilerFlowTemperatureSensor(SensorEntity):
+    """Boiler flow temperature sensor - reads from HEATING zones.
     
-    def __init__(self, zone_id: str, zone_name: str, zone_type: str = "HOT_WATER"):
-        super().__init__(zone_id, zone_name, zone_type)
-        self._attr_name = f"{zone_name} Boiler Flow Temperature"
-        # Use zone_name for unique_id to maintain entity_id stability
-        self._attr_unique_id = f"tado_ce_zone_{zone_id}_boiler_flow_temperature"
+    This is a Hub-level sensor that reads boilerFlowTemperature from
+    any HEATING zone that has this data available.
+    """
+    
+    def __init__(self):
+        self._attr_name = "Tado CE Boiler Flow Temperature"
+        self._attr_unique_id = "tado_ce_boiler_flow_temperature"
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_state_class = "measurement"
         self._attr_icon = "mdi:water-boiler"
+        self._attr_device_info = get_hub_device_info()
+        self._attr_available = False
+        self._attr_native_value = None
+        self._source_zone = None
     
-    def _update_from_zone_data(self, zone_data):
-        # Read boiler flow temperature from activityDataPoints
-        flow_temp = (
-            zone_data.get('activityDataPoints', {})
-            .get('boilerFlowTemperature', {})
-            .get('celsius')
-        )
-        self._attr_native_value = flow_temp
+    @property
+    def extra_state_attributes(self):
+        return {
+            "source_zone": self._source_zone,
+        }
     
     def update(self):
-        """Override update to handle unavailability when no boiler data."""
-        zone_data = self._get_zone_data()
-        if zone_data:
-            self._update_from_zone_data(zone_data)
-            # Only mark available if we have actual temperature data
-            self._attr_available = self._attr_native_value is not None
-        else:
+        """Update boiler flow temperature from HEATING zones."""
+        try:
+            with open(ZONES_FILE) as f:
+                data = json.load(f)
+            
+            # Look for boilerFlowTemperature in any zone
+            for zone_id, zone_data in data.get('zoneStates', {}).items():
+                flow_temp = (
+                    zone_data.get('activityDataPoints', {})
+                    .get('boilerFlowTemperature', {})
+                    .get('celsius')
+                )
+                if flow_temp is not None:
+                    self._attr_native_value = flow_temp
+                    self._source_zone = zone_id
+                    self._attr_available = True
+                    return
+            
+            # No boiler flow data found
+            self._attr_native_value = None
+            self._source_zone = None
+            self._attr_available = False
+            
+        except Exception:
             self._attr_available = False
 
 class TadoTargetTempSensor(TadoBaseSensor):

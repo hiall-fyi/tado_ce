@@ -56,7 +56,7 @@ def _get_access_token():
 
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     """Set up Tado CE water heater from a config entry."""
-    _LOGGER.warning("Tado CE water_heater: Setting up...")
+    _LOGGER.debug("Tado CE water_heater: Setting up...")
     zones_info = await hass.async_add_executor_job(_load_zones_info_file)
     
     water_heaters = []
@@ -72,9 +72,9 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     
     if water_heaters:
         async_add_entities(water_heaters, True)
-        _LOGGER.warning(f"Tado CE water heaters loaded: {len(water_heaters)}")
+        _LOGGER.info(f"Tado CE water heaters loaded: {len(water_heaters)}")
     else:
-        _LOGGER.warning("Tado CE: No hot water zones found")
+        _LOGGER.info("Tado CE: No hot water zones found")
 
 
 class TadoWaterHeater(WaterHeaterEntity):

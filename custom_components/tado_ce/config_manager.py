@@ -17,8 +17,8 @@ _LOGGER = logging.getLogger(__name__)
 _config_write_lock = threading.Lock()
 
 # Default configuration values
-DEFAULT_WEATHER_ENABLED = True
-DEFAULT_MOBILE_DEVICES_ENABLED = True
+DEFAULT_WEATHER_ENABLED = False
+DEFAULT_MOBILE_DEVICES_ENABLED = False
 DEFAULT_TEST_MODE_ENABLED = False
 DEFAULT_DAY_START_HOUR = 7
 DEFAULT_NIGHT_START_HOUR = 23
@@ -123,6 +123,9 @@ class ConfigurationManager:
             
         Returns:
             Tuple of (is_valid, error_message)
+            
+        Note:
+            day_start == night_start is valid (uniform polling mode)
         """
         # Validate individual hours first
         valid, error = ConfigurationManager.validate_hour(day_start, "day_start_hour")
@@ -133,11 +136,7 @@ class ConfigurationManager:
         if not valid:
             return False, error
         
-        # Check they're not the same
-        if day_start == night_start:
-            return False, "day_start_hour and night_start_hour cannot be the same"
-        
-        # Both hours are valid and different
+        # Both hours are valid (same value = uniform mode, which is allowed)
         return True, None
     
     def validate_config_updates(self, updates: Dict) -> Tuple[bool, Optional[str]]:

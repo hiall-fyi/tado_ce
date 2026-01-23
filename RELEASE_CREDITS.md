@@ -4,6 +4,38 @@
 
 ---
 
+## v1.4.0 (2026-01-23) - Setup Simplification Release
+
+### Feature Contributors
+
+**Setup Flow Redesign**
+- New device authorization flow - no more SSH required
+- Home selection for multi-home accounts
+
+### Bug Reports & Issue Reporters
+
+**[@ChrisMarriott38](https://github.com/ChrisMarriott38)** - [Issue #15](https://github.com/hiall-fyi/tado_ce/issues/15), [Issue #16](https://github.com/hiall-fyi/tado_ce/issues/16), [Issue #17](https://github.com/hiall-fyi/tado_ce/issues/17)
+- Reported Boiler Flow Temperature sensor issues
+- Identified API Reset time confusion after re-authentication
+- Reported Options UI issues (checkboxes, values not saving)
+- Suggested uniform polling mode
+
+**[@jeverley](https://github.com/jeverley)** - [Issue #22](https://github.com/hiall-fyi/tado_ce/issues/22)
+- Reported climate preset mode stuck on Away
+- Helped identify mobile device location vs home state issue
+
+**[@hapklaar](https://github.com/hapklaar)**
+- Volunteered for OpenTherm testing
+
+### What Was Fixed
+
+- ✅ **Issue #15**: Boiler Flow Temperature sensor - auto-detect OpenTherm, moved to Hub device
+- ✅ **Issue #16**: API Reset time now uses actual Tado API reset time
+- ✅ **Issue #17**: Options UI fixes, uniform polling mode support
+- ✅ **Issue #22**: Climate preset mode now uses home state instead of mobile device location
+
+---
+
 ## v1.2.1 (2026-01-22) - Hotfix Release
 
 ### Bug Reports & Issue Reporters
@@ -82,15 +114,17 @@
 - Led to auto-fetch home ID feature
 - Helped improve initial setup experience
 
-**[Issue #3](https://github.com/hiall-fyi/tado_ce/issues/3)** - Away Mode Switch Request *(Implemented in v1.1.0)*
-- Requested manual Home/Away toggle
-- Improved geofencing control
-
-**[@hapklaar](https://github.com/hapklaar)** - [Issue #5](https://github.com/hiall-fyi/tado_ce/issues/5)
+**[@hapklaar](https://github.com/hapklaar)** - [Issue #2](https://github.com/hiall-fyi/tado_ce/issues/2), [Issue #5](https://github.com/hiall-fyi/tado_ce/issues/5)
+- Suggested adding humidity attribute to climate entities *(Implemented in v1.1.0)*
+- Suggested adding preset mode support (Home/Away) *(Implemented in v1.1.0)*
 - Reported away mode switch toggling back issue
 - Reported 2-minute delay for temperature/mode changes
 - Both issues fixed with Immediate Refresh feature
 - Generous Buy Me a Coffee supporter! ☕
+
+**[@MJWMJW2](https://github.com/MJWMJW2)** - [Issue #3](https://github.com/hiall-fyi/tado_ce/issues/3) *(Implemented in v1.1.0)*
+- Requested Away Mode switch for manual Home/Away toggle
+- Improved geofencing control
 
 **[@ctcampbell](https://github.com/ctcampbell)** - [Issue #6](https://github.com/hiall-fyi/tado_ce/issues/6)
 - Requested proper AUTO/HEAT/OFF operation modes for hot water
@@ -105,6 +139,10 @@
 - Requested boost button feature
 - Helped identify service parameter issues
 - Contributed to climate timer service improvements
+
+**[@thefern69](https://github.com/thefern69)** - [Issue #9](https://github.com/hiall-fyi/tado_ce/issues/9)
+- Provided Docker installation instructions
+- Helped improve README documentation for Docker users
 
 ### Community Quotes
 
@@ -139,15 +177,15 @@
 - Detailed feedback on API usage patterns
 - Real-world testing across different Tado setups
 - Advanced automation examples (mold risk, air quality, weather compensation)
-- Documentation improvements for SSH setup and prerequisites
+- Documentation improvements and setup guides
 
 ---
 
 ## 📊 Overall Impact
 
-**Total Issues Addressed:** 11+ issues across all versions
-**Features Implemented:** 20+ new features
-**Bug Fixes:** 10+ critical/high-priority fixes
+**Total Issues Addressed:** 22+ issues across all versions
+**Features Implemented:** 25+ new features
+**Bug Fixes:** 15+ critical/high-priority fixes
 **API Optimization:** 60-70% reduction in API calls
 **Community Engagement:** Active discussions and continuous feedback
 
@@ -157,15 +195,19 @@
 
 The community continues to shape Tado CE's future! Current discussions:
 
+**Planned for v1.5.0:**
+- Async architecture (migrate from urllib to aiohttp)
+- Centralize all API URLs in const.py
+
 **Requested Features:**
-- Customizable day/night hours for API polling (shift workers support) - @ChrisMarriott38
-- Test mode with enforced API limits for development/testing - @ChrisMarriott38
-- Pre-release testing mechanism for community validation - @ChrisMarriott38
 - AC fan mode controls (Auto, Low, Medium, High) - @StreborStrebor
 - AC swing mode controls (Off, Vertical, Horizontal, Both) - @StreborStrebor
 - Boost button entity - @greavous1138
 - Air Comfort sensors (humidity comfort level)
-- Multiple homes support
+- Multiple homes support (simultaneous)
+- Max Flow Temperature control (requires OpenTherm) - @ChrisMarriott38
+- Combi boiler mode - @ChrisMarriott38
+- Auto-assign devices to Areas during setup
 
 **Want to contribute?** Open an issue or join the discussion on [GitHub](https://github.com/hiall-fyi/tado_ce/issues)!
 

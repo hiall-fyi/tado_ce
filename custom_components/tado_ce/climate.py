@@ -25,7 +25,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 
 from .const import (
-    DOMAIN, ZONES_FILE, ZONES_INFO_FILE, CONFIG_FILE, MOBILE_DEVICES_FILE,
+    DOMAIN, ZONES_FILE, ZONES_INFO_FILE, CONFIG_FILE, MOBILE_DEVICES_FILE, HOME_STATE_FILE,
     TADO_API_BASE, TADO_AUTH_URL, CLIENT_ID, DEFAULT_ZONE_NAMES
 )
 from .device_manager import get_hub_device_info, get_zone_device_info
@@ -135,7 +135,7 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
         _LOGGER.error(f"Failed to load zones for climate: {e}")
     
     async_add_entities(climates, True)
-    _LOGGER.warning(f"Tado CE climates loaded: {len(climates)}")
+    _LOGGER.info(f"Tado CE climates loaded: {len(climates)}")
 
 
 def _load_zones_file():
@@ -267,20 +267,16 @@ class TadoClimate(ClimateEntity):
             self._attr_available = False
     
     def _update_preset_mode(self):
-        """Update preset mode based on mobile device presence."""
+        """Update preset mode based on home state (not mobile devices).
+        
+        Uses home_state.json which reflects the actual Tado home/away state,
+        regardless of whether mobile device tracking is enabled.
+        """
         try:
-            with open(MOBILE_DEVICES_FILE) as f:
-                mobile_devices = json.load(f)
-                
-                # Check if any device is at home
-                any_at_home = False
-                for device in mobile_devices:
-                    location = device.get('location', {})
-                    if location and location.get('atHome', False):
-                        any_at_home = True
-                        break
-                
-                self._attr_preset_mode = PRESET_HOME if any_at_home else PRESET_AWAY
+            with open(HOME_STATE_FILE) as f:
+                home_state = json.load(f)
+                presence = home_state.get('presence', 'HOME')
+                self._attr_preset_mode = PRESET_HOME if presence == 'HOME' else PRESET_AWAY
         except Exception:
             # Keep last known preset mode
             pass

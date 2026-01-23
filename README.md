@@ -6,7 +6,7 @@
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2026.1.2-blue?style=for-the-badge&logo=home-assistant) ![Tado](https://img.shields.io/badge/Tado-V3%2FV3%2B-orange?style=for-the-badge) ![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)
 
 <!-- Status Badges -->
-![Version](https://img.shields.io/badge/Version-1.2.1-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge) ![Tests](https://img.shields.io/badge/Tests-Passing-success?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-1.4.0-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge) ![Tests](https://img.shields.io/badge/Tests-Passing-success?style=for-the-badge)
 
 <!-- Community Badges -->
 ![GitHub stars](https://img.shields.io/github/stars/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub forks](https://img.shields.io/github/forks/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub issues](https://img.shields.io/github/issues/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub last commit](https://img.shields.io/github/last-commit/hiall-fyi/tado_ce?style=for-the-badge&logo=github)
@@ -85,6 +85,7 @@ The official Home Assistant Tado integration doesn't show your actual API usage 
 | 📊 **Real API Rate Limit** | Actual usage from Tado API headers, not estimates |
 | 🔄 **Reset Time from API** | Automatically detects when your rate limit resets |
 | ⚡ **Smart Day/Night Polling** | More frequent during day, less at night to save API calls |
+| 🏠 **Multi-Home Selection** | Select which home to configure during setup (v1.4.0) |
 | 🏢 **Zone-Based Devices** | Each zone appears as separate device for better organization (v1.2.0) |
 | 🏷️ **Improved Entity Names** | Cleaner names without "Tado CE" prefix for zone entities (v1.2.0) |
 | 🌤️ **Optional Weather** | Toggle weather sensors on/off to save 1 API call per sync (v1.2.0) |
@@ -95,7 +96,7 @@ The official Home Assistant Tado integration doesn't show your actual API usage 
 | ⚙️ **Customizable Polling** | Configure day/night hours and custom polling intervals (v1.2.0) |
 | 🚿 **Hot Water Modes** | Enhanced AUTO/HEAT/OFF modes with configurable timer and state detection (v1.2.0) |
 | 🔘 **Hot Water Presets** | Quick-access timer buttons (30/60/90 min) for hot water (v1.2.0) |
-| 🌡️ **Boiler Flow Temp** | Real-time boiler flow temperature sensor for hot water zones (v1.2.0) |
+| 🌡️ **Boiler Flow Temp** | Auto-detected boiler flow temperature sensor for OpenTherm systems (v1.4.0) |
 
 ---
 
@@ -103,9 +104,6 @@ The official Home Assistant Tado integration doesn't show your actual API usage 
 
 - Home Assistant 2024.1 or later (tested on 2026.1.2)
 - Tado account with V3/V3+ devices
-- SSH access to Home Assistant (for initial auth)
-  - **HA OS users**: Install the "Advanced SSH & Web Terminal" add-on (not the default Terminal & SSH add-on)
-  - **Docker/Core users**: Use your existing SSH access
 
 ---
 
@@ -126,47 +124,18 @@ Restart Home Assistant
 cp -r tado_ce /config/custom_components/
 ```
 
-### 2. Authenticate
-
-**For Home Assistant OS / Supervised:**
-```bash
-# SSH into your Home Assistant
-python3 /config/custom_components/tado_ce/tado_api.py auth
-```
-
-**For Home Assistant Docker:**
-```bash
-# SSH to your host machine, then enter the container
-docker exec -it homeassistant /bin/sh
-
-# Then run the auth command
-python3 /config/custom_components/tado_ce/tado_api.py auth
-```
-
-**For Home Assistant Core:**
-```bash
-# SSH into your system and activate the venv
-source /srv/homeassistant/bin/activate
-
-# Then run the auth command
-python3 /config/custom_components/tado_ce/tado_api.py auth
-```
-
-This will:
-
-- Display a URL to visit
-- Show a code to enter on Tado's website
-- Wait for you to authorize
-- Save the tokens automatically
-
-> **Tip**: If you're using Docker and the container name is different, use `docker ps` to find it, then replace `homeassistant` with your container name.
-
-### 3. Add Integration
+### 2. Add Integration & Authenticate
 
 1. Go to **Settings → Devices & Services**
 2. Click **Add Integration**
 3. Search for **Tado CE**
-4. Click to add
+4. Click **Submit** to start authorization
+5. Click the link or visit `https://login.tado.com/device` and enter the code shown
+6. Authorize in your browser
+7. Click **Submit** when done
+8. If you have multiple homes, select which one to use
+
+That's it! No SSH required. The integration handles everything through Tado's secure device authorization flow.
 
 ---
 
@@ -895,29 +864,17 @@ Want a feature? [Open an issue](https://github.com/hiall-fyi/tado_ce/issues) or 
 
 ## 🐛 Troubleshooting
 
-### Config file not found
+### Token refresh failed / Re-authentication required
 
-```bash
-python3 /config/custom_components/tado_ce/tado_api.py auth
-```
-
-### Token refresh failed
-
-```bash
-python3 /config/custom_components/tado_ce/tado_api.py auth
-```
+1. Go to **Settings → Devices & Services → Tado CE**
+2. Click **Configure** or look for re-authentication prompt
+3. Follow the device authorization flow (link + code)
 
 ### Check status
 
-```bash
-python3 /config/custom_components/tado_ce/tado_api.py status
-```
+Check your Home Assistant logs: **Settings → System → Logs**
 
-### Manual sync
-
-```bash
-python3 /config/custom_components/tado_ce/tado_api.py sync
-```
+Filter by "tado_ce" to see integration-specific messages.
 
 ### No device tracker entities
 
@@ -955,7 +912,7 @@ After adding this, restart Home Assistant and check **Settings → System → Lo
 | Temperature/Humidity Sensors | ✅ | ✅ |
 | Hot Water Control | ⚠️ Basic | ✅ Enhanced |
 | Hot Water Timer Presets | ❌ | ✅ |
-| Boiler Flow Temperature Sensor | ❌ | ✅ |
+| Boiler Flow Temperature Sensor | ❌ | ✅ Auto-detect |
 | Open Window Detection | ✅ | ✅ |
 | Home/Away (Geofencing) | ✅ | ✅ |
 | Presence Detection | ✅ | ✅ |
@@ -972,6 +929,7 @@ After adding this, restart Home Assistant and check **Settings → System → Lo
 | Away Configuration | ✅ | ✅ |
 | Connection State | ✅ | ✅ |
 | Zone-Based Devices | ❌ | ✅ |
+| **Multi-Home Selection** | ❌ | ✅ |
 | **Real API Rate Limit** | ❌ | ✅ |
 | **Reset Time Tracking** | ❌ | ✅ |
 | **Dynamic Limit Detection** | ❌ | ✅ |
@@ -998,9 +956,8 @@ After adding this, restart Home Assistant and check **Settings → System → Lo
 For issues and questions:
 
 1. Check the [Troubleshooting](#-troubleshooting) section
-2. Run `python3 /config/custom_components/tado_ce/tado_api.py status`
-3. Check logs: **Settings → System → Logs**
-4. [Open an issue on GitHub](https://github.com/hiall-fyi/tado_ce/issues)
+2. Check logs: **Settings → System → Logs**
+3. [Open an issue on GitHub](https://github.com/hiall-fyi/tado_ce/issues)
 
 ---
 
@@ -1083,8 +1040,8 @@ If this integration has saved you from rate limit headaches, made your Tado setu
 
 ---
 
-**Version**: 1.2.1  
-**Last Updated**: 2026-01-22  
+**Version**: 1.4.0  
+**Last Updated**: 2026-01-23  
 **Tested On**: Home Assistant 2026.1.2 (HAOS, Docker, Core)
 
 ---

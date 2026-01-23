@@ -2,6 +2,20 @@
 
 Complete list of all entities created by Tado CE integration.
 
+## 📋 v1.4.0 Changes
+
+### Boiler Flow Temperature Sensor
+- **Auto-detection**: Sensor only created if OpenTherm/eBUS data is available
+- **Moved to Hub device**: Now a Hub-level sensor (was incorrectly zone-level)
+- **New attribute**: `source_zone` shows which zone the data comes from
+- **No more "unavailable"**: Users without OpenTherm won't see this sensor
+
+### Climate Preset Mode Fix
+- Preset mode now correctly reflects Tado's actual home/away state
+- Works regardless of mobile device geo-tracking settings
+
+---
+
 ## 📋 v1.2.0 Changes
 
 ### Device Organization
@@ -142,6 +156,21 @@ Quick-access timer buttons for hot water boost:
 | `button.{zone}_timer_60min` | Button | Turn on hot water for 60 minutes | 1 per press |
 | `button.{zone}_timer_90min` | Button | Turn on hot water for 90 minutes | 1 per press |
 
+## Boiler Flow Temperature (v1.4.0)
+
+**Auto-detected** - Only appears if your system has OpenTherm/eBUS connection between Tado and boiler.
+
+| Entity | Type | Description |
+|--------|------|-------------|
+| `sensor.tado_ce_boiler_flow_temperature` | Temperature | Real-time boiler flow temperature |
+
+**Attributes:**
+- `source_zone`: The zone providing the boiler data
+
+**Note:** This is a Hub-level sensor. If you don't have OpenTherm, this sensor won't be created.
+
+---
+
 ## Device Trackers
 
 For each mobile device with geo tracking enabled:
@@ -190,14 +219,6 @@ All read operations use cached data from the last sync - no additional API calls
 ---
 
 ## 🆕 v1.2.0 New Features
-
-### Boiler Flow Temperature (Hot Water Zones)
-
-For hot water zones with boiler:
-
-| Entity | Type | Description |
-|--------|------|-------------|
-| `sensor.{zone}_boiler_flow_temperature` | Temperature | Real-time boiler flow temperature |
 
 ### Hot Water Timer Buttons
 

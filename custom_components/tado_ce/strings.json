@@ -3,39 +3,63 @@
     "step": {
       "user": {
         "title": "Tado CE Setup",
-        "description": "This integration reads Tado data from JSON files.\n\nBefore adding, run this command in SSH:\n```\npython3 /config/custom_components/tado_ce/tado_api.py auth\n```\n\nClick Submit to continue."
+        "description": "Click Submit to start the authorization process."
+      },
+      "authorize": {
+        "title": "Authorize Tado",
+        "description": "Please visit the link below to authorize Tado CE:\n\n**[Click here to authorize]({url})**\n\nOr go to `https://login.tado.com/device` and enter code: **{code}**\n\nAfter authorizing in your browser, click Submit."
+      },
+      "poll": {
+        "title": "Waiting for Authorization",
+        "description": "Please authorize in your browser.\n\nIf a new tab didn't open, visit:\n**[Click here to authorize]({url})**\n\nCode: **{code}**"
+      },
+      "select_home": {
+        "title": "Select Home",
+        "description": "Multiple Tado homes found. Please select which home to use.",
+        "data": {
+          "home": "Home"
+        }
       }
     },
+    "progress": {
+      "poll": "Waiting for authorization... Please complete login in your browser."
+    },
     "abort": {
-      "already_configured": "Tado CE is already configured"
+      "already_configured": "Tado CE is already configured",
+      "timeout": "Authorization timed out. Please try again.",
+      "authorization_failed": "Authorization failed. Please try again.",
+      "no_homes": "No Tado homes found for this account."
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to Tado. Please check your internet connection."
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "Tado CE Options",
-        "description": "Configure Tado CE integration settings\n\n**API Optimization**\nControl which API calls are made to reduce quota usage.\n\n**Polling Configuration**\nCustomize when and how often data is synced.\n\n**Hot Water Settings**\nConfigure hot water heater behavior.",
+        "description": "Configure Tado CE integration settings.",
         "data": {
           "weather_enabled": "Enable Weather Sensors",
           "mobile_devices_enabled": "Enable Mobile Device Tracking",
           "test_mode_enabled": "Enable Test Mode (100 API call limit)",
-          "api_history_retention_days": "API History Retention (days, 0=forever)",
-          "day_start_hour": "Day Start Hour (0-23)",
-          "night_start_hour": "Night Start Hour (0-23)",
-          "custom_day_interval": "Custom Day Polling Interval (minutes, optional)",
-          "custom_night_interval": "Custom Night Polling Interval (minutes, optional)",
+          "api_history_retention_days": "API History Retention (days)",
+          "day_start_hour": "Day Start Hour",
+          "night_start_hour": "Night Start Hour",
+          "custom_day_interval": "Custom Day Polling Interval (minutes)",
+          "custom_night_interval": "Custom Night Polling Interval (minutes)",
           "hot_water_timer_duration": "Hot Water Timer Duration (minutes)"
         },
         "data_description": {
-          "weather_enabled": "Disable to save 1 API call per sync",
-          "mobile_devices_enabled": "Disable to save 1 API call per full sync (disables device tracker)",
-          "test_mode_enabled": "Simulate post-grace period with 100 call limit",
-          "api_history_retention_days": "Days to keep API call history (default: 14)",
-          "day_start_hour": "Hour when day period starts (default: 7)",
-          "night_start_hour": "Hour when night period starts (default: 23)",
-          "custom_day_interval": "Override smart polling for day (1-1440 minutes)",
-          "custom_night_interval": "Override smart polling for night (1-1440 minutes)",
-          "hot_water_timer_duration": "Default duration for HEAT mode (5-1440 minutes, default: 60)"
+          "weather_enabled": "Enable to get outside temperature and solar intensity (uses 1 API call per sync)",
+          "mobile_devices_enabled": "Enable to track mobile devices for geofencing (uses 1 API call per sync)",
+          "test_mode_enabled": "Simulate post-grace period with 100 API call limit for testing",
+          "api_history_retention_days": "Days to keep API call history (0 = forever, default: 14)",
+          "day_start_hour": "Hour when day period starts (0-23, default: 7)",
+          "night_start_hour": "Hour when night period starts (0-23, default: 23)",
+          "custom_day_interval": "Override smart polling for daytime (1-1440 minutes, leave empty for auto)",
+          "custom_night_interval": "Override smart polling for nighttime (1-1440 minutes, leave empty for auto)",
+          "hot_water_timer_duration": "Default duration when turning on hot water (5-1440 minutes, default: 60)"
         }
       }
     },

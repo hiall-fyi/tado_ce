@@ -26,7 +26,7 @@ def _load_zones_info_file():
 
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     """Set up Tado CE buttons from a config entry."""
-    _LOGGER.warning("Tado CE button: Setting up...")
+    _LOGGER.debug("Tado CE button: Setting up...")
     zones_info = await hass.async_add_executor_job(_load_zones_info_file)
     
     buttons = []
@@ -46,9 +46,9 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     
     if buttons:
         async_add_entities(buttons, True)
-        _LOGGER.warning(f"Tado CE buttons loaded: {len(buttons)}")
+        _LOGGER.info(f"Tado CE buttons loaded: {len(buttons)}")
     else:
-        _LOGGER.warning("Tado CE: No buttons to create")
+        _LOGGER.info("Tado CE: No buttons to create")
 
 
 class TadoWaterHeaterTimerButton(ButtonEntity):

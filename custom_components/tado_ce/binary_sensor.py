@@ -46,7 +46,7 @@ def _get_zone_names():
 
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     """Set up Tado CE binary sensors from a config entry."""
-    _LOGGER.warning("Tado CE binary_sensor: Setting up...")
+    _LOGGER.debug("Tado CE binary_sensor: Setting up...")
     zone_names = await hass.async_add_executor_job(_get_zone_names)
     zones_info = await hass.async_add_executor_job(_load_zones_info_file)
     
@@ -69,7 +69,7 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
                     sensors.append(TadoOpenWindowSensor(zone_id, zone_name, zone_type))
     
     async_add_entities(sensors, True)
-    _LOGGER.warning(f"Tado CE binary sensors loaded: {len(sensors)}")
+    _LOGGER.info(f"Tado CE binary sensors loaded: {len(sensors)}")
 
 
 class TadoHomeSensor(BinarySensorEntity):

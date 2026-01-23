@@ -20,6 +20,26 @@ _LOGGER = logging.getLogger(__name__)
 # Cache for home_id - MUST be set via load_home_id() before use
 _CACHED_HOME_ID: Optional[str] = None
 
+# Cache for version from manifest
+_CACHED_VERSION: Optional[str] = None
+
+
+def _load_version() -> str:
+    """Load version from manifest.json."""
+    global _CACHED_VERSION
+    if _CACHED_VERSION is not None:
+        return _CACHED_VERSION
+    
+    try:
+        manifest_path = Path(__file__).parent / "manifest.json"
+        with open(manifest_path) as f:
+            manifest = json.load(f)
+            _CACHED_VERSION = manifest.get("version", "unknown")
+            return _CACHED_VERSION
+    except Exception as e:
+        _LOGGER.warning(f"Failed to load version from manifest: {e}")
+        return "unknown"
+
 
 def load_home_id() -> str:
     """Load home ID from config file (blocking I/O).
@@ -79,7 +99,7 @@ def get_hub_device_info() -> DeviceInfo:
         name="Tado CE Hub",
         manufacturer="Joe Yiu (@hiall-fyi)",
         model="Tado CE Integration",
-        sw_version="1.2.0",
+        sw_version=_load_version(),
     )
 
 

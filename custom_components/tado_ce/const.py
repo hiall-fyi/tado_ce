@@ -11,6 +11,7 @@ ZONES_INFO_FILE = DATA_DIR / "zones_info.json"
 RATELIMIT_FILE = DATA_DIR / "ratelimit.json"
 WEATHER_FILE = DATA_DIR / "weather.json"
 MOBILE_DEVICES_FILE = DATA_DIR / "mobile_devices.json"
+HOME_STATE_FILE = DATA_DIR / "home_state.json"
 API_CALL_HISTORY_FILE = DATA_DIR / "api_call_history.json"
 
 # API

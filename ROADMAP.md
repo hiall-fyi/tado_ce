@@ -2,28 +2,6 @@
 
 Feature requests and planned improvements for Tado CE.
 
-## Planned for v1.4.0
-
-- [x] New Device Authorization setup flow (no more SSH required - setup entirely in HA UI)
-- [x] Home selection during setup (supports accounts with multiple homes)
-- [x] Change weather sensors default to OFF (saves 1 API call per sync)
-- [x] Change mobile device tracking default to OFF (saves 1 API call per sync)
-- [x] API Reset sensor now uses Tado API's actual reset time (not calculated from history)
-- [x] Added `next_poll` and `current_interval_minutes` attributes to API Reset sensor
-- [x] Cleaned up API Usage sensor (removed redundant reset attributes)
-- [x] Improve initial reset time estimation
-- [x] Logging levels cleanup (setup messages from `warning` to `debug`/`info`)
-- [x] Fix options not saving properly (weather/mobile checkboxes reverting)
-- [x] Fix Day/Night Start Hour options showing confusing checkboxes (Issue #17)
-- [x] Uniform polling mode: set Day Start Hour = Night Start Hour for 24/7 consistent polling (Issue #17)
-- [x] Boiler Flow Temperature sensor: auto-detect OpenTherm data, only create sensor if available (Issue #15)
-- [x] Move Boiler Flow Temperature sensor to Hub device with `source_zone` attribute (Issue #15)
-- [x] Fix climate preset mode stuck on Away (was using mobile device location instead of home state) (Issue #22)
-
-**Note**: Existing users who want to keep weather/mobile tracking will need to manually re-enable in integration options after upgrade.
-
----
-
 ## Planned for v1.5.0
 
 - [ ] Async architecture (migrate from urllib to aiohttp)
@@ -54,6 +32,25 @@ v1.4.0 supports selecting a home during setup, but only one home per integration
 ---
 
 ## Completed
+
+### v1.4.0 (2026-01-23)
+
+**Setup Simplification Release:**
+- [x] New Device Authorization setup flow (no more SSH required - setup entirely in HA UI)
+- [x] Home selection during setup (supports accounts with multiple homes)
+- [x] Change weather sensors default to OFF (saves 1 API call per sync)
+- [x] Change mobile device tracking default to OFF (saves 1 API call per sync)
+- [x] API Reset sensor now uses Tado API's actual reset time (not calculated from history)
+- [x] Added `next_poll` and `current_interval_minutes` attributes to API Reset sensor
+- [x] Cleaned up API Usage sensor (removed redundant reset attributes)
+- [x] Improve initial reset time estimation
+- [x] Logging levels cleanup (setup messages from `warning` to `debug`/`info`)
+- [x] Fix options not saving properly (weather/mobile checkboxes reverting)
+- [x] Fix Day/Night Start Hour options showing confusing checkboxes (Issue #17)
+- [x] Uniform polling mode: set Day Start Hour = Night Start Hour for 24/7 consistent polling (Issue #17)
+- [x] Boiler Flow Temperature sensor: auto-detect OpenTherm data, only create sensor if available (Issue #15)
+- [x] Move Boiler Flow Temperature sensor to Hub device with `source_zone` attribute (Issue #15)
+- [x] Fix climate preset mode stuck on Away (was using mobile device location instead of home state) (Issue #22)
 
 ### v1.2.1 (2026-01-22)
 
@@ -107,13 +104,13 @@ v1.4.0 supports selecting a home during setup, but only one home per integration
 ### v1.1.0
 
 - [x] Link climate entities to Tado CE Hub device
-- [x] Add Away Mode switch to manually toggle Home/Away status (1 API call per toggle)
-- [x] Add `current_humidity` attribute to climate entities (no extra API calls)
-- [x] Add preset mode support (Home/Away) to climate entities (1 API call per change)
+- [x] Add Away Mode switch to manually toggle Home/Away status (1 API call per toggle) (Issue #3)
+- [x] Add `current_humidity` attribute to climate entities (no extra API calls) (Issue #2)
+- [x] Add preset mode support (Home/Away) to climate entities (1 API call per change) (Issue #2)
 
 ### v1.0.1
 
-- [x] Auto-fetch home ID from account (fixes 403 error for new users)
+- [x] Auto-fetch home ID from account (fixes 403 error for new users) (Issue #1)
 
 ### v1.0.0
 

@@ -47,7 +47,7 @@ def _get_home_id():
 
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     """Set up Tado CE switches from a config entry."""
-    _LOGGER.warning("Tado CE switch: Setting up...")
+    _LOGGER.debug("Tado CE switch: Setting up...")
     zones_info = await hass.async_add_executor_job(_load_zones_info_file)
     
     switches = []
@@ -80,9 +80,9 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     
     if switches:
         async_add_entities(switches, True)
-        _LOGGER.warning(f"Tado CE switches loaded: {len(switches)}")
+        _LOGGER.info(f"Tado CE switches loaded: {len(switches)}")
     else:
-        _LOGGER.warning("Tado CE: No switches found")
+        _LOGGER.info("Tado CE: No switches found")
 
 
 class TadoAwayModeSwitch(SwitchEntity):

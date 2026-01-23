@@ -58,10 +58,18 @@ def is_daytime(config_manager: ConfigurationManager) -> bool:
         
     Returns:
         True if current time is within day hours, False otherwise
+        
+    Note:
+        If day_start == night_start, returns True (uniform mode - always day polling)
     """
     hour = datetime.now().hour
     day_start = config_manager.get_day_start_hour()
     night_start = config_manager.get_night_start_hour()
+    
+    # Uniform mode: if day_start == night_start, always use day interval
+    if day_start == night_start:
+        return True
+    
     return day_start <= hour < night_start
 
 
@@ -181,7 +189,7 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Tado CE from a config entry."""
-    _LOGGER.warning("Tado CE: Integration loading...")
+    _LOGGER.info("Tado CE: Integration loading...")
     
     # CRITICAL: Check for duplicate entries and remove old ones (v1.1.0 leftovers)
     # This must be done BEFORE any setup to avoid race conditions
@@ -381,7 +389,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Register update listener for options changes
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
     
-    _LOGGER.warning("Tado CE: Integration loaded successfully")
+    _LOGGER.info("Tado CE: Integration loaded successfully")
     return True
 
 
