@@ -16,6 +16,9 @@ Feature requests and planned improvements for Tado CE.
 - [x] Fix options not saving properly (weather/mobile checkboxes reverting)
 - [x] Fix Day/Night Start Hour options showing confusing checkboxes (Issue #17)
 - [x] Uniform polling mode: set Day Start Hour = Night Start Hour for 24/7 consistent polling (Issue #17)
+- [x] Boiler Flow Temperature sensor: auto-detect OpenTherm data, only create sensor if available (Issue #15)
+- [x] Move Boiler Flow Temperature sensor to Hub device with `source_zone` attribute (Issue #15)
+- [x] Fix climate preset mode stuck on Away (was using mobile device location instead of home state) (Issue #22)
 
 **Note**: Existing users who want to keep weather/mobile tracking will need to manually re-enable in integration options after upgrade.
 
@@ -34,6 +37,8 @@ Feature requests and planned improvements for Tado CE.
 - Boost button entity
 - Auto-assign devices to Areas during setup ([#14](https://github.com/hiall-fyi/tado_ce/issues/14))
 - Apply for HACS default repository inclusion
+- Max Flow Temperature control (requires OpenTherm, [#15](https://github.com/hiall-fyi/tado_ce/issues/15))
+- Combi boiler mode - hide timers/schedules for on-demand hot water ([#15](https://github.com/hiall-fyi/tado_ce/issues/15))
 
 ### Multiple Homes (Simultaneous)
 
