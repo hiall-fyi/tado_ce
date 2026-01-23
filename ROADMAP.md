@@ -8,6 +8,8 @@ Feature requests and planned improvements for Tado CE.
 - [ ] Centralize all API URLs in const.py (remove hardcoded URLs from switch.py, __init__.py, tado_api.py, config_flow.py)
 - [ ] `get_temperature_offset` service - on-demand fetch of current offset ([#24](https://github.com/hiall-fyi/tado_ce/issues/24) - @pisolofin)
 - [ ] Optional `offset_celsius` attribute on climate entities - for template-based automations ([#25](https://github.com/hiall-fyi/tado_ce/issues/25) - @ohipe)
+- [ ] Frequent mobile device sync option - sync presence every quick sync instead of every 6 hours ([#28](https://github.com/hiall-fyi/tado_ce/issues/28) - @beltrao)
+- [ ] Fix blocking I/O warning for manifest.json read ([#27](https://github.com/hiall-fyi/tado_ce/issues/27))
 
 ---
 
