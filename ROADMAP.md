@@ -2,19 +2,10 @@
 
 Feature requests and planned improvements for Tado CE.
 
-## Planned for v1.5.4
-
-- [ ] **AC mode-specific payload** - Only send supported fields per mode (DRY mode doesn't support fanLevel) ([#31](https://github.com/hiall-fyi/tado_ce/issues/31) - @neonsp)
-- [ ] **AC swing/fan state refresh** - Force state update after swing and fan level changes ([#31](https://github.com/hiall-fyi/tado_ce/issues/31) - @neonsp)
-- [ ] **AC AUTO mode fix** - Investigate and fix AUTO mode turning AC off ([#31](https://github.com/hiall-fyi/tado_ce/issues/31) - @neonsp)
-- [ ] **AC hvac_action mapping** - Show correct status (cooling/heating/drying/fan) instead of always "idle" ([#31](https://github.com/hiall-fyi/tado_ce/issues/31) - @neonsp)
-- [ ] **AC unified swing dropdown** - Single dropdown with off/vertical/horizontal/both options like official integration ([#31](https://github.com/hiall-fyi/tado_ce/issues/31) - @neonsp)
-
----
-
 ## Planned for v1.6.0
 
 - [ ] **Better upgrade path testing** - Release beta versions for community testing before major releases
+- [ ] **Deprecate tado_api.py** - Move sync functions to `__init__.py` or new `sync.py`, remove legacy CLI authentication tool (replaced by in-app OAuth flow since v1.4.0)
 
 ---
 
@@ -50,6 +41,17 @@ v1.4.0 supports selecting a home during setup, but only one home per integration
 ---
 
 ## Completed
+
+### v1.5.4 (2026-01-24)
+
+- [x] **AC fan/swing state fix** - Read correct field names (`fanLevel`, `verticalSwing`/`horizontalSwing`) from API response ([#31](https://github.com/hiall-fyi/tado_ce/issues/31) - @neonsp)
+- [x] **AC hvac_action fix** - Use `acPower.value` for correct cooling/heating/drying/fan status ([#31](https://github.com/hiall-fyi/tado_ce/issues/31) - @neonsp)
+- [x] **AC mode-specific payload** - Only send fields supported by each mode (DRY doesn't support fanLevel) ([#31](https://github.com/hiall-fyi/tado_ce/issues/31) - @neonsp)
+- [x] **AC unified swing dropdown** - Single dropdown with off/vertical/horizontal/both options ([#31](https://github.com/hiall-fyi/tado_ce/issues/31) - @neonsp)
+- [x] **Keep temperature when AC off** - Preserve last temperature setting for reference ([#31](https://github.com/hiall-fyi/tado_ce/issues/31) - @neonsp)
+- [x] **Swing state persistence fix** - Preserve swing setting when changing temperature/fan/mode ([#31](https://github.com/hiall-fyi/tado_ce/issues/31) - @neonsp)
+- [x] **AC Power sensor fix** - Handle newer API format (`acPower.value` instead of `percentage`) ([#31](https://github.com/hiall-fyi/tado_ce/issues/31) - @neonsp)
+- [x] **Entity unique_id stability** - Changed `TadoOpenWindowSensor` and `TadoEarlyStartSwitch` to use `zone_id` instead of `zone_name`
 
 ### v1.5.3 (2026-01-24)
 

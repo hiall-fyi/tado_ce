@@ -169,8 +169,8 @@ class TadoEarlyStartSwitch(SwitchEntity):
         self._zone_type = zone_type
         
         self._attr_name = f"{zone_name} Early Start"
-        # Use zone_name for unique_id to maintain entity_id stability
-        self._attr_unique_id = f"tado_ce_{zone_name.lower().replace(' ', '_')}_early_start"
+        # Use zone_id for unique_id to maintain entity_id stability across zone name changes
+        self._attr_unique_id = f"tado_ce_zone_{zone_id}_early_start"
         self._attr_icon = "mdi:clock-fast"
         self._attr_is_on = initial_state
         self._attr_available = True

@@ -90,8 +90,8 @@ class TadoOpenWindowSensor(BinarySensorEntity):
         self._zone_name = zone_name
         self._zone_type = zone_type
         self._attr_name = f"{zone_name} Open Window"
-        # Use zone_name for unique_id to maintain entity_id stability
-        self._attr_unique_id = f"tado_ce_{zone_name.lower().replace(' ', '_')}_open_window"
+        # Use zone_id for unique_id to maintain entity_id stability across zone name changes
+        self._attr_unique_id = f"tado_ce_zone_{zone_id}_open_window"
         self._attr_device_class = BinarySensorDeviceClass.WINDOW
         self._attr_available = False
         self._attr_is_on = None

@@ -522,8 +522,12 @@ class TadoACClimate(ClimateEntity):
         else:
             self._attr_fan_modes = [FAN_AUTO, FAN_LOW, FAN_MEDIUM, FAN_HIGH]
         
-        # Swing modes - HA only supports ON/OFF
-        self._attr_swing_modes = [SWING_ON, SWING_OFF] if has_swing else None
+        # Swing modes - unified dropdown like official Tado integration
+        # Options: off, vertical, horizontal, both
+        if has_swing:
+            self._attr_swing_modes = ["off", "vertical", "horizontal", "both"]
+        else:
+            self._attr_swing_modes = None
         
         # Temperature range from capabilities
         # Get from any mode that has temperatures (COOL is most common)
@@ -593,11 +597,12 @@ class TadoACClimate(ClimateEntity):
                     (sensor_data.get('humidity') or {}).get('percentage')
                 )
                 
-                # AC power percentage
+                # AC power state - API returns {'value': 'ON'/'OFF'} not percentage
                 activity_data = zone_data.get('activityDataPoints') or {}
-                self._ac_power_percentage = (
-                    (activity_data.get('acPower') or {}).get('percentage')
-                )
+                ac_power = activity_data.get('acPower') or {}
+                ac_power_value = ac_power.get('value')  # 'ON' or 'OFF'
+                # Keep percentage for backwards compatibility attribute
+                self._ac_power_percentage = ac_power.get('percentage')
                 
                 # Setting
                 setting = zone_data.get('setting') or {}
@@ -613,16 +618,27 @@ class TadoACClimate(ClimateEntity):
                     tado_mode = setting.get('mode')
                     self._attr_hvac_mode = TADO_TO_HA_HVAC_MODE.get(tado_mode, HVACMode.AUTO)
                     
-                    # Fan
-                    fan_speed = setting.get('fanSpeed') or setting.get('fanLevel')
-                    self._attr_fan_mode = TADO_TO_HA_FAN.get(fan_speed, FAN_AUTO)
+                    # Fan - API returns fanLevel (newer firmware) or fanSpeed (older firmware)
+                    fan_level = setting.get('fanLevel') or setting.get('fanSpeed')
+                    self._attr_fan_mode = TADO_TO_HA_FAN.get(fan_level, FAN_AUTO)
                     
-                    # Swing
-                    swing = setting.get('swing')
-                    self._attr_swing_mode = TADO_TO_HA_SWING.get(swing, SWING_OFF)
+                    # Swing - API returns verticalSwing/horizontalSwing (not swing)
+                    # Map to unified swing mode: off/vertical/horizontal/both
+                    vertical_swing = setting.get('verticalSwing', 'OFF')
+                    horizontal_swing = setting.get('horizontalSwing', 'OFF')
+                    v_on = vertical_swing != 'OFF'
+                    h_on = horizontal_swing != 'OFF'
+                    if v_on and h_on:
+                        self._attr_swing_mode = "both"
+                    elif v_on:
+                        self._attr_swing_mode = "vertical"
+                    elif h_on:
+                        self._attr_swing_mode = "horizontal"
+                    else:
+                        self._attr_swing_mode = "off"
                     
-                    # HVAC action
-                    if self._ac_power_percentage and self._ac_power_percentage > 0:
+                    # HVAC action - based on acPower.value ('ON'/'OFF')
+                    if ac_power_value == 'ON':
                         if tado_mode == 'COOL':
                             self._attr_hvac_action = HVACAction.COOLING
                         elif tado_mode == 'HEAT':
@@ -636,8 +652,9 @@ class TadoACClimate(ClimateEntity):
                     else:
                         self._attr_hvac_action = HVACAction.IDLE
                 else:
+                    # Power is OFF - keep last temperature for reference
+                    # Don't set self._attr_target_temperature = None
                     self._attr_hvac_mode = HVACMode.OFF
-                    self._attr_target_temperature = None
                     self._attr_hvac_action = HVACAction.OFF
                 
                 self._attr_available = True
@@ -689,9 +706,28 @@ class TadoACClimate(ClimateEntity):
             await self._async_trigger_immediate_refresh("fan_mode_change")
 
     async def async_set_swing_mode(self, swing_mode: str):
-        """Set new swing mode."""
-        tado_swing = "ON" if swing_mode == SWING_ON else "OFF"
-        if await self._async_set_ac_overlay(vertical_swing=tado_swing):
+        """Set new swing mode.
+        
+        Unified swing dropdown like official Tado integration:
+        - off: verticalSwing=OFF, horizontalSwing=OFF
+        - vertical: verticalSwing=ON, horizontalSwing=OFF
+        - horizontal: verticalSwing=OFF, horizontalSwing=ON
+        - both: verticalSwing=ON, horizontalSwing=ON
+        """
+        if swing_mode == "off":
+            v_swing, h_swing = "OFF", "OFF"
+        elif swing_mode == "vertical":
+            v_swing, h_swing = "ON", "OFF"
+        elif swing_mode == "horizontal":
+            v_swing, h_swing = "OFF", "ON"
+        elif swing_mode == "both":
+            v_swing, h_swing = "ON", "ON"
+        else:
+            # Fallback for legacy SWING_ON/SWING_OFF
+            v_swing = "ON" if swing_mode == SWING_ON else "OFF"
+            h_swing = "OFF"
+        
+        if await self._async_set_ac_overlay(vertical_swing=v_swing, horizontal_swing=h_swing):
             self._attr_swing_mode = swing_mode
             await self._async_trigger_immediate_refresh("swing_mode_change")
     
@@ -711,6 +747,7 @@ class TadoACClimate(ClimateEntity):
         """Set AC overlay with optional parameters.
         
         Uses Tado API v2 format with fanLevel, verticalSwing, horizontalSwing.
+        Only sends fields that are supported by the current mode (per capabilities).
         """
         client = get_async_client(self.hass)
         
@@ -723,13 +760,19 @@ class TadoACClimate(ClimateEntity):
         # Mode
         if mode:
             setting["mode"] = mode
-        elif self._attr_hvac_mode and self._attr_hvac_mode != HVACMode.OFF:
+        elif self._attr_hvac_mode and self._attr_hvac_mode not in (HVACMode.OFF, HVACMode.AUTO):
             setting["mode"] = HA_TO_TADO_HVAC_MODE.get(self._attr_hvac_mode, 'COOL')
         else:
             setting["mode"] = "COOL"
         
-        # Temperature (FAN mode doesn't need it, but DRY does)
-        if setting["mode"] != "FAN":
+        current_mode = setting["mode"]
+        
+        # Get capabilities for current mode to check what fields are supported
+        ac_caps = self._capabilities.get('ac_capabilities') or {}
+        mode_caps = ac_caps.get(current_mode) or {}
+        
+        # Temperature (FAN mode doesn't need it)
+        if current_mode != "FAN":
             if temperature:
                 setting["temperature"] = {"celsius": temperature}
             elif self._attr_target_temperature:
@@ -737,23 +780,32 @@ class TadoACClimate(ClimateEntity):
             else:
                 setting["temperature"] = {"celsius": 24}
         
-        # Fan level - use fanLevel (not fanSpeed) per Tado API v2
-        if fan_level:
-            setting["fanLevel"] = fan_level
-        elif self._attr_fan_mode:
-            setting["fanLevel"] = HA_TO_TADO_FAN.get(self._attr_fan_mode, 'AUTO')
+        # Fan level - only send if mode supports it (DRY mode doesn't have fanLevel)
+        if 'fanLevel' in mode_caps:
+            if fan_level:
+                setting["fanLevel"] = fan_level
+            elif self._attr_fan_mode:
+                setting["fanLevel"] = HA_TO_TADO_FAN.get(self._attr_fan_mode, 'AUTO')
+            else:
+                setting["fanLevel"] = "AUTO"
         
-        # Swing - use verticalSwing/horizontalSwing per Tado API v2
-        if vertical_swing is not None:
-            setting["verticalSwing"] = vertical_swing
-        elif self._attr_swing_mode:
-            setting["verticalSwing"] = "ON" if self._attr_swing_mode == SWING_ON else "OFF"
+        # Swing - only send if mode supports it
+        # Use unified swing mode: off/vertical/horizontal/both
+        if 'verticalSwing' in mode_caps:
+            if vertical_swing is not None:
+                setting["verticalSwing"] = vertical_swing
+            elif self._attr_swing_mode in ("vertical", "both"):
+                setting["verticalSwing"] = "ON"
+            else:
+                setting["verticalSwing"] = "OFF"
         
-        # Horizontal swing - default to OFF if not specified
-        if horizontal_swing is not None:
-            setting["horizontalSwing"] = horizontal_swing
-        else:
-            setting["horizontalSwing"] = "OFF"
+        if 'horizontalSwing' in mode_caps:
+            if horizontal_swing is not None:
+                setting["horizontalSwing"] = horizontal_swing
+            elif self._attr_swing_mode in ("horizontal", "both"):
+                setting["horizontalSwing"] = "ON"
+            else:
+                setting["horizontalSwing"] = "OFF"
         
         # Termination
         if duration_minutes:

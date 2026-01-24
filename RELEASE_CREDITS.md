@@ -4,6 +4,29 @@
 
 ---
 
+## v1.5.4 (2026-01-24) - Complete AC Fix
+
+### Bug Reports & Issue Reporters
+
+**[@neonsp](https://github.com/neonsp)** - [Issue #31](https://github.com/hiall-fyi/tado_ce/issues/31)
+- Comprehensive AC testing and debug output
+- Identified all 6 AC issues (fan/swing state, idle status, DRY mode, temperature, swing reset, power sensor)
+- Provided API response data confirming correct field names (`fanLevel`, `verticalSwing`, `horizontalSwing`, `acPower.value`)
+- Suggested unified swing dropdown matching official integration
+
+### What Was Fixed/Added
+
+- ✅ **Issue #31**: AC fan/swing state not updating - fixed field names
+- ✅ **Issue #31**: AC always showing "idle" - use `acPower.value`
+- ✅ **Issue #31**: DRY mode 422 error - mode-specific payload
+- ✅ **Issue #31**: Temperature disappearing when AC off - preserve value
+- ✅ **Issue #31**: Swing reset when changing settings - preserve unified state
+- ✅ **Issue #31**: AC Power sensor showing 0% - handle `value` vs `percentage`
+- ✅ Unified swing dropdown (off/vertical/horizontal/both)
+- ✅ Entity unique_id stability (use zone_id instead of zone_name)
+
+---
+
 ## v1.5.3 (2026-01-24) - AC Fix & Resume All Schedules
 
 ### Bug Reports & Issue Reporters
@@ -323,19 +346,22 @@
 
 The community continues to shape Tado CE's future! Current discussions:
 
-**Planned for v1.5.0:**
-- Async architecture (migrate from urllib to aiohttp)
-- Centralize all API URLs in const.py
+**Planned for v1.6.0:**
+- Better upgrade path testing (beta releases)
+
+**Completed in v1.5.4:**
+- ✅ AC fan mode controls - @neonsp
+- ✅ AC swing mode controls (unified dropdown) - @neonsp
+- ✅ All AC control issues fixed - @neonsp
 
 **Requested Features:**
-- AC fan mode controls (Auto, Low, Medium, High) - @StreborStrebor
-- AC swing mode controls (Off, Vertical, Horizontal, Both) - @StreborStrebor
 - Boost button entity - @greavous1138
 - Air Comfort sensors (humidity comfort level)
 - Multiple homes support (simultaneous)
 - Max Flow Temperature control (requires OpenTherm) - @ChrisMarriott38
 - Combi boiler mode - @ChrisMarriott38
 - Auto-assign devices to Areas during setup
+- Local API support (reduce cloud dependency) - [Discussion #29](https://github.com/hiall-fyi/tado_ce/discussions/29)
 
 **Want to contribute?** Open an issue or join the discussion on [GitHub](https://github.com/hiall-fyi/tado_ce/issues)!
 

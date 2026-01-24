@@ -809,7 +809,12 @@ class TadoACPowerSensor(TadoBaseSensor):
     def _update_from_zone_data(self, zone_data):
         # Use 'or {}' pattern for null safety (API may return null for these fields)
         activity_data = zone_data.get('activityDataPoints') or {}
-        power = (activity_data.get('acPower') or {}).get('percentage')
+        ac_power = activity_data.get('acPower') or {}
+        # Try percentage first (older API), then value (newer API returns 'ON'/'OFF')
+        power = ac_power.get('percentage')
+        if power is None:
+            value = ac_power.get('value')
+            power = 100 if value == 'ON' else 0
         self._attr_native_value = power if power is not None else 0
 
 class TadoBoilerFlowTemperatureSensor(SensorEntity):
