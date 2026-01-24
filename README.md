@@ -6,7 +6,7 @@
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2026.1.2-blue?style=for-the-badge&logo=home-assistant) ![Tado](https://img.shields.io/badge/Tado-V3%2FV3%2B-orange?style=for-the-badge) ![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)
 
 <!-- Status Badges -->
-![Version](https://img.shields.io/badge/Version-1.5.0-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge) ![Tests](https://img.shields.io/badge/Tests-235%20Passing-success?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-1.5.1-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge) ![Tests](https://img.shields.io/badge/Tests-235%20Passing-success?style=for-the-badge)
 
 <!-- Community Badges -->
 ![GitHub stars](https://img.shields.io/github/stars/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub forks](https://img.shields.io/github/forks/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub issues](https://img.shields.io/github/issues/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub last commit](https://img.shields.io/github/last-commit/hiall-fyi/tado_ce?style=for-the-badge&logo=github)
@@ -653,7 +653,7 @@ Tado CE includes a comprehensive test suite with **235 tests** across 6 test sui
 | Data Loader | 31 | Centralized data loading, null-safe pattern consistency |
 | Upgrade | 38 | All upgrade paths from v1.0.0 to v1.5.0, config migration |
 
-All upgrade paths verified: v1.0.0 → v1.0.1 → v1.1.0 → v1.2.0 → v1.2.1 → v1.4.0 → v1.4.1 → v1.5.0
+All upgrade paths verified: v1.0.0 → v1.0.1 → v1.1.0 → v1.2.0 → v1.2.1 → v1.4.0 → v1.4.1 → v1.5.0 → v1.5.1
 
 ---
 
@@ -690,7 +690,7 @@ If this integration has saved you from rate limit headaches, made your Tado setu
 
 ---
 
-**Version**: 1.5.0  
+**Version**: 1.5.1  
 **Last Updated**: 2026-01-24  
 **Tested On**: Home Assistant 2026.1.2 (HAOS, Docker, Core)
 
