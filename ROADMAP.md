@@ -2,6 +2,16 @@
 
 Feature requests and planned improvements for Tado CE.
 
+## Planned for v1.5.4
+
+- [ ] **AC mode-specific payload** - Only send supported fields per mode (DRY mode doesn't support fanLevel) ([#31](https://github.com/hiall-fyi/tado_ce/issues/31) - @neonsp)
+- [ ] **AC swing/fan state refresh** - Force state update after swing and fan level changes ([#31](https://github.com/hiall-fyi/tado_ce/issues/31) - @neonsp)
+- [ ] **AC AUTO mode fix** - Investigate and fix AUTO mode turning AC off ([#31](https://github.com/hiall-fyi/tado_ce/issues/31) - @neonsp)
+- [ ] **AC hvac_action mapping** - Show correct status (cooling/heating/drying/fan) instead of always "idle" ([#31](https://github.com/hiall-fyi/tado_ce/issues/31) - @neonsp)
+- [ ] **AC unified swing dropdown** - Single dropdown with off/vertical/horizontal/both options like official integration ([#31](https://github.com/hiall-fyi/tado_ce/issues/31) - @neonsp)
+
+---
+
 ## Planned for v1.6.0
 
 - [ ] **Better upgrade path testing** - Release beta versions for community testing before major releases
