@@ -2,6 +2,11 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [1.5.5] - 2026-01-24
+
+- Fixed AC Auto mode turning off AC (removed confusing AUTO option, use Heat/Cool instead)
+- Reduced API calls per state change from 3 to 2 (optimized immediate refresh)
+
 ## [1.5.4] - 2026-01-24
 
 - Fixed all AC control issues (modes, fan, swing, status display)

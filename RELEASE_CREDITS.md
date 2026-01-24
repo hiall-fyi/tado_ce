@@ -4,6 +4,22 @@
 
 ---
 
+## v1.5.5 (2026-01-24) - AC Auto Mode & API Optimization
+
+### Bug Reports & Issue Reporters
+
+**[@neonsp](https://github.com/neonsp)** - [Issue #31](https://github.com/hiall-fyi/tado_ce/issues/31)
+- Reported AC Auto mode turning off AC instead of setting Tado's AUTO mode
+- Identified 3 API calls per state change, suggested optimization
+- Continued testing and feedback throughout v1.5.x AC fixes
+
+### What Was Fixed
+
+- ✅ **Issue #31**: AC Auto mode fix - removed confusing `AUTO` option (use `Heat/Cool` instead)
+- ✅ **Issue #31**: Reduced API calls per state change from 3 to 2 (optimized immediate refresh)
+
+---
+
 ## v1.5.4 (2026-01-24) - Complete AC Fix
 
 ### Bug Reports & Issue Reporters

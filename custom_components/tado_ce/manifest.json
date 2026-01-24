@@ -1,7 +1,7 @@
 {
   "domain": "tado_ce",
   "name": "Tado CE",
-  "version": "1.5.4",
+  "version": "1.5.5",
   "documentation": "https://github.com/hiall-fyi/tado_ce",
   "issue_tracker": "https://github.com/hiall-fyi/tado_ce/issues",
   "requirements": ["aiohttp>=3.8.0"],

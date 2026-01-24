@@ -483,8 +483,10 @@ class TadoACClimate(ClimateEntity):
         self._attr_supported_features = features
         
         # Build HVAC modes based on capabilities
-        # Always include OFF and AUTO (schedule)
-        self._attr_hvac_modes = [HVACMode.OFF, HVACMode.AUTO]
+        # Always include OFF (no AUTO for AC - use HEAT_COOL instead)
+        # HVACMode.AUTO in HA means "follow schedule" which deletes overlay
+        # HVACMode.HEAT_COOL maps to Tado's AUTO mode (heat/cool as needed)
+        self._attr_hvac_modes = [HVACMode.OFF]
         
         # Add modes that exist in capabilities
         for tado_mode in ['COOL', 'HEAT', 'DRY', 'FAN']:
@@ -493,9 +495,9 @@ class TadoACClimate(ClimateEntity):
                 if ha_mode and ha_mode not in self._attr_hvac_modes:
                     self._attr_hvac_modes.append(ha_mode)
         
-        # If AUTO mode exists in capabilities, it maps to HEAT_COOL
+        # If AUTO mode exists in capabilities, add HEAT_COOL
+        # Tado's AUTO = HA's HEAT_COOL (heat or cool as needed)
         if 'AUTO' in ac_caps:
-            # AUTO is already added above, but ensure HEAT_COOL is there
             if HVACMode.HEAT_COOL not in self._attr_hvac_modes:
                 self._attr_hvac_modes.append(HVACMode.HEAT_COOL)
         

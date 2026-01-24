@@ -3,19 +3,15 @@
 Handles immediate data refresh after user-initiated state changes.
 """
 import logging
-import subprocess
 import json
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 from homeassistant.core import HomeAssistant
 
-from .const import DATA_DIR, RATELIMIT_FILE
+from .const import DATA_DIR, RATELIMIT_FILE, ZONES_FILE
 
 _LOGGER = logging.getLogger(__name__)
-
-# Script path - relative to integration directory
-SCRIPT_PATH = str(Path(__file__).parent / "tado_api.py")
 
 # Entity types that should trigger immediate refresh
 REFRESH_ENTITY_TYPES = {
@@ -193,10 +189,10 @@ class ImmediateRefreshHandler:
         _LOGGER.info(f"Triggering immediate refresh for {entity_id} (reason: {reason})")
         
         try:
-            # Execute quick sync in background
-            await self.hass.async_add_executor_job(self._execute_quick_sync)
+            # Fetch only zoneStates using async API (1 API call instead of 2-3)
+            await self._async_fetch_zone_states()
             
-            # CRITICAL FIX: Update both per-entity and global timestamps
+            # Update timestamps
             now = datetime.now()
             self._last_refresh_per_entity[entity_id] = now
             self._global_last_refresh = now
@@ -206,7 +202,7 @@ class ImmediateRefreshHandler:
                 _LOGGER.info(f"Immediate refresh recovered after {self._consecutive_failures} failures")
                 self._consecutive_failures = 0
             
-            _LOGGER.info("Immediate refresh completed successfully")
+            _LOGGER.debug("Immediate refresh completed (1 API call)")
             
         except Exception as e:
             self._consecutive_failures += 1
@@ -216,57 +212,33 @@ class ImmediateRefreshHandler:
             )
             # Don't raise - continue normal polling
     
-    def _execute_quick_sync(self):
-        """Execute quick sync (zone states only) with proper cleanup.
+    async def _async_fetch_zone_states(self):
+        """Fetch zone states using async API and save to file.
         
-        This runs the tado_api.py sync script with --quick flag.
-        Uses Popen for proper process management and cleanup.
+        This is more efficient than subprocess - only 1 API call for zoneStates.
+        Weather and home state are not needed for immediate entity refresh.
         """
-        process = None
-        try:
-            process = subprocess.Popen(
-                ["python3", SCRIPT_PATH, "sync", "--quick"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-            
-            # Wait for completion with timeout
-            stdout, stderr = process.communicate(timeout=30)
-            
-            if process.returncode == 0:
-                _LOGGER.debug(f"Quick sync SUCCESS: {stdout}")
-            else:
-                _LOGGER.warning(f"Quick sync failed (exit {process.returncode}): {stdout} {stderr}")
-                
-        except subprocess.TimeoutExpired:
-            _LOGGER.error("Quick sync timed out after 30 seconds")
-            if process:
-                # Force kill the process
-                process.kill()
-                # CRITICAL FIX: Consume remaining output to prevent pipe buffer issues
-                # and ensure proper process cleanup (prevent zombie)
-                try:
-                    process.communicate(timeout=5)
-                except subprocess.TimeoutExpired:
-                    _LOGGER.error("Failed to cleanup quick sync process after kill")
-                    
-        except Exception as e:
-            _LOGGER.error(f"Quick sync error: {e}")
-            if process and process.poll() is None:
-                # Process still running, kill it
-                try:
-                    process.kill()
-                    process.wait(timeout=5)
-                except Exception as kill_error:
-                    _LOGGER.error(f"Failed to cleanup process: {kill_error}")
+        from .async_api import get_async_client
+        
+        client = get_async_client(self.hass)
+        zones_data = await client.api_call("zoneStates")
+        
+        if zones_data:
+            # Save to zones.json
+            def write_file():
+                with open(ZONES_FILE, 'w') as f:
+                    json.dump(zones_data, f, indent=2)
+            await self.hass.async_add_executor_job(write_file)
+            _LOGGER.debug(f"Zone states refreshed ({len(zones_data.get('zoneStates', {}))} zones)")
+        else:
+            raise Exception("Failed to fetch zone states")
     
     async def async_quick_sync(self):
         """Perform quick sync (zone states only).
         
-        This is an async wrapper for _execute_quick_sync.
+        Uses async API to fetch only zoneStates (1 API call).
         """
-        await self.hass.async_add_executor_job(self._execute_quick_sync)
+        await self._async_fetch_zone_states()
 
 
 # Global handler instance (initialized in __init__.py)

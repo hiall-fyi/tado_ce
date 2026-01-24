@@ -42,6 +42,11 @@ v1.4.0 supports selecting a home during setup, but only one home per integration
 
 ## Completed
 
+### v1.5.5 (2026-01-24)
+
+- [x] **AC Auto mode fix** - Removed confusing `AUTO` option from AC zones (use `Heat/Cool` instead, which correctly maps to Tado's AUTO mode) ([#31](https://github.com/hiall-fyi/tado_ce/issues/31) - @neonsp)
+- [x] **Reduced API calls** - Immediate refresh now uses 1 API call instead of 2-3 (only fetches zoneStates) ([#31](https://github.com/hiall-fyi/tado_ce/issues/31) - @neonsp)
+
 ### v1.5.4 (2026-01-24)
 
 - [x] **AC fan/swing state fix** - Read correct field names (`fanLevel`, `verticalSwing`/`horizontalSwing`) from API response ([#31](https://github.com/hiall-fyi/tado_ce/issues/31) - @neonsp)

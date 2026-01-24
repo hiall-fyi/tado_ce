@@ -3,10 +3,10 @@
 <div align="center">
 
 <!-- Platform Badges -->
-![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2026.1.2-blue?style=for-the-badge&logo=home-assistant) ![Tado](https://img.shields.io/badge/Tado-V3%2FV3%2B-orange?style=for-the-badge) ![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)
+![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2026.1.3-blue?style=for-the-badge&logo=home-assistant) ![Tado](https://img.shields.io/badge/Tado-V3%2FV3%2B-orange?style=for-the-badge) ![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)
 
 <!-- Status Badges -->
-![Version](https://img.shields.io/badge/Version-1.5.4-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge) ![Tests](https://img.shields.io/badge/Tests-235%20Passing-success?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-1.5.5-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge) ![Tests](https://img.shields.io/badge/Tests-235%20Passing-success?style=for-the-badge)
 
 <!-- Community Badges -->
 ![GitHub stars](https://img.shields.io/github/stars/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub forks](https://img.shields.io/github/forks/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub issues](https://img.shields.io/github/issues/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub last commit](https://img.shields.io/github/last-commit/hiall-fyi/tado_ce?style=for-the-badge&logo=github)
@@ -518,9 +518,7 @@ Tado CE includes a comprehensive test suite with **235 tests** across 6 test sui
 | Services | 59 | Service call validation, API endpoints, config flow |
 | Async API | 40 | Async methods, service handlers, blocking code removal |
 | Data Loader | 31 | Centralized data loading, null-safe pattern consistency |
-| Upgrade | 38 | All upgrade paths from v1.0.0 to v1.5.3, config migration |
-
-All upgrade paths verified: v1.0.0 > v1.0.1 > v1.1.0 > v1.2.0 > v1.2.1 > v1.4.0 > v1.4.1 > v1.5.0 > v1.5.1 > v1.5.2 > v1.5.3 > v1.5.4
+| Upgrade | 38 | All upgrade paths from v1.0.0 to v1.5.5, config migration |
 
 ---
 
@@ -557,9 +555,9 @@ Stay caffeinated while coding!
 
 ---
 
-**Version**: 1.5.4  
+**Version**: 1.5.5  
 **Last Updated**: 2026-01-24  
-**Tested On**: Home Assistant 2026.1.2 (HAOS, Docker, Core)
+**Tested On**: Home Assistant 2026.1.3 (HAOS, Docker, Core)
 
 ---
 
