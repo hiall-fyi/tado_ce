@@ -9,24 +9,16 @@ from homeassistant.core import HomeAssistant
 
 from .const import MOBILE_DEVICES_FILE
 from .device_manager import get_hub_device_info
+from .data_loader import load_mobile_devices_file
 
 _LOGGER = logging.getLogger(__name__)
 SCAN_INTERVAL = timedelta(seconds=30)
 
 
-def _load_mobile_devices_file():
-    """Load mobile devices file (blocking)."""
-    try:
-        with open(MOBILE_DEVICES_FILE) as f:
-            return json.load(f)
-    except Exception:
-        return None
-
-
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     """Set up Tado CE device trackers from a config entry."""
     _LOGGER.debug("Tado CE device_tracker: Setting up...")
-    mobile_devices = await hass.async_add_executor_job(_load_mobile_devices_file)
+    mobile_devices = await hass.async_add_executor_job(load_mobile_devices_file)
     
     trackers = []
     
@@ -34,7 +26,7 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
         for device in mobile_devices:
             device_id = device.get('id')
             device_name = device.get('name', f"Device {device_id}")
-            settings = device.get('settings', {})
+            settings = device.get('settings') or {}
             
             # Only create tracker if geo tracking is enabled
             if settings.get('geoTrackingEnabled', False):
@@ -86,7 +78,7 @@ class TadoDeviceTracker(TrackerEntity):
     
     @property
     def extra_state_attributes(self):
-        metadata = self._device_data.get('deviceMetadata', {})
+        metadata = self._device_data.get('deviceMetadata') or {}
         return {
             "device_id": self._device_id,
             "platform": metadata.get('platform'),
@@ -109,7 +101,7 @@ class TadoDeviceTracker(TrackerEntity):
                         
                         if location:
                             self._is_home = location.get('atHome')
-                            self._bearing = location.get('bearingFromHome', {}).get('degrees')
+                            self._bearing = (location.get('bearingFromHome') or {}).get('degrees')
                             self._relative_distance = location.get('relativeDistanceFromHomeFence')
                         else:
                             # No location data - device might not have geo tracking

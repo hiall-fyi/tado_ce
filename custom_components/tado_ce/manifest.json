@@ -1,10 +1,10 @@
 {
   "domain": "tado_ce",
   "name": "Tado CE",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "documentation": "https://github.com/hiall-fyi/tado_ce",
   "issue_tracker": "https://github.com/hiall-fyi/tado_ce/issues",
-  "requirements": [],
+  "requirements": ["aiohttp>=3.8.0"],
   "codeowners": ["@hiall-fyi"],
   "iot_class": "cloud_polling",
   "integration_type": "hub",

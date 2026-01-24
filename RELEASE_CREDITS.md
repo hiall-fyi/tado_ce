@@ -4,6 +4,42 @@
 
 ---
 
+## v1.5.0 (2026-01-24) - Async & Stability Release
+
+### Bug Reports & Issue Reporters
+
+**[@hapklaar](https://github.com/hapklaar)** - [Issue #26](https://github.com/hiall-fyi/tado_ce/issues/26)
+- Reported null value crash in water_heater entities
+- Helped identify the `temperature: null` API response issue for HOT_WATER zones
+
+**[@neonsp](https://github.com/neonsp)** - [Issue #31](https://github.com/hiall-fyi/tado_ce/issues/31)
+- Reported AC zone missing DRY/FAN modes, fan levels, and swing options
+- Provided detailed API response data showing AC capabilities endpoint
+- Helped identify that AC capabilities require separate API endpoint
+
+### Feature Contributors
+
+**[@pisolofin](https://github.com/pisolofin)** - [Issue #24](https://github.com/hiall-fyi/tado_ce/issues/24)
+- Requested `get_temperature_offset` service for automations
+
+**[@ohipe](https://github.com/ohipe)** - [Issue #25](https://github.com/hiall-fyi/tado_ce/issues/25)
+- Requested optional `offset_celsius` attribute on climate entities
+- Identified HVAC mode behavior difference from official integration
+
+**[@beltrao](https://github.com/beltrao)** - [Issue #28](https://github.com/hiall-fyi/tado_ce/issues/28)
+- Requested frequent mobile device sync option for presence automations
+
+### What Was Fixed/Added
+
+- ✅ **Issue #24**: `tado_ce.get_temperature_offset` service
+- ✅ **Issue #25**: Optional `offset_celsius` attribute, HVAC mode logic fix
+- ✅ **Issue #26**: Null value crash fix for water_heater and climate entities
+- ✅ **Issue #27**: Async migration, blocking I/O warning fix
+- ✅ **Issue #28**: Frequent mobile device sync option
+- ✅ **Issue #31**: Full AC capabilities support (DRY/FAN modes, fan levels, swing)
+
+---
+
 ## v1.4.1 (2026-01-23) - Hotfix Release
 
 ### Bug Reports & Issue Reporters
@@ -183,6 +219,12 @@
 ---
 
 ## 🌟 Special Thanks
+
+**Hardware Verification:**
+
+**[@wyx087](https://github.com/wyx087)** - [Discussion #21](https://github.com/hiall-fyi/tado_ce/discussions/21)
+- Verified Tado V2 hardware compatibility
+- Confirmed integration works perfectly with V2 devices
 
 **Community Testers & Feedback Providers:**
 - Users who shared their setup configurations

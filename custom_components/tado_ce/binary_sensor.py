@@ -11,44 +11,17 @@ from homeassistant.core import HomeAssistant
 
 from .const import ZONES_FILE, ZONES_INFO_FILE
 from .device_manager import get_hub_device_info, get_zone_device_info
+from .data_loader import load_zones_file, load_zones_info_file, get_zone_names
 
 _LOGGER = logging.getLogger(__name__)
 SCAN_INTERVAL = timedelta(seconds=30)
 
 
-def _load_zones_file():
-    """Load zones file (blocking)."""
-    try:
-        with open(ZONES_FILE) as f:
-            return json.load(f)
-    except Exception:
-        return None
-
-
-def _load_zones_info_file():
-    """Load zones info file (blocking)."""
-    try:
-        with open(ZONES_INFO_FILE) as f:
-            return json.load(f)
-    except Exception:
-        return None
-
-
-def _get_zone_names():
-    """Load zone names from API data."""
-    try:
-        with open(ZONES_INFO_FILE) as f:
-            zones_info = json.load(f)
-            return {str(z.get('id')): z.get('name', f"Zone {z.get('id')}") for z in zones_info}
-    except Exception:
-        return {}
-
-
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     """Set up Tado CE binary sensors from a config entry."""
     _LOGGER.debug("Tado CE binary_sensor: Setting up...")
-    zone_names = await hass.async_add_executor_job(_get_zone_names)
-    zones_info = await hass.async_add_executor_job(_load_zones_info_file)
+    zone_names = await hass.async_add_executor_job(get_zone_names)
+    zones_info = await hass.async_add_executor_job(load_zones_info_file)
     
     sensors = []
     
@@ -64,7 +37,7 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
             
             # Only add open window for heating zones that support it
             if zone_type == 'HEATING':
-                owd = zone.get('openWindowDetection', {})
+                owd = zone.get('openWindowDetection') or {}
                 if owd.get('supported', False):
                     sensors.append(TadoOpenWindowSensor(zone_id, zone_name, zone_type))
     
@@ -96,7 +69,9 @@ class TadoHomeSensor(BinarySensorEntity):
             with open(ZONES_FILE) as f:
                 data = json.load(f)
                 # Get tado mode from first zone
-                for zone_id, zone_data in data.get('zoneStates', {}).items():
+                # Use 'or {}' pattern for null safety
+                zone_states = data.get('zoneStates') or {}
+                for zone_id, zone_data in zone_states.items():
                     self._tado_mode = zone_data.get('tadoMode')
                     if self._tado_mode:
                         self._attr_is_on = self._tado_mode == 'HOME'
@@ -136,7 +111,9 @@ class TadoOpenWindowSensor(BinarySensorEntity):
         try:
             with open(ZONES_FILE) as f:
                 data = json.load(f)
-                zone_data = data.get('zoneStates', {}).get(self._zone_id)
+                # Use 'or {}' pattern for null safety
+                zone_states = data.get('zoneStates') or {}
+                zone_data = zone_states.get(self._zone_id)
                 
                 if not zone_data:
                     self._attr_available = False

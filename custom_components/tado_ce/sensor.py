@@ -12,6 +12,11 @@ from .const import DOMAIN, ZONES_FILE, ZONES_INFO_FILE, RATELIMIT_FILE, WEATHER_
 from .device_manager import get_hub_device_info, get_zone_device_info
 from .auth_manager import get_auth_manager
 from .const import TADO_AUTH_URL, CLIENT_ID
+from .data_loader import (
+    load_zones_file, load_zones_info_file, load_weather_file,
+    load_config_file, load_ratelimit_file, load_api_call_history_file,
+    get_zone_names as dl_get_zone_names
+)
 
 _LOGGER = logging.getLogger(__name__)
 SCAN_INTERVAL = timedelta(seconds=30)
@@ -38,22 +43,12 @@ _CACHED_HOME_ID = None
 
 def _load_home_id():
     """Load home ID from config file (blocking, run in executor)."""
-    try:
-        with open(CONFIG_FILE) as f:
-            config = json.load(f)
-            return config.get('home_id', 'unknown')
-    except Exception:
-        return 'unknown'
+    config = load_config_file()
+    return config.get('home_id', 'unknown') if config else 'unknown'
 
 def get_zone_names():
     """Load zone names from API data."""
-    try:
-        with open(ZONES_INFO_FILE) as f:
-            zones_info = json.load(f)
-            return {str(z.get('id')): z.get('name', f"Zone {z.get('id')}") for z in zones_info}
-    except Exception as e:
-        _LOGGER.warning(f"Failed to load zone names: {e}")
-        return DEFAULT_ZONE_NAMES
+    return dl_get_zone_names()
 
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     """Set up Tado CE sensors from a config entry."""
@@ -95,8 +90,8 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     
     # Zone sensors
     try:
-        zones_data = await hass.async_add_executor_job(_load_zones_file)
-        zones_info = await hass.async_add_executor_job(_load_zones_info_file)
+        zones_data = await hass.async_add_executor_job(load_zones_file)
+        zones_info = await hass.async_add_executor_job(load_zones_info_file)
         
         # Build zone type map
         zone_types = {}
@@ -104,9 +99,17 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
             zone_types = {str(z.get('id')): z.get('type', 'HEATING') for z in zones_info}
         
         if zones_data:
-            for zone_id, zone_data in zones_data.get('zoneStates', {}).items():
+            # Use 'or {}' pattern for null safety
+            zone_states = zones_data.get('zoneStates') or {}
+            for zone_id, zone_data in zone_states.items():
                 zone_type = zone_types.get(zone_id, 'HEATING')
                 zone_name = zone_names.get(zone_id, f"Zone {zone_id}")
+                
+                # Check if zone has temperature sensor data
+                # Use 'or {}' pattern for null safety
+                sensor_data = zone_data.get('sensorDataPoints') or {}
+                inside_temp = sensor_data.get('insideTemperature') or {}
+                has_temperature = inside_temp.get('celsius') is not None
                 
                 if zone_type == 'HEATING':
                     sensors.extend([
@@ -125,17 +128,19 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
                         TadoOverlaySensor(zone_id, zone_name, zone_type),
                     ])
                 elif zone_type == 'HOT_WATER':
-                    sensors.extend([
-                        TadoTemperatureSensor(zone_id, zone_name, zone_type),
-                        TadoOverlaySensor(zone_id, zone_name, zone_type),
-                    ])
+                    # Only create temperature sensor if zone has temperature data
+                    # Many hot water zones (combi boilers) don't have temperature sensors
+                    if has_temperature:
+                        sensors.append(TadoTemperatureSensor(zone_id, zone_name, zone_type))
+                    sensors.append(TadoOverlaySensor(zone_id, zone_name, zone_type))
+                    sensors.append(TadoHotWaterPowerSensor(zone_id, zone_name, zone_type))
     except Exception as e:
         _LOGGER.error(f"Failed to load zones: {e}")
     
     # Device sensors (battery + connection) - track seen serials to avoid duplicates
     seen_serials = set()
     try:
-        zones_info = await hass.async_add_executor_job(_load_zones_info_file)
+        zones_info = await hass.async_add_executor_job(load_zones_info_file)
         if zones_info:
             for zone in zones_info:
                 zone_id = str(zone.get('id'))
@@ -157,37 +162,6 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     async_add_entities(sensors, True)
     _LOGGER.info(f"Tado CE sensors loaded: {len(sensors)}")
 
-def _load_zones_file():
-    """Load zones file (blocking)."""
-    try:
-        with open(ZONES_FILE) as f:
-            return json.load(f)
-    except Exception:
-        return None
-
-def _load_zones_info_file():
-    """Load zones info file (blocking)."""
-    try:
-        with open(ZONES_INFO_FILE) as f:
-            return json.load(f)
-    except Exception:
-        return None
-
-def _load_weather_file():
-    """Load weather file (blocking)."""
-    try:
-        with open(WEATHER_FILE) as f:
-            return json.load(f)
-    except Exception:
-        return None
-
-def _load_mobile_devices_file():
-    """Load mobile devices file (blocking)."""
-    try:
-        with open(MOBILE_DEVICES_FILE) as f:
-            return json.load(f)
-    except Exception:
-        return None
 
 def _has_boiler_flow_temperature_data():
     """Check if any zone has boiler flow temperature data (requires OpenTherm).
@@ -200,12 +174,12 @@ def _has_boiler_flow_temperature_data():
         with open(ZONES_FILE) as f:
             data = json.load(f)
         
-        for zone_id, zone_data in data.get('zoneStates', {}).items():
-            flow_temp = (
-                zone_data.get('activityDataPoints', {})
-                .get('boilerFlowTemperature', {})
-                .get('celsius')
-            )
+        # Use 'or {}' pattern for null safety
+        zone_states = data.get('zoneStates') or {}
+        for zone_id, zone_data in zone_states.items():
+            # Use 'or {}' pattern for null safety
+            activity_data = zone_data.get('activityDataPoints') or {}
+            flow_temp = (activity_data.get('boilerFlowTemperature') or {}).get('celsius')
             if flow_temp is not None:
                 _LOGGER.debug(f"Found boilerFlowTemperature in zone {zone_id}: {flow_temp}°C")
                 return True
@@ -237,6 +211,7 @@ class TadoHomeIdSensor(SensorEntity):
                 self._attr_available = self._attr_native_value is not None
         except Exception:
             self._attr_available = False
+
 
 class TadoApiUsageSensor(SensorEntity):
     """Sensor for Tado API usage tracking."""
@@ -617,7 +592,8 @@ class TadoOutsideTemperatureSensor(SensorEntity):
         try:
             with open(WEATHER_FILE) as f:
                 data = json.load(f)
-                temp_data = data.get('outsideTemperature', {})
+                # Use 'or {}' pattern for null safety
+                temp_data = data.get('outsideTemperature') or {}
                 self._attr_native_value = temp_data.get('celsius')
                 self._timestamp = temp_data.get('timestamp')
                 self._attr_available = self._attr_native_value is not None
@@ -645,7 +621,8 @@ class TadoSolarIntensitySensor(SensorEntity):
         try:
             with open(WEATHER_FILE) as f:
                 data = json.load(f)
-                solar_data = data.get('solarIntensity', {})
+                # Use 'or {}' pattern for null safety
+                solar_data = data.get('solarIntensity') or {}
                 self._attr_native_value = solar_data.get('percentage')
                 self._timestamp = solar_data.get('timestamp')
                 self._attr_available = self._attr_native_value is not None
@@ -694,7 +671,8 @@ class TadoWeatherStateSensor(SensorEntity):
         try:
             with open(WEATHER_FILE) as f:
                 data = json.load(f)
-                weather_data = data.get('weatherState', {})
+                # Use 'or {}' pattern for null safety
+                weather_data = data.get('weatherState') or {}
                 self._raw_state = weather_data.get('value')
                 self._timestamp = weather_data.get('timestamp')
                 self._attr_native_value = WEATHER_STATE_MAP.get(self._raw_state, self._raw_state)
@@ -721,7 +699,9 @@ class TadoBaseSensor(SensorEntity):
         try:
             with open(ZONES_FILE) as f:
                 data = json.load(f)
-                return data.get('zoneStates', {}).get(self._zone_id)
+                # Use 'or {}' pattern for null safety
+                zone_states = data.get('zoneStates') or {}
+                return zone_states.get(self._zone_id)
         except Exception:
             return None
     
@@ -748,11 +728,22 @@ class TadoTemperatureSensor(TadoBaseSensor):
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_state_class = "measurement"
     
+    def update(self):
+        """Update temperature sensor - mark unavailable if no temperature data."""
+        zone_data = self._get_zone_data()
+        if zone_data:
+            self._update_from_zone_data(zone_data)
+            # Only mark available if we actually have temperature data
+            # HOT_WATER zones (combi boilers) often don't have temperature sensors
+            self._attr_available = self._attr_native_value is not None
+        else:
+            self._attr_available = False
+    
     def _update_from_zone_data(self, zone_data):
+        # Use 'or {}' pattern for null safety (API may return null for these fields)
+        sensor_data = zone_data.get('sensorDataPoints') or {}
         self._attr_native_value = (
-            zone_data.get('sensorDataPoints', {})
-            .get('insideTemperature', {})
-            .get('celsius')
+            (sensor_data.get('insideTemperature') or {}).get('celsius')
         )
 
 class TadoHumiditySensor(TadoBaseSensor):
@@ -767,11 +758,22 @@ class TadoHumiditySensor(TadoBaseSensor):
         self._attr_native_unit_of_measurement = PERCENTAGE
         self._attr_state_class = "measurement"
     
+    def update(self):
+        """Update humidity sensor - mark unavailable if no humidity data."""
+        zone_data = self._get_zone_data()
+        if zone_data:
+            self._update_from_zone_data(zone_data)
+            # Only mark available if we actually have humidity data
+            # Some zones may not have humidity sensors
+            self._attr_available = self._attr_native_value is not None
+        else:
+            self._attr_available = False
+    
     def _update_from_zone_data(self, zone_data):
+        # Use 'or {}' pattern for null safety (API may return null for these fields)
+        sensor_data = zone_data.get('sensorDataPoints') or {}
         self._attr_native_value = (
-            zone_data.get('sensorDataPoints', {})
-            .get('humidity', {})
-            .get('percentage')
+            (sensor_data.get('humidity') or {}).get('percentage')
         )
 
 class TadoHeatingPowerSensor(TadoBaseSensor):
@@ -787,11 +789,9 @@ class TadoHeatingPowerSensor(TadoBaseSensor):
         self._attr_state_class = "measurement"
     
     def _update_from_zone_data(self, zone_data):
-        power = (
-            zone_data.get('activityDataPoints', {})
-            .get('heatingPower', {})
-            .get('percentage')
-        )
+        # Use 'or {}' pattern for null safety (API may return null for these fields)
+        activity_data = zone_data.get('activityDataPoints') or {}
+        power = (activity_data.get('heatingPower') or {}).get('percentage')
         self._attr_native_value = power if power is not None else 0
 
 class TadoACPowerSensor(TadoBaseSensor):
@@ -807,11 +807,9 @@ class TadoACPowerSensor(TadoBaseSensor):
         self._attr_state_class = "measurement"
     
     def _update_from_zone_data(self, zone_data):
-        power = (
-            zone_data.get('activityDataPoints', {})
-            .get('acPower', {})
-            .get('percentage')
-        )
+        # Use 'or {}' pattern for null safety (API may return null for these fields)
+        activity_data = zone_data.get('activityDataPoints') or {}
+        power = (activity_data.get('acPower') or {}).get('percentage')
         self._attr_native_value = power if power is not None else 0
 
 class TadoBoilerFlowTemperatureSensor(SensorEntity):
@@ -846,12 +844,12 @@ class TadoBoilerFlowTemperatureSensor(SensorEntity):
                 data = json.load(f)
             
             # Look for boilerFlowTemperature in any zone
-            for zone_id, zone_data in data.get('zoneStates', {}).items():
-                flow_temp = (
-                    zone_data.get('activityDataPoints', {})
-                    .get('boilerFlowTemperature', {})
-                    .get('celsius')
-                )
+            # Use 'or {}' pattern for null safety
+            zone_states = data.get('zoneStates') or {}
+            for zone_id, zone_data in zone_states.items():
+                # Use 'or {}' pattern for null safety
+                activity_data = zone_data.get('activityDataPoints') or {}
+                flow_temp = (activity_data.get('boilerFlowTemperature') or {}).get('celsius')
                 if flow_temp is not None:
                     self._attr_native_value = flow_temp
                     self._source_zone = zone_id
@@ -879,9 +877,10 @@ class TadoTargetTempSensor(TadoBaseSensor):
         self._attr_icon = "mdi:thermometer-check"
     
     def _update_from_zone_data(self, zone_data):
-        setting = zone_data.get('setting', {})
+        # Use 'or {}' pattern for null safety (API may return null for setting)
+        setting = zone_data.get('setting') or {}
         if setting.get('power') == 'ON':
-            self._attr_native_value = setting.get('temperature', {}).get('celsius')
+            self._attr_native_value = (setting.get('temperature') or {}).get('celsius')
         else:
             self._attr_native_value = None
 
@@ -906,7 +905,9 @@ class TadoOverlaySensor(TadoBaseSensor):
     
     def _update_from_zone_data(self, zone_data):
         overlay_type = zone_data.get('overlayType')
-        power = zone_data.get('setting', {}).get('power')
+        # Use 'or {}' pattern for null safety
+        setting = zone_data.get('setting') or {}
+        power = setting.get('power')
         
         if power == 'OFF':
             self._attr_native_value = "Off"
@@ -919,15 +920,31 @@ class TadoOverlaySensor(TadoBaseSensor):
         next_change = zone_data.get('nextScheduleChange')
         if next_change:
             self._next_change = next_change.get('start')
-            setting = next_change.get('setting')
-            if setting:
-                temp = setting.get('temperature')
+            next_setting = next_change.get('setting')
+            if next_setting:
+                temp = next_setting.get('temperature')
                 self._next_temp = temp.get('celsius') if temp else None
             else:
                 self._next_temp = None
         else:
             self._next_change = None
             self._next_temp = None
+
+
+class TadoHotWaterPowerSensor(TadoBaseSensor):
+    """Hot water power sensor (ON/OFF)."""
+    
+    def __init__(self, zone_id: str, zone_name: str, zone_type: str = "HOT_WATER"):
+        super().__init__(zone_id, zone_name, zone_type)
+        self._attr_name = f"{zone_name} Power"
+        self._attr_unique_id = f"tado_ce_zone_{zone_id}_power"
+        self._attr_icon = "mdi:power"
+    
+    def _update_from_zone_data(self, zone_data):
+        setting = zone_data.get('setting') or {}
+        power = setting.get('power')
+        self._attr_native_value = power if power else "Unknown"
+
 
 # ============ Device Sensors ============
 
@@ -955,8 +972,8 @@ class TadoBatterySensor(SensorEntity):
         
         # Extra attributes
         self._firmware = device.get('currentFwVersion')
-        self._connection_state = device.get('connectionState', {}).get('value')
-        self._connection_timestamp = device.get('connectionState', {}).get('timestamp')
+        self._connection_state = (device.get('connectionState') or {}).get('value')
+        self._connection_timestamp = (device.get('connectionState') or {}).get('timestamp')
     
     @property
     def icon(self):
@@ -983,7 +1000,8 @@ class TadoBatterySensor(SensorEntity):
                         if device.get('shortSerialNo') == self._device_serial:
                             self._attr_native_value = device.get('batteryState', 'unknown')
                             self._firmware = device.get('currentFwVersion')
-                            conn = device.get('connectionState', {})
+                            # Use 'or {}' pattern for null safety
+                            conn = device.get('connectionState') or {}
                             self._connection_state = conn.get('value')
                             self._connection_timestamp = conn.get('timestamp')
                             self._attr_available = True
@@ -1013,7 +1031,8 @@ class TadoDeviceConnectionSensor(SensorEntity):
         # Use zone device info instead of hub device info
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type)
         
-        conn = device.get('connectionState', {})
+        # Use 'or {}' pattern for null safety
+        conn = device.get('connectionState') or {}
         self._attr_native_value = "Online" if conn.get('value') else "Offline"
         self._connection_timestamp = conn.get('timestamp')
         self._firmware = device.get('currentFwVersion')
@@ -1040,7 +1059,8 @@ class TadoDeviceConnectionSensor(SensorEntity):
                 for zone in zones_info:
                     for device in zone.get('devices', []):
                         if device.get('shortSerialNo') == self._device_serial:
-                            conn = device.get('connectionState', {})
+                            # Use 'or {}' pattern for null safety
+                            conn = device.get('connectionState') or {}
                             self._attr_native_value = "Online" if conn.get('value') else "Offline"
                             self._connection_timestamp = conn.get('timestamp')
                             self._firmware = device.get('currentFwVersion')

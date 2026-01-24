@@ -5,6 +5,78 @@ All notable changes to Tado CE will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-01-24
+
+> **🚀 Major Code Quality Release**: This release represents a near-complete rewrite of the codebase with async architecture, comprehensive null-safe patterns, and centralized data loading. The focus is on stability, maintainability, and future-proofing.
+
+### Highlights
+
+- **Async Architecture**: Complete migration from blocking urllib to async aiohttp for all entity control methods
+- **Null-Safe Patterns**: Comprehensive audit and fix of all API data parsing to handle null values gracefully
+- **Centralized Data Loading**: New `data_loader.py` module eliminates code duplication across entity files
+- **235 Tests Passing**: Full test coverage for all new features and fixes
+
+### Added
+- **`tado_ce.get_temperature_offset` service**: On-demand fetch of current temperature offset for automations. Returns offset value via service response for use in templates (Issue #24 - @pisolofin).
+- **Optional `offset_celsius` attribute**: Enable in integration options to add temperature offset attribute to climate entities. Synced during full sync (every 6 hours). Uses 1 API call per device (Issue #25 - @ohipe).
+- **Frequent mobile device sync option**: New toggle "Sync Mobile Devices Frequently" - when enabled, mobile devices sync every quick sync instead of every 6 hours. Useful for presence-based automations (Issue #28 - @beltrao).
+- **New `data_loader.py` module**: Centralized file loading helpers used by `sensor.py`, `climate.py`, `water_heater.py`. Eliminates duplicate code and ensures consistent error handling.
+
+### Changed
+- **HVAC mode logic**: Now matches official Tado integration behavior. Shows `auto` when following schedule (even if scheduled OFF). This helps distinguish "OFF by schedule" vs "OFF by manual override" (Issue #25 - @ohipe).
+- **Async API architecture**: Migrated entity control methods from blocking urllib to async aiohttp. Climate, water heater, and switch entities now use non-blocking API calls, improving Home Assistant responsiveness and eliminating potential event loop blocking warnings (Issue #27).
+- **Improved unload cleanup**: `async_unload_entry()` now properly cleans up polling timer, async client, immediate refresh handler, and hass.data to prevent memory leaks on reload.
+
+### Fixed
+- **Blocking I/O warning for manifest.json**: Version is now loaded at module import time instead of during entity creation, eliminating the blocking I/O warning in Home Assistant logs (Issue #27).
+- **Memory leak on integration reload**: Fixed global `_async_clients` dictionary not being cleaned up when integration is reloaded or removed.
+- **Token refresh race condition**: Moved all token validity checks inside the async lock to prevent multiple coroutines from triggering duplicate token refreshes simultaneously.
+- **Sync/async deadlock risk in water_heater**: Removed dangerous sync wrapper methods that could block the event loop.
+- **Subprocess zombie process on timeout**: Fixed `_execute_quick_sync()` to properly consume stdout/stderr after killing timed-out process.
+- **Hardcoded paths**: Replaced all hardcoded `/config/custom_components/...` paths with dynamic paths using `Path(__file__).parent` and environment variable support (`TADO_CE_CONFIG_DIR`).
+- **HOT_WATER zone sensors showing "unknown"**: Temperature and humidity sensors for zones without sensor data (e.g., combi boiler hot water zones) now correctly show "unavailable" instead of "unknown". Existing entities will show unavailable; new installations won't create these sensors.
+- **Null value crash in water_heater and climate entities** (Issue #26 - @hapklaar): Fixed `'NoneType' object has no attribute 'get'` error when API returns `temperature: null` (e.g., HOT_WATER zones with power OFF). Now safely handles null values in `setting.temperature`, `bearingFromHome`, and `connectionState` fields.
+
+### Added (AC Capabilities)
+- **Full AC mode support** (Issue #31 - @neonsp): AC zones now properly show DRY and FAN modes when supported by your AC unit. Previously only showed Cool/Heat/Auto.
+- **AC fan level support**: Fan modes now correctly map Tado's SILENT/LEVEL1-5/AUTO to Home Assistant's Low/Medium/High/Auto.
+- **AC swing support**: Swing modes (vertical/horizontal) now available when supported by your AC unit.
+- **AC temperature range from API**: Min/max temperature and step size now read from actual AC capabilities instead of hardcoded values.
+
+### Added (Hot Water)
+- **Hot water temperature control** (Discussion #21 - @wyx087): Hot water zones with temperature support (e.g., hot water tanks) now show target temperature and allow temperature adjustment. Auto-detected based on API response.
+- **Hot water power sensor**: New sensor showing ON/OFF status for hot water zones.
+
+### Code Quality (Internal)
+
+This release includes a comprehensive engineering audit with focus on stability and maintainability:
+
+- **Null-Safe Patterns**: All `.get('key', {})` patterns replaced with `(data.get('key') or {})` pattern across 7 files to handle API null values correctly
+- **Centralized Data Loading**: New `data_loader.py` module with `load_zones_file()`, `load_zones_info_file()`, `load_config_file()`, `load_weather_file()`, `get_zone_names()`, `get_zone_types()`, `get_zone_data()` helpers
+- **Consistent Error Handling**: All file loading operations now use centralized helpers with proper exception handling
+- **Files Refactored**: `sensor.py`, `climate.py`, `water_heater.py`, `binary_sensor.py`, `switch.py`, `device_tracker.py`, `data_loader.py`
+
+### Technical
+- New `async_api.py` module with `TadoAsyncClient` class using aiohttp
+- Climate entities: `async_set_temperature`, `async_set_hvac_mode`, `async_set_preset_mode`, `async_set_timer`
+- Water heater entities: `async_set_operation_mode`, `async_set_timer`
+- Switch entities: `async_turn_on`, `async_turn_off` for Away Mode, Early Start, Child Lock
+- Automatic token refresh with caching (5-minute cache duration)
+- Rate limit header parsing for future quota management
+- New `cleanup_async_client()` function in `async_api.py`
+- New `cleanup_handler()` function in `immediate_refresh_handler.py`
+- `const.py` now supports `TADO_CE_CONFIG_DIR` environment variable for testing/development
+- Added explicit `aiohttp>=3.8.0` requirement in manifest.json
+
+### Community Credits
+- **Issue #24**: @pisolofin (get_temperature_offset service request)
+- **Issue #25**: @ohipe (offset attribute and HVAC mode behavior)
+- **Issue #26**: @hapklaar (null value crash in water_heater)
+- **Issue #27**: (blocking I/O warning fix, async migration)
+- **Issue #28**: @beltrao (frequent mobile device sync)
+- **Issue #31**: @neonsp (AC modes, fan levels, swing support)
+- **Discussion #21**: @wyx087 (hot water temperature control discovery)
+
 ## [1.4.1] - 2026-01-23
 
 ### Fixed

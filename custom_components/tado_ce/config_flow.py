@@ -313,6 +313,8 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         options = self.config_entry.options
         weather_enabled = options.get('weather_enabled', False)
         mobile_devices_enabled = options.get('mobile_devices_enabled', False)
+        mobile_devices_frequent_sync = options.get('mobile_devices_frequent_sync', False)
+        offset_enabled = options.get('offset_enabled', False)
         test_mode_enabled = options.get('test_mode_enabled', False)
         day_start_hour = options.get('day_start_hour', 7)
         night_start_hour = options.get('night_start_hour', 23)
@@ -326,6 +328,8 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             data_schema=vol.Schema({
                 vol.Optional('weather_enabled', default=weather_enabled): bool,
                 vol.Optional('mobile_devices_enabled', default=mobile_devices_enabled): bool,
+                vol.Optional('mobile_devices_frequent_sync', default=mobile_devices_frequent_sync): bool,
+                vol.Optional('offset_enabled', default=offset_enabled): bool,
                 vol.Optional('test_mode_enabled', default=test_mode_enabled): bool,
                 vol.Optional('api_history_retention_days', default=api_history_retention_days): vol.All(
                     int, vol.Range(min=0, max=365)

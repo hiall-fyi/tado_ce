@@ -6,14 +6,14 @@
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2026.1.2-blue?style=for-the-badge&logo=home-assistant) ![Tado](https://img.shields.io/badge/Tado-V3%2FV3%2B-orange?style=for-the-badge) ![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)
 
 <!-- Status Badges -->
-![Version](https://img.shields.io/badge/Version-1.4.1-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge) ![Tests](https://img.shields.io/badge/Tests-Passing-success?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-1.5.0-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge) ![Tests](https://img.shields.io/badge/Tests-235%20Passing-success?style=for-the-badge)
 
 <!-- Community Badges -->
 ![GitHub stars](https://img.shields.io/github/stars/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub forks](https://img.shields.io/github/forks/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub issues](https://img.shields.io/github/issues/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub last commit](https://img.shields.io/github/last-commit/hiall-fyi/tado_ce?style=for-the-badge&logo=github)
 
 **A lightweight custom integration for Tado smart thermostats with real API rate limit tracking from Tado's response headers.**
 
-[Features](#-features) • [Quick Start](#-quick-start) • [Entities](#-entities) • [Services](#-services) • [Troubleshooting](#-troubleshooting)
+[Features](#-features) • [Quick Start](#-quick-start) • [Entities](#-entities) • [Services](#-services) • [Troubleshooting](#-troubleshooting) • [Discussions](https://github.com/hiall-fyi/tado_ce/discussions)
 
 </div>
 
@@ -97,13 +97,16 @@ The official Home Assistant Tado integration doesn't show your actual API usage 
 | 🚿 **Hot Water Modes** | Enhanced AUTO/HEAT/OFF modes with configurable timer and state detection (v1.2.0) |
 | 🔘 **Hot Water Presets** | Quick-access timer buttons (30/60/90 min) for hot water (v1.2.0) |
 | 🌡️ **Boiler Flow Temp** | Auto-detected boiler flow temperature sensor for OpenTherm systems (v1.4.0) |
+| 🔧 **Get Temperature Offset** | Service to fetch current offset for use in automations (v1.5.0) |
+| 📍 **Frequent Mobile Sync** | Optional toggle to sync mobile devices every quick sync for presence automations (v1.5.0) |
+| ⚡ **Full Async Architecture** | Non-blocking API calls for better Home Assistant responsiveness (v1.5.0) |
 
 ---
 
 ## 📋 Prerequisites
 
 - Home Assistant 2024.1 or later (tested on 2026.1.2)
-- Tado account with V3/V3+ devices
+- Tado account with V2/V3/V3+ devices
 
 ---
 
@@ -139,163 +142,7 @@ That's it! No SSH required. The integration handles everything through Tado's se
 
 ---
 
-## 🔄 Migrating from v1.1.0 to v1.2.x
-
-**⚠️ IMPORTANT: v1.2.0+ includes breaking changes. Please read carefully before upgrading.**
-
-### What's Changed
-
-1. **Service Name Change** (Breaking Change)
-   - `set_temperature_offset` renamed to `set_climate_temperature_offset`
-   - **Action Required**: Update your automations to use the new service name
-   - Parameters remain unchanged
-   
-   ```yaml
-   # Old (v1.1.0)
-   service: tado_ce.set_temperature_offset
-   
-   # New (v1.2.0)
-   service: tado_ce.set_climate_temperature_offset
-   ```
-
-2. **Zone-Based Devices** (Breaking Change)
-   - Each Tado zone now appears as a separate device
-   - Zone entities are assigned to their respective zone devices
-   - Hub entities remain on the Tado CE Hub device
-   - **Entity IDs are preserved** - automations continue to work
-
-3. **Improved Entity Names**
-   - Zone entities no longer have "Tado CE" prefix
-   - Example: "Living Room Temperature" instead of "Tado CE Living Room Temperature"
-   - Hub entities retain "Tado CE" prefix
-
-### Migration Steps
-
-**⚠️ If upgrading from v1.1.0, the integration will automatically clean up any duplicate hubs. This issue is fixed in v1.2.1.**
-
-**Recommended Upgrade Path (Clean Install):**
-
-1. **Backup Your Configuration**
-   - Export automations and dashboards
-   - Take screenshots of your current setup
-
-2. **Remove Old Integration**
-   - Settings → Devices & Services → Tado CE → "..." → Delete
-   - If you see two Tado CE entries, delete both
-
-3. **Restart Home Assistant**
-
-4. **Re-add the Integration**
-   - Settings → Devices & Services → Add Integration → Tado CE
-   - Your entity IDs will be preserved
-
-**Alternative: Update in Place (v1.2.1+)**
-
-If you're upgrading to v1.2.1 or later, the integration includes automatic migration:
-
-1. **Update Automations First**
-   - Search for `tado_ce.set_temperature_offset`
-   - Replace with `tado_ce.set_climate_temperature_offset`
-   - Update hot water automations: `operation_mode: "on"` → `operation_mode: "heat"`
-
-2. **Update via HACS**
-   - HACS → Integrations → Tado CE → Update
-   - Restart Home Assistant
-   - Migration will run automatically
-
-3. **Verify Everything Works**
-   - Check you only have ONE Tado CE hub
-   - Verify all zones are visible
-   - Test manual controls
-
-### Troubleshooting Upgrade Issues
-
-**Problem: Two Tado CE Hubs After Upgrade**
-
-This was an issue when upgrading from v1.1.0 to v1.2.0. **Fixed in v1.2.1** with automatic cleanup.
-
-**If you're on v1.2.1+**: The integration will automatically remove duplicate entries on startup.
-
-**If you're still on v1.2.0 with duplicates**: Update to v1.2.1 first, or:
-1. Remove BOTH integration entries (Settings → Devices & Services → Tado CE → Delete)
-2. Restart Home Assistant
-3. Re-add the integration
-
-**Problem: Missing zones_info.json Error**
-
-```
-Failed to load zone names: [Errno 2] No such file or directory: 
-'/config/custom_components/tado_ce/data/zones_info.json'
-```
-
-**Solution:**
-- This file is created automatically on first sync
-- If error persists, restart Home Assistant to trigger a full sync
-
-**Problem: All Entities Still Have "Tado CE" Prefix**
-
-This means the old integration entry is still active.
-
-**Solution:**
-1. Remove all Tado CE integration entries
-2. Restart Home Assistant
-3. Re-add the integration
-
-### Update Automations
-   - Search for `tado_ce.set_temperature_offset`
-   - Replace with `tado_ce.set_climate_temperature_offset`
-   - Update hot water automations: `operation_mode: "on"` → `operation_mode: "heat"`
-   
-   **Hot Water Mode Change Example:**
-   ```yaml
-   # Old (v1.1.0)
-   service: water_heater.set_operation_mode
-   target:
-     entity_id: water_heater.utility
-   data:
-     operation_mode: "on"
-   
-   # New (v1.2.0)
-   service: water_heater.set_operation_mode
-   target:
-     entity_id: water_heater.utility
-   data:
-     operation_mode: "heat"
-   ```
-
-3. **Upgrade the Integration**
-   - Update via HACS or manual installation
-   - Restart Home Assistant
-
-4. **Verify Everything Works**
-   - Check all automations are working
-   - Verify dashboard cards show correct data
-   - Test manual controls
-
-### What You'll See After Upgrade
-
-- ✅ New devices appear for each zone (e.g., "Living Room", "Bedroom")
-- ✅ Entities move from hub device to zone devices
-- ✅ Entity names are cleaner (no "Tado CE" prefix for zones)
-- ✅ All entity IDs remain the same
-- ✅ Automations continue to work (after service name update)
-
-### Need Help?
-
-See the migration guide above for detailed instructions on updating your automations and configuration.
-
----
-
-### Visual Guide: Zone-Based Devices
-
-<div align="center">
-  <img src="images/zone-devices.png" alt="Zone-Based Device Organization" width="800">
-  <p><em>Each Tado zone appears as a separate device with clean entity names</em></p>
-</div>
-
----
-
-### 4. Verify Success
+### 3. Verify Success
 
 Check your Home Assistant logs (**Settings → System → Logs**). A successful setup looks like:
 
@@ -328,48 +175,53 @@ After installation, you can configure Tado CE by clicking the **gear icon** on t
 
 #### API Optimization
 
-**Enable Weather Sensors**
+**Enable Weather Sensors** (v1.2.0)
 - **Unchecked** (default): Weather sensors disabled, saves 1 API call per sync
 - **Checked**: Weather sensors enabled (outside temperature, solar intensity, weather condition)
 
-**Enable Mobile Device Tracking**
-- **Checked** (default): Mobile device tracking enabled (device tracker entities)
-- **Unchecked**: Mobile device tracking disabled, saves 1 API call per full sync
+**Enable Mobile Device Tracking** (v1.2.0)
+- **Unchecked** (default): Mobile device tracking disabled, saves 1 API call per full sync
+- **Checked**: Mobile device tracking enabled (device tracker entities)
 
-**Enable Test Mode (100 API call limit)**
+**Sync Mobile Devices Frequently** (v1.5.0)
+- **Unchecked** (default): Mobile devices sync every 6 hours (full sync only)
+- **Checked**: Mobile devices sync every quick sync - useful for presence-based automations
+
+**Enable Temperature Offset Attribute** (v1.5.0)
+- **Unchecked** (default): No offset attribute on climate entities
+- **Checked**: Adds `offset_celsius` attribute to climate entities (synced every 6 hours, uses 1 API call per device)
+
+**Enable Test Mode (100 API call limit)** (v1.2.0)
 - **Unchecked** (default): Normal operation with your actual API limit
 - **Checked**: Simulates post-grace period with 100 call limit for testing
 
-**API History Retention (days, 0=forever)**
+**API History Retention (days, 0=forever)** (v1.2.0)
 - **Default**: 14 days
 - **0**: Keep forever
 - **Number**: Days to keep API call history
 
-#### Polling Configuration
+#### Polling Configuration (v1.2.0)
 
 **Day Start Hour (0-23)**
-- **Checkbox checked**: Use your custom hour (slider value)
-- **Checkbox unchecked**: Use default (7am)
+- **Default**: 7am
 - Defines when "day" period starts for smart polling
 
 **Night Start Hour (0-23)**
-- **Checkbox checked**: Use your custom hour (slider value)
-- **Checkbox unchecked**: Use default (11pm)
+- **Default**: 11pm
 - Defines when "night" period starts for smart polling
+- **Tip** (v1.4.0): Set Day = Night for uniform 24/7 polling
 
 **Custom Day Polling Interval (minutes, optional)**
 - **Empty**: Use smart polling based on API quota
 - **Number (1-1440)**: Override smart polling with fixed interval for day period
-- Warning shown if interval may exceed API quota
 
 **Custom Night Polling Interval (minutes, optional)**
 - **Empty**: Use smart polling based on API quota
 - **Number (1-1440)**: Override smart polling with fixed interval for night period
-- Warning shown if interval may exceed API quota
 
 **Note**: When custom intervals are not set, Tado CE uses smart polling that automatically adjusts based on your API quota. See [Smart Polling](#️-smart-polling) section for details.
 
-#### Hot Water Settings
+#### Hot Water Settings (v1.2.0)
 
 **Hot Water Timer Duration (minutes)**
 - **Default**: 60 minutes
@@ -381,167 +233,11 @@ After installation, you can configure Tado CE by clicking the **gear icon** on t
   <p><em>Advanced configuration options for API optimization, polling, and hot water settings</em></p>
 </div>
 
-### 🔍 Verifying Configuration Changes
-
-**Important**: Configuration changes take effect **immediately** without requiring a Home Assistant restart. The integration automatically reloads when you save options.
-
-#### How to Verify Options Are Working
-
-**1. Test Mode Verification**
-
-When Test Mode is enabled, check the logs to confirm it's active:
-
-```bash
-# SSH into Home Assistant
-ha core logs | grep -i "test mode"
-```
-
-**Example: Enabling Test Mode**
-
-When you enable Test Mode in the UI and save:
-
-```
-2026-01-21 08:40:18 WARNING (MainThread) [custom_components.tado_ce] Tado CE: Integration loading...
-2026-01-21 08:40:18 WARNING (MainThread) [custom_components.tado_ce] Tado CE: Already setup, cancelling old polling timer
-2026-01-21 08:40:18 WARNING (SyncWorker_1) [custom_components.tado_ce] Tado CE: Test Mode limit reached (281/100 calls). Polling paused until quota resets.
-2026-01-21 08:40:18 WARNING (MainThread) [custom_components.tado_ce] Tado CE: Integration loaded successfully
-```
-
-**What this means:**
-- Integration automatically reloaded (no manual restart needed)
-- Test Mode detected 281 calls > 100 limit
-- Polling paused until quota resets
-
-**Example: Disabling Test Mode**
-
-When you disable Test Mode in the UI and save:
-
-```
-2026-01-21 08:41:34 WARNING (MainThread) [custom_components.tado_ce] Tado CE: Integration loading...
-2026-01-21 08:41:34 WARNING (MainThread) [custom_components.tado_ce] Tado CE: Already setup, cancelling old polling timer
-2026-01-21 08:41:35 WARNING (MainThread) [custom_components.tado_ce] Tado CE: Integration loaded successfully
-```
-
-**What this means:**
-- Integration automatically reloaded
-- No "Test Mode limit reached" message
-- Polling resumed with real API limit (e.g., 5000 calls)
-
-**2. Weather Sensors Verification**
-
-After changing the weather sensors option:
-
-```bash
-# Check for weather sensor entities
-ha core logs | grep -i "weather"
-```
-
-**Weather Enabled:**
-```
-2026-01-21 08:45:00 WARNING (MainThread) [custom_components.tado_ce.sensor] Tado CE sensors loaded: 75
-```
-
-Check for these entities:
-- `sensor.tado_ce_outside_temperature`
-- `sensor.tado_ce_solar_intensity`
-- `sensor.tado_ce_weather_state`
-
-**Weather Disabled:**
-```
-2026-01-21 08:45:00 WARNING (MainThread) [custom_components.tado_ce.sensor] Tado CE sensors loaded: 72
-```
-
-Weather sensor entities will not be created (3 fewer sensors).
-
-**3. Mobile Device Tracking Verification**
-
-After changing the mobile device tracking option:
-
-```bash
-# Check for device tracker entities
-ha core logs | grep -i "device tracker"
-```
-
-**Mobile Tracking Enabled:**
-```
-2026-01-21 08:45:00 WARNING (MainThread) [custom_components.tado_ce.device_tracker] Tado CE: Mobile device tracking enabled
-```
-
-Check for `device_tracker.tado_ce_{device}` entities (only if devices have geo tracking enabled in Tado app).
-
-**Mobile Tracking Disabled:**
-```
-2026-01-21 08:45:00 WARNING (MainThread) [custom_components.tado_ce.device_tracker] Tado CE: No devices with geo tracking enabled
-```
-
-Device tracker entities will not be created.
-
-**4. Polling Interval Verification**
-
-After changing day/night hours or custom intervals:
-
-```bash
-# Check polling interval
-ha core logs | grep -i "polling interval"
-```
-
-**Example Output:**
-```
-2026-01-21 08:45:00 INFO [custom_components.tado_ce] Tado CE: Polling interval set to 30m (day)
-```
-
-The interval shown depends on:
-- Your API quota (100/1000/5000/20000)
-- Current time (day vs night)
-- Custom intervals (if configured)
-- Test Mode (if enabled)
-
-**5. API History Retention Verification**
-
-Check the `sensor.tado_ce_api_limit` entity attributes to see how many calls are tracked:
-
-```yaml
-recent_calls_count: 100  # Should match your retention setting
-total_calls_tracked: XXX
-```
-
-**6. Hot Water Timer Duration Verification**
-
-After changing the timer duration:
-1. Go to your hot water heater entity
-2. Select "HEAT" mode
-3. Check the logs:
-
-```bash
-ha core logs | grep -i "timer"
-```
-
-You should see your configured duration being used.
-
-#### Troubleshooting Configuration Changes
-
-If changes don't seem to take effect:
-
-1. **Check the logs** for any errors during reload:
-   ```bash
-   ha core logs | grep -i "tado ce"
-   ```
-
-2. **Verify config.json was updated**:
-   ```bash
-   cat /config/custom_components/tado_ce/data/config.json
-   ```
-
-3. **Manual restart** (last resort):
-   ```bash
-   ha core restart
-   ```
-
-**Note**: The integration automatically reloads when you save configuration changes. You should see "Tado CE: Options changed, reloading integration..." in the logs.
+**Note**: Configuration changes take effect immediately without requiring a Home Assistant restart.
 
 ---
 
-### 5. Device Overview
+### 4. Device Overview
 
 Once set up, you'll see your Tado zones organized as separate devices with clean entity names.
 
@@ -626,50 +322,6 @@ The water heater entity supports three operation modes:
   <p><em>Hot water entity with AUTO/HEAT/OFF modes, timer presets, and boiler temperature</em></p>
 </div>
 
-**Dashboard Card Example:**
-
-You can create a similar card on your dashboard using this YAML:
-
-```yaml
-type: vertical-stack
-cards:
-  # Water Heater Card
-  - type: thermostat
-    entity: water_heater.YOUR_ZONE_NAME
-    name: Hot Water
-    features:
-      - type: climate-hvac-modes
-        hvac_modes:
-          - auto
-          - heat
-          - 'off'
-  
-  # Boiler Temperature
-  - type: entities
-    entities:
-      - entity: sensor.YOUR_ZONE_NAME_boiler_flow_temperature
-        name: Boiler Flow Temperature
-        icon: mdi:thermometer
-  
-  # Timer Preset Buttons
-  - type: horizontal-stack
-    cards:
-      - type: button
-        entity: button.YOUR_ZONE_NAME_30min_timer
-        name: 30 min
-        icon: mdi:timer-outline
-      - type: button
-        entity: button.YOUR_ZONE_NAME_60min_timer
-        name: 60 min
-        icon: mdi:timer-outline
-      - type: button
-        entity: button.YOUR_ZONE_NAME_90min_timer
-        name: 90 min
-        icon: mdi:timer-outline
-```
-
-Replace `YOUR_ZONE_NAME` with your hot water zone name (e.g., `utility`, `hot_water`, `boiler`).
-
 ---
 
 ## 🔧 Services
@@ -729,6 +381,18 @@ data:
 ```
 
 **Note**: This service was renamed from `set_temperature_offset` in v1.2.0 for compatibility with the official Tado integration. Parameters remain unchanged.
+
+### tado_ce.get_temperature_offset
+
+Fetch the current temperature offset for a device. **Tado CE exclusive - useful for automations.**
+
+```yaml
+service: tado_ce.get_temperature_offset
+data:
+  entity_id: climate.lounge
+```
+
+Returns the current offset value via service response, which can be used in templates and automations.
 
 ### tado_ce.identify_device
 
@@ -797,6 +461,7 @@ This leaves a 20% buffer for manual syncs or service calls.
 
 | Device | Type | Support |
 |--------|------|---------|
+| Smart Thermostat V2 | HEATING | ✅ Full (community verified) |
 | Smart Thermostat V3/V3+ | HEATING | ✅ Full |
 | Smart Radiator Thermostat (SRT/VA02) | HEATING | ✅ Full |
 | Smart AC Control V3/V3+ | AIR_CONDITIONING | ✅ Full |
@@ -824,41 +489,9 @@ See [Using tado° Smart Thermostat X through Matter](https://community.home-assi
 
 ---
 
-## 🔮 Potential Future Features
+## 🔮 Future Features
 
-These features are technically possible but not yet implemented. PRs welcome!
-
-### ✅ Can Be Added (API Available)
-
-| Feature | Description | API Calls | Priority |
-|---------|-------------|-----------|----------|
-| **Boost Mode** | Quick temperature boost for X minutes | 1 per action | Medium |
-| **Open Window Duration** | Configure open window detection timeout | 1 per zone | Low |
-| **Multiple Homes** | Support for users with multiple Tado homes | +2 per home | Low |
-| **Air Comfort** | Humidity comfort level indicators | +1 per sync | Medium |
-| **Skills/Routines** | Tado's built-in automation rules | Read-only | Low |
-
-### ❌ Cannot Be Added (API Limitations)
-
-| Feature | Reason |
-|---------|--------|
-| **Local Control** | Tado has no local API - cloud only |
-| **GPS Coordinates** | Privacy - API only returns home/away status |
-| **Schedule Editing** | Complex API, high call cost, use Tado app |
-| **Push Notifications** | No webhook/push API available |
-| **Tado X Devices** | Uses Matter protocol, not REST API |
-| **Historical Charts** | Would require 100+ API calls per day |
-| **Real-time Updates** | No WebSocket API, polling only |
-
-### 🤔 Considering (Need User Feedback)
-
-| Feature | Trade-off |
-|---------|-----------|
-| **Air Comfort Sensors** | +1 API call per sync, shows humidity comfort |
-| **Boost Button** | Adds button entity, 1 API call per press |
-| **Presence Confidence** | Show % confidence of presence detection |
-
-Want a feature? [Open an issue](https://github.com/hiall-fyi/tado_ce/issues) or submit a PR!
+See [ROADMAP.md](ROADMAP.md) for planned features, API limitations, and ideas. Want a feature? [Open an issue](https://github.com/hiall-fyi/tado_ce/issues) or submit a PR!
 
 ---
 
@@ -1007,6 +640,23 @@ Check the [Roadmap](ROADMAP.md) for planned features and ideas.
 
 ---
 
+## 🧪 Testing
+
+Tado CE includes a comprehensive test suite with **235 tests** across 6 test suites:
+
+| Test Suite | Tests | Description |
+|------------|-------|-------------|
+| Core | 29 | Null-safe patterns, AC capabilities, mode mappings, edge cases |
+| Entities | 38 | Climate, water heater, sensor, binary sensor, switch, button, device tracker |
+| Services | 59 | Service call validation, API endpoints, config flow |
+| Async API | 40 | Async methods, service handlers, blocking code removal |
+| Data Loader | 31 | Centralized data loading, null-safe pattern consistency |
+| Upgrade | 38 | All upgrade paths from v1.0.0 to v1.5.0, config migration |
+
+All upgrade paths verified: v1.0.0 → v1.0.1 → v1.1.0 → v1.2.0 → v1.2.1 → v1.4.0 → v1.4.1 → v1.5.0
+
+---
+
 ## ⭐ Star History
 
 If you find this integration useful, please consider giving it a star!
@@ -1040,8 +690,8 @@ If this integration has saved you from rate limit headaches, made your Tado setu
 
 ---
 
-**Version**: 1.4.1  
-**Last Updated**: 2026-01-23  
+**Version**: 1.5.0  
+**Last Updated**: 2026-01-24  
 **Tested On**: Home Assistant 2026.1.2 (HAOS, Docker, Core)
 
 ---

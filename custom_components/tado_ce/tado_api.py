@@ -680,6 +680,12 @@ class TadoClient:
         # Check if mobile devices tracking is enabled
         mobile_devices_enabled = self.config.get('mobile_devices_enabled', True)
         
+        # Check if frequent mobile device sync is enabled
+        mobile_devices_frequent_sync = self.config.get('mobile_devices_frequent_sync', False)
+        
+        # Check if offset sync is enabled
+        offset_enabled = self.config.get('offset_enabled', False)
+        
         try:
             # Always fetch zone states (most important)
             zones_data = self.api_call("zoneStates")
@@ -703,6 +709,13 @@ class TadoClient:
                 json.dump(home_state, f, indent=2)
             log.info(f"Home state saved (presence: {home_state.get('presence')})")
             
+            # Fetch mobile devices during quick sync if frequent sync is enabled
+            if quick and mobile_devices_enabled and mobile_devices_frequent_sync:
+                mobile_data = self.api_call("mobileDevices")
+                with open(MOBILE_DEVICES_FILE, 'w') as f:
+                    json.dump(mobile_data, f, indent=2)
+                log.info(f"Mobile devices saved (frequent sync, {len(mobile_data)} devices)")
+            
             if not quick:
                 # Full sync: also fetch zone info and mobile devices
                 zones_info = self.api_call("zones")
@@ -718,7 +731,13 @@ class TadoClient:
                     log.info(f"Mobile devices saved ({len(mobile_data)} devices)")
                 else:
                     log.info("Mobile devices sync skipped (disabled in config)")
-
+                
+                # Fetch temperature offsets if enabled
+                if offset_enabled:
+                    self._sync_offsets(zones_info)
+                
+                # Fetch AC zone capabilities (for DRY/FAN modes, fan levels, swing)
+                self._sync_ac_capabilities(zones_info)
 
             
             # Save rate limit info
@@ -735,6 +754,106 @@ class TadoClient:
             else:
                 self._save_ratelimit(status="error", error=str(e))
             return False
+    
+    def _sync_offsets(self, zones_info: list):
+        """Sync temperature offsets for all devices.
+        
+        Fetches offset for each device and saves to offsets.json keyed by zone_id.
+        """
+        offsets_file = DATA_DIR / "offsets.json"
+        offsets = {}
+        
+        for zone in zones_info:
+            zone_id = str(zone.get('id'))
+            zone_type = zone.get('type')
+            
+            # Only fetch offsets for heating zones (not hot water)
+            if zone_type not in ('HEATING', 'AIR_CONDITIONING'):
+                continue
+            
+            for device in zone.get('devices', []):
+                serial = device.get('shortSerialNo')
+                if serial:
+                    try:
+                        # Fetch offset for this device
+                        offset_data = self._fetch_device_offset(serial)
+                        if offset_data is not None:
+                            offsets[zone_id] = offset_data
+                            log.info(f"Offset for zone {zone_id} (device {serial}): {offset_data}°C")
+                        break  # Only need first device per zone
+                    except Exception as e:
+                        log.warning(f"Failed to fetch offset for device {serial}: {e}")
+        
+        # Save offsets to file
+        try:
+            with open(offsets_file, 'w') as f:
+                json.dump(offsets, f, indent=2)
+            log.info(f"Offsets saved ({len(offsets)} zones)")
+        except Exception as e:
+            log.error(f"Failed to save offsets: {e}")
+    
+    def _sync_ac_capabilities(self, zones_info: list):
+        """Sync AC zone capabilities.
+        
+        Fetches capabilities for each AIR_CONDITIONING zone and saves to ac_capabilities.json.
+        This includes supported modes (COOL, HEAT, DRY, FAN, AUTO), fan levels, and swing options.
+        """
+        ac_caps_file = DATA_DIR / "ac_capabilities.json"
+        ac_capabilities = {}
+        
+        for zone in zones_info:
+            zone_id = str(zone.get('id'))
+            zone_type = zone.get('type')
+            
+            # Only fetch capabilities for AC zones
+            if zone_type != 'AIR_CONDITIONING':
+                continue
+            
+            try:
+                # Fetch capabilities for this zone
+                caps = self.api_call(f"zones/{zone_id}/capabilities")
+                if caps:
+                    ac_capabilities[zone_id] = caps
+                    # Log what modes are supported
+                    modes = [m for m in ['COOL', 'HEAT', 'DRY', 'FAN', 'AUTO'] if m in caps]
+                    log.info(f"AC capabilities for zone {zone_id}: modes={modes}")
+            except Exception as e:
+                log.warning(f"Failed to fetch AC capabilities for zone {zone_id}: {e}")
+        
+        # Save capabilities to file
+        if ac_capabilities:
+            try:
+                with open(ac_caps_file, 'w') as f:
+                    json.dump(ac_capabilities, f, indent=2)
+                log.info(f"AC capabilities saved ({len(ac_capabilities)} zones)")
+            except Exception as e:
+                log.error(f"Failed to save AC capabilities: {e}")
+    
+    def _fetch_device_offset(self, serial: str) -> float | None:
+        """Fetch temperature offset for a specific device."""
+        if not self.access_token:
+            if not self.refresh_access_token():
+                return None
+        
+        # Use centralized API endpoint if available
+        devices_base = "https://my.tado.com/api/v2/devices"
+        try:
+            from .const import API_ENDPOINT_DEVICES
+            devices_base = API_ENDPOINT_DEVICES
+        except ImportError:
+            pass
+        
+        url = f"{devices_base}/{serial}/temperatureOffset"
+        
+        try:
+            data, _, _ = self._http_request(
+                url,
+                headers={"Authorization": f"Bearer {self.access_token}"}
+            )
+            return data.get("celsius")
+        except TadoAPIError as e:
+            log.warning(f"Failed to fetch offset for {serial}: {e}")
+            return None
     
     def status(self):
         """Show current status."""

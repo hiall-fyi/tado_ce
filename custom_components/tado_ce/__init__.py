@@ -25,15 +25,17 @@ try:
 except AttributeError:
     # Older Home Assistant version without Platform.BUTTON
     PLATFORMS = [Platform.SENSOR, Platform.CLIMATE, Platform.BINARY_SENSOR, Platform.WATER_HEATER, Platform.DEVICE_TRACKER, Platform.SWITCH]
-    _LOGGER.warning("Platform.BUTTON not available - button entities will not be loaded")
+    _LOGGER.debug("Platform.BUTTON not available - button entities will not be loaded")
 
-SCRIPT_PATH = "/config/custom_components/tado_ce/tado_api.py"
+# Script path - use relative path from this file's location
+SCRIPT_PATH = str(Path(__file__).parent / "tado_api.py")
 
 # Service names
 SERVICE_SET_CLIMATE_TIMER = "set_climate_timer"
 SERVICE_SET_WATER_HEATER_TIMER = "set_water_heater_timer"
 SERVICE_RESUME_SCHEDULE = "resume_schedule"
 SERVICE_SET_TEMP_OFFSET = "set_climate_temperature_offset"  # Match official Tado integration
+SERVICE_GET_TEMP_OFFSET = "get_temperature_offset"  # New: on-demand offset fetch
 SERVICE_ADD_METER_READING = "add_meter_reading"
 SERVICE_IDENTIFY_DEVICE = "identify_device"
 SERVICE_SET_AWAY_CONFIG = "set_away_configuration"
@@ -306,15 +308,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     refresh_handler = get_handler(hass)
     _LOGGER.info("Immediate refresh handler initialized")
     
-    # Load home_id early to avoid race conditions in device_manager
-    from .device_manager import load_home_id
+    # Load home_id and version early to avoid race conditions in device_manager
+    # These perform blocking I/O so must be run in executor
+    from .device_manager import load_home_id, load_version
     await hass.async_add_executor_job(load_home_id)
+    await hass.async_add_executor_job(load_version)
     
     # Check if config file exists
     if not CONFIG_FILE.exists():
         _LOGGER.warning(
             "Tado CE config file not found. "
-            "Run 'python3 /config/custom_components/tado_ce/tado_api.py auth' first."
+            f"Run 'python3 {SCRIPT_PATH} auth' first."
         )
     
     # Track current interval and last full sync time
@@ -407,15 +411,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         schedule_next_sync()
     
     # Initial sync (only if config exists)
-    config_file_path = Path("/config/custom_components/tado_ce/data/config.json")
-    _LOGGER.info(f"Tado CE: Checking config file at {config_file_path}, exists={config_file_path.exists()}")
-    if config_file_path.exists():
+    _LOGGER.info(f"Tado CE: Checking config file at {CONFIG_FILE}, exists={CONFIG_FILE.exists()}")
+    if CONFIG_FILE.exists():
         _LOGGER.info("Tado CE: Starting initial sync...")
         await hass.async_add_executor_job(sync_tado)
         _LOGGER.info("Tado CE: Initial sync completed")
     else:
         # Still schedule polling even without config
-        _LOGGER.warning(f"Tado CE: Config file not found at {config_file_path}, scheduling polling only")
+        _LOGGER.warning(f"Tado CE: Config file not found at {CONFIG_FILE}, scheduling polling only")
         schedule_next_sync()
         _LOGGER.info("Tado CE: Polling scheduled")
     
@@ -518,15 +521,13 @@ async def _async_register_services(hass: HomeAssistant):
         for entity_id in entity_ids:
             entity = hass.states.get(entity_id)
             if entity:
-                # Get the climate entity and call set_timer
+                # Get the climate entity and call async_set_timer
                 climate_entity = hass.data.get("entity_components", {}).get("climate")
                 if climate_entity:
                     for ent in climate_entity.entities:
-                        if ent.entity_id == entity_id and hasattr(ent, 'set_timer'):
+                        if ent.entity_id == entity_id and hasattr(ent, 'async_set_timer'):
                             try:
-                                await hass.async_add_executor_job(
-                                    ent.set_timer, temperature, duration_minutes, overlay
-                                )
+                                await ent.async_set_timer(temperature, duration_minutes, overlay)
                                 _LOGGER.info(f"Set timer for {entity_id}: {temperature}°C for {duration_minutes}min")
                             except Exception as e:
                                 error_msg = f"Failed to set timer for {entity_id}: {e}"
@@ -601,9 +602,9 @@ async def _async_register_services(hass: HomeAssistant):
             water_heater_component = hass.data.get("entity_components", {}).get("water_heater")
             if water_heater_component:
                 for ent in water_heater_component.entities:
-                    if ent.entity_id == entity_id and hasattr(ent, 'set_timer'):
+                    if ent.entity_id == entity_id and hasattr(ent, 'async_set_timer'):
                         try:
-                            await hass.async_add_executor_job(ent.set_timer, duration_minutes, temperature)
+                            await ent.async_set_timer(duration_minutes, temperature)
                             _LOGGER.info(f"Set timer for {entity_id}: {duration_minutes}min")
                         except Exception as e:
                             error_msg = f"Failed to set timer for {entity_id}: {e}"
@@ -613,9 +614,13 @@ async def _async_register_services(hass: HomeAssistant):
     
     async def handle_resume_schedule(call: ServiceCall):
         """Handle resume_schedule service call."""
+        from .async_api import get_async_client
+        
         entity_ids = call.data.get("entity_id", [])
         if isinstance(entity_ids, str):
             entity_ids = [entity_ids]
+        
+        client = get_async_client(hass)
         
         for entity_id in entity_ids:
             domain = entity_id.split(".")[0]
@@ -623,34 +628,49 @@ async def _async_register_services(hass: HomeAssistant):
             if component:
                 for ent in component.entities:
                     if ent.entity_id == entity_id:
-                        if hasattr(ent, '_delete_overlay'):
-                            await hass.async_add_executor_job(ent._delete_overlay)
-                        elif hasattr(ent, 'resume_schedule'):
-                            await hass.async_add_executor_job(ent.resume_schedule)
+                        zone_id = getattr(ent, '_zone_id', None)
+                        if zone_id:
+                            await client.delete_zone_overlay(zone_id)
+                            _LOGGER.info(f"Resumed schedule for {entity_id}")
                         break
     
     async def handle_set_temp_offset(call: ServiceCall):
         """Handle set_temperature_offset service call."""
+        from .async_api import get_async_client
+        
         entity_id = call.data.get("entity_id")
         offset = call.data.get("offset")
         
-        # Get zone_id from entity
+        client = get_async_client(hass)
+        
+        # Get zone_id from entity and find device serial
         climate_component = hass.data.get("entity_components", {}).get("climate")
         if climate_component:
             for ent in climate_component.entities:
                 if ent.entity_id == entity_id:
-                    # Find device serial for this zone
-                    await hass.async_add_executor_job(
-                        _set_temperature_offset, ent._zone_id, offset
-                    )
+                    zone_id = getattr(ent, '_zone_id', None)
+                    if zone_id:
+                        # Find device serial for this zone
+                        serial = await hass.async_add_executor_job(
+                            _get_device_serial_for_zone, zone_id
+                        )
+                        if serial:
+                            await client.set_device_offset(serial, offset)
+                            _LOGGER.info(f"Set offset {offset}°C for {entity_id}")
                     break
     
     async def handle_add_meter_reading(call: ServiceCall):
-        """Handle add_meter_reading service call."""
+        """Handle add_meter_reading service call (fully async)."""
+        from .async_api import get_async_client
+        
         reading = call.data.get("reading")
         date = call.data.get("date")
         
-        await hass.async_add_executor_job(_add_meter_reading, reading, date)
+        client = get_async_client(hass)
+        success = await client.add_meter_reading(reading, date)
+        
+        if not success:
+            _LOGGER.error(f"Failed to add meter reading: {reading}")
     
     # Register services
     hass.services.async_register(
@@ -696,25 +716,40 @@ async def _async_register_services(hass: HomeAssistant):
     )
     
     async def handle_identify_device(call: ServiceCall):
-        """Handle identify_device service call."""
+        """Handle identify_device service call (fully async)."""
+        from .async_api import get_async_client
+        
         device_serial = call.data.get("device_serial")
-        await hass.async_add_executor_job(_identify_device, device_serial)
+        
+        client = get_async_client(hass)
+        success = await client.identify_device(device_serial)
+        
+        if not success:
+            _LOGGER.error(f"Failed to identify device: {device_serial}")
     
     async def handle_set_away_config(call: ServiceCall):
-        """Handle set_away_configuration service call."""
+        """Handle set_away_configuration service call (fully async)."""
+        from .async_api import get_async_client
+        
         entity_id = call.data.get("entity_id")
         mode = call.data.get("mode")
         temperature = call.data.get("temperature")
         comfort_level = call.data.get("comfort_level", 50)
+        
+        client = get_async_client(hass)
         
         # Get zone_id from entity
         climate_component = hass.data.get("entity_components", {}).get("climate")
         if climate_component:
             for ent in climate_component.entities:
                 if ent.entity_id == entity_id:
-                    await hass.async_add_executor_job(
-                        _set_away_configuration, ent._zone_id, mode, temperature, comfort_level
-                    )
+                    zone_id = getattr(ent, '_zone_id', None)
+                    if zone_id:
+                        success = await client.set_away_configuration(
+                            zone_id, mode, temperature, comfort_level
+                        )
+                        if not success:
+                            _LOGGER.error(f"Failed to set away config for {entity_id}")
                     break
     
     hass.services.async_register(
@@ -734,22 +769,62 @@ async def _async_register_services(hass: HomeAssistant):
         })
     )
     
+    async def handle_get_temp_offset(call: ServiceCall):
+        """Handle get_temperature_offset service call.
+        
+        Fetches the current temperature offset for a climate entity on-demand.
+        Returns the offset value via service response for use in automations.
+        """
+        from .async_api import get_async_client
+        
+        entity_id = call.data.get("entity_id")
+        client = get_async_client(hass)
+        
+        # Get zone_id from entity
+        climate_component = hass.data.get("entity_components", {}).get("climate")
+        if climate_component:
+            for ent in climate_component.entities:
+                if ent.entity_id == entity_id:
+                    zone_id = getattr(ent, '_zone_id', None)
+                    if zone_id:
+                        # Find device serial for this zone
+                        serial = await hass.async_add_executor_job(
+                            _get_device_serial_for_zone, zone_id
+                        )
+                        if serial:
+                            result = await client.get_device_offset(serial)
+                            if result is not None:
+                                return {"offset_celsius": result}
+                    
+                    _LOGGER.error(f"Failed to get offset for {entity_id}")
+                    return {"offset_celsius": None, "error": "Failed to fetch offset"}
+        
+        _LOGGER.error(f"Entity not found: {entity_id}")
+        return {"offset_celsius": None, "error": "Entity not found"}
+    
+    hass.services.async_register(
+        DOMAIN, SERVICE_GET_TEMP_OFFSET, handle_get_temp_offset,
+        schema=vol.Schema({
+            vol.Required("entity_id"): cv.entity_id,
+        }),
+        supports_response=True,
+    )
+    
     _LOGGER.info("Tado CE: Services registered")
 
 
-def _get_access_token():
-    """Get access token using centralized AuthManager."""
-    auth_manager = get_auth_manager(CONFIG_FILE, CLIENT_ID, TADO_AUTH_URL)
-    return auth_manager.get_access_token()
-
-
-def _set_temperature_offset(zone_id: str, offset: float):
-    """Set temperature offset for devices in a zone."""
-    from urllib.request import Request, urlopen
+def _get_device_serial_for_zone(zone_id: str) -> str | None:
+    """Get the first device serial for a zone.
+    
+    Args:
+        zone_id: Zone ID to look up
+        
+    Returns:
+        Device serial number, or None if not found
+    """
     from .const import ZONES_INFO_FILE
     
     try:
-        # Find device serial for this zone
         with open(ZONES_INFO_FILE) as f:
             zones_info = json.load(f)
         
@@ -758,147 +833,52 @@ def _set_temperature_offset(zone_id: str, offset: float):
                 for device in zone.get('devices', []):
                     serial = device.get('shortSerialNo')
                     if serial:
-                        token = _get_access_token()
-                        if not token:
-                            return False
-                        
-                        url = f"{API_ENDPOINT_DEVICES}/{serial}/temperatureOffset"
-                        payload = {"celsius": offset}
-                        
-                        data = json.dumps(payload).encode()
-                        req = Request(url, data=data, method="PUT")
-                        req.add_header("Authorization", f"Bearer {token}")
-                        req.add_header("Content-Type", "application/json")
-                        
-                        with urlopen(req, timeout=10) as resp:
-                            _LOGGER.info(f"Set temperature offset {offset}°C for device {serial}")
-                break
-        return True
+                        return serial
+        return None
     except Exception as e:
-        _LOGGER.error(f"Failed to set temperature offset: {e}")
-        return False
+        _LOGGER.error(f"Failed to get device serial for zone {zone_id}: {e}")
+        return None
 
 
-def _add_meter_reading(reading: int, date: str = None):
-    """Add energy meter reading."""
-    from urllib.request import Request, urlopen
-    
-    try:
-        with open(CONFIG_FILE) as f:
-            config = json.load(f)
-        
-        home_id = config.get("home_id")
-        if not home_id:
-            _LOGGER.error("No home_id configured")
-            return False
-        
-        token = _get_access_token()
-        if not token:
-            return False
-        
-        if not date:
-            date = datetime.now().strftime("%Y-%m-%d")
-        
-        url = f"{TADO_API_BASE}/homes/{home_id}/meterReadings"
-        payload = {
-            "date": date,
-            "reading": reading
-        }
-        
-        data = json.dumps(payload).encode()
-        req = Request(url, data=data, method="POST")
-        req.add_header("Authorization", f"Bearer {token}")
-        req.add_header("Content-Type", "application/json")
-        
-        with urlopen(req, timeout=10) as resp:
-            _LOGGER.info(f"Added meter reading: {reading} on {date}")
-            return True
-            
-    except Exception as e:
-        _LOGGER.error(f"Failed to add meter reading: {e}")
-        return False
-
-
-def _identify_device(device_serial: str):
-    """Make a device flash its LED to identify it."""
-    from urllib.request import Request, urlopen
-    
-    try:
-        token = _get_access_token()
-        if not token:
-            _LOGGER.error("Failed to get access token")
-            return False
-        
-        url = f"{API_ENDPOINT_DEVICES}/{device_serial}/identify"
-        req = Request(url, method="POST")
-        req.add_header("Authorization", f"Bearer {token}")
-        
-        with urlopen(req, timeout=10) as resp:
-            _LOGGER.info(f"Identify command sent to device {device_serial}")
-            return True
-            
-    except Exception as e:
-        _LOGGER.error(f"Failed to identify device: {e}")
-        return False
-
-
-def _set_away_configuration(zone_id: str, mode: str, temperature: float = None, comfort_level: int = 50):
-    """Set away configuration for a zone."""
-    from urllib.request import Request, urlopen
-    
-    try:
-        with open(CONFIG_FILE) as f:
-            config = json.load(f)
-        
-        home_id = config.get("home_id")
-        if not home_id:
-            _LOGGER.error("No home_id configured")
-            return False
-        
-        token = _get_access_token()
-        if not token:
-            return False
-        
-        url = f"{TADO_API_BASE}/homes/{home_id}/zones/{zone_id}/schedule/awayConfiguration"
-        
-        if mode == "auto":
-            payload = {
-                "type": "HEATING",
-                "autoAdjust": True,
-                "comfortLevel": comfort_level,
-                "setting": {"type": "HEATING", "power": "OFF"}
-            }
-        elif mode == "manual" and temperature:
-            payload = {
-                "type": "HEATING",
-                "autoAdjust": False,
-                "setting": {
-                    "type": "HEATING",
-                    "power": "ON",
-                    "temperature": {"celsius": temperature}
-                }
-            }
-        else:  # off
-            payload = {
-                "type": "HEATING",
-                "autoAdjust": False,
-                "setting": {"type": "HEATING", "power": "OFF"}
-            }
-        
-        data = json.dumps(payload).encode()
-        req = Request(url, data=data, method="PUT")
-        req.add_header("Authorization", f"Bearer {token}")
-        req.add_header("Content-Type", "application/json")
-        
-        with urlopen(req, timeout=10) as resp:
-            _LOGGER.info(f"Set away configuration for zone {zone_id}: {mode}")
-            return True
-            
-    except Exception as e:
-        _LOGGER.error(f"Failed to set away configuration: {e}")
-        return False
+# NOTE: The following blocking functions have been replaced by async methods
+# in async_api.py (v1.5.0+) and removed to enforce proper async architecture:
+# - _get_access_token -> Use async_api.get_async_client().get_access_token()
+# - _get_temperature_offset -> client.get_device_offset()
+# - _set_temperature_offset -> client.set_device_offset()
+# - _add_meter_reading -> client.add_meter_reading()
+# - _identify_device -> client.identify_device()
+# - _set_away_configuration -> client.set_away_configuration()
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry."""
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    """Unload a config entry.
+    
+    CRITICAL: Must clean up all resources to prevent memory leaks on reload.
+    """
+    _LOGGER.info("Tado CE: Unloading integration...")
+    
+    # Cancel polling timer if active
+    if DOMAIN in hass.data and 'polling_cancel' in hass.data[DOMAIN]:
+        cancel_func = hass.data[DOMAIN]['polling_cancel']
+        if cancel_func:
+            cancel_func()
+            _LOGGER.debug("Cancelled polling timer")
+    
+    # Clean up async client to prevent memory leak
+    from .async_api import cleanup_async_client
+    cleanup_async_client(hass)
+    
+    # Clean up immediate refresh handler
+    from .immediate_refresh_handler import cleanup_handler
+    cleanup_handler()
+    
+    # Unload platforms
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    
+    # Clean up hass.data
+    if unload_ok and DOMAIN in hass.data:
+        hass.data.pop(DOMAIN, None)
+        _LOGGER.debug("Cleaned up hass.data")
+    
+    _LOGGER.info("Tado CE: Integration unloaded successfully")
+    return unload_ok

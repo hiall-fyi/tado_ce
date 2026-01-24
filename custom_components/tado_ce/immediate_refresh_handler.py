@@ -10,12 +10,12 @@ from pathlib import Path
 from typing import Optional
 from homeassistant.core import HomeAssistant
 
+from .const import DATA_DIR, RATELIMIT_FILE
+
 _LOGGER = logging.getLogger(__name__)
 
-# Script path
-SCRIPT_PATH = "/config/custom_components/tado_ce/tado_api.py"
-DATA_DIR = Path("/config/custom_components/tado_ce/data")
-RATELIMIT_FILE = DATA_DIR / "ratelimit.json"
+# Script path - relative to integration directory
+SCRIPT_PATH = str(Path(__file__).parent / "tado_api.py")
 
 # Entity types that should trigger immediate refresh
 REFRESH_ENTITY_TYPES = {
@@ -244,11 +244,12 @@ class ImmediateRefreshHandler:
             if process:
                 # Force kill the process
                 process.kill()
-                # Wait for cleanup to prevent zombie
+                # CRITICAL FIX: Consume remaining output to prevent pipe buffer issues
+                # and ensure proper process cleanup (prevent zombie)
                 try:
-                    process.wait(timeout=5)
+                    process.communicate(timeout=5)
                 except subprocess.TimeoutExpired:
-                    _LOGGER.error("Failed to kill quick sync process")
+                    _LOGGER.error("Failed to cleanup quick sync process after kill")
                     
         except Exception as e:
             _LOGGER.error(f"Quick sync error: {e}")
@@ -285,3 +286,19 @@ def get_handler(hass: HomeAssistant) -> ImmediateRefreshHandler:
     if _handler is None:
         _handler = ImmediateRefreshHandler(hass)
     return _handler
+
+
+def cleanup_handler() -> bool:
+    """Clean up the global immediate refresh handler.
+    
+    MUST be called in async_unload_entry() to prevent memory leaks.
+    
+    Returns:
+        True if handler was cleaned up, False if no handler existed
+    """
+    global _handler
+    if _handler is not None:
+        _handler = None
+        _LOGGER.debug("Cleaned up ImmediateRefreshHandler")
+        return True
+    return False

@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Optional, Dict, Tuple
 from homeassistant.config_entries import ConfigEntry
 
+from .const import CONFIG_FILE
+
 _LOGGER = logging.getLogger(__name__)
 
 # Global lock for thread-safe config file writes
@@ -19,6 +21,8 @@ _config_write_lock = threading.Lock()
 # Default configuration values
 DEFAULT_WEATHER_ENABLED = False
 DEFAULT_MOBILE_DEVICES_ENABLED = False
+DEFAULT_MOBILE_DEVICES_FREQUENT_SYNC = False
+DEFAULT_OFFSET_ENABLED = False
 DEFAULT_TEST_MODE_ENABLED = False
 DEFAULT_DAY_START_HOUR = 7
 DEFAULT_NIGHT_START_HOUR = 23
@@ -34,9 +38,6 @@ MIN_RETENTION_DAYS = 0  # 0 = forever
 MAX_RETENTION_DAYS = 365
 MIN_TIMER_DURATION = 5  # minutes
 MAX_TIMER_DURATION = 1440  # 24 hours
-
-# Config file path
-CONFIG_FILE = Path("/config/custom_components/tado_ce/data/config.json")
 
 
 class ConfigurationManager:
@@ -213,6 +214,22 @@ class ConfigurationManager:
         """
         return self._options.get('mobile_devices_enabled', DEFAULT_MOBILE_DEVICES_ENABLED)
     
+    def get_mobile_devices_frequent_sync(self) -> bool:
+        """Check if mobile devices should be synced every quick sync.
+        
+        Returns:
+            True if mobile devices should sync frequently, False for full sync only
+        """
+        return self._options.get('mobile_devices_frequent_sync', DEFAULT_MOBILE_DEVICES_FREQUENT_SYNC)
+    
+    def get_offset_enabled(self) -> bool:
+        """Check if temperature offset attribute is enabled on climate entities.
+        
+        Returns:
+            True if offset_celsius attribute should be added to climate entities
+        """
+        return self._options.get('offset_enabled', DEFAULT_OFFSET_ENABLED)
+    
     def get_test_mode_enabled(self) -> bool:
         """Check if Test Mode is enabled (enforce 100 API limit).
         
@@ -321,6 +338,8 @@ class ConfigurationManager:
             config_data = {
                 'weather_enabled': self.get_weather_enabled(),
                 'mobile_devices_enabled': self.get_mobile_devices_enabled(),
+                'mobile_devices_frequent_sync': self.get_mobile_devices_frequent_sync(),
+                'offset_enabled': self.get_offset_enabled(),
                 'test_mode_enabled': self.get_test_mode_enabled(),
                 'day_start_hour': self.get_day_start_hour(),
                 'night_start_hour': self.get_night_start_hour(),
@@ -513,6 +532,8 @@ class ConfigurationManager:
         return {
             'weather_enabled': self.get_weather_enabled(),
             'mobile_devices_enabled': self.get_mobile_devices_enabled(),
+            'mobile_devices_frequent_sync': self.get_mobile_devices_frequent_sync(),
+            'offset_enabled': self.get_offset_enabled(),
             'test_mode_enabled': self.get_test_mode_enabled(),
             'day_start_hour': self.get_day_start_hour(),
             'night_start_hour': self.get_night_start_hour(),

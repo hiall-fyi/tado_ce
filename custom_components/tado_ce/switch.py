@@ -2,8 +2,6 @@
 import json
 import logging
 from datetime import timedelta
-from urllib.request import Request, urlopen
-from urllib.error import HTTPError, URLError
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant
@@ -14,41 +12,16 @@ from .const import (
     TADO_API_BASE, TADO_AUTH_URL, CLIENT_ID, API_ENDPOINT_DEVICES
 )
 from .device_manager import get_hub_device_info, get_zone_device_info
-from .auth_manager import get_auth_manager
+from .data_loader import load_zones_info_file, load_config_file
 
 _LOGGER = logging.getLogger(__name__)
 SCAN_INTERVAL = timedelta(seconds=30)
 
 
-def _load_zones_info_file():
-    """Load zones info file (blocking)."""
-    try:
-        with open(ZONES_INFO_FILE) as f:
-            return json.load(f)
-    except Exception:
-        return None
-
-
-def _get_access_token():
-    """Get access token using centralized AuthManager."""
-    auth_manager = get_auth_manager(CONFIG_FILE, CLIENT_ID, TADO_AUTH_URL)
-    return auth_manager.get_access_token()
-
-
-def _get_home_id():
-    """Get home ID from config."""
-    try:
-        with open(CONFIG_FILE) as f:
-            config = json.load(f)
-            return config.get("home_id")
-    except Exception:
-        return None
-
-
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     """Set up Tado CE switches from a config entry."""
     _LOGGER.debug("Tado CE switch: Setting up...")
-    zones_info = await hass.async_add_executor_job(_load_zones_info_file)
+    zones_info = await hass.async_add_executor_job(load_zones_info_file)
     
     switches = []
     
@@ -63,7 +36,7 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
             
             # Early Start switch (for heating zones that support it)
             if zone_type == 'HEATING':
-                early_start = zone.get('earlyStart', {})
+                early_start = zone.get('earlyStart') or {}
                 if early_start.get('supported', True):  # Default to supported
                     switches.append(TadoEarlyStartSwitch(
                         zone_id, zone_name, zone_type, early_start.get('enabled', False)
@@ -135,11 +108,11 @@ class TadoAwayModeSwitch(SwitchEntity):
             with open(MOBILE_DEVICES_FILE) as f:
                 mobile_devices = json.load(f)
                 
-                # Check if any device is at home
+            # Check if any device is at home
                 any_at_home = False
                 for device in mobile_devices:
-                    location = device.get('location', {})
-                    if location and location.get('atHome', False):
+                    location = device.get('location') or {}
+                    if location.get('atHome', False):
                         any_at_home = True
                         break
                 
@@ -151,77 +124,40 @@ class TadoAwayModeSwitch(SwitchEntity):
             _LOGGER.debug(f"Failed to update away mode: {e}")
             # Keep last known state
     
-    def turn_on(self, **kwargs):
-        """Set Away mode (everyone away)."""
-        if self._set_presence_lock("AWAY"):
-            self.schedule_update_ha_state()
-            self._trigger_immediate_refresh("away_mode_on")
+    async def async_turn_on(self, **kwargs):
+        """Set Away mode (everyone away) - async."""
+        from .async_api import get_async_client
+        
+        client = get_async_client(self.hass)
+        success = await client.set_presence_lock("AWAY")
+        
+        if success:
+            self._attr_is_on = True
+            self._presence_locked = True
+            self.async_write_ha_state()
+            await self._async_trigger_immediate_refresh("away_mode_on")
     
-    def turn_off(self, **kwargs):
-        """Set Home mode (someone home)."""
-        if self._set_presence_lock("HOME"):
-            self.schedule_update_ha_state()
-            self._trigger_immediate_refresh("away_mode_off")
+    async def async_turn_off(self, **kwargs):
+        """Set Home mode (someone home) - async."""
+        from .async_api import get_async_client
+        
+        client = get_async_client(self.hass)
+        success = await client.set_presence_lock("HOME")
+        
+        if success:
+            self._attr_is_on = False
+            self._presence_locked = True
+            self.async_write_ha_state()
+            await self._async_trigger_immediate_refresh("away_mode_off")
     
-    def _trigger_immediate_refresh(self, reason: str):
+    async def _async_trigger_immediate_refresh(self, reason: str):
         """Trigger immediate refresh after state change."""
         try:
             from .immediate_refresh_handler import get_handler
             handler = get_handler(self.hass)
-            # Use call_soon_threadsafe to schedule the async task from sync context
-            self.hass.loop.call_soon_threadsafe(
-                lambda: self.hass.async_create_task(
-                    handler.trigger_refresh(self.entity_id, reason)
-                )
-            )
+            await handler.trigger_refresh(self.entity_id, reason)
         except Exception as e:
             _LOGGER.debug(f"Failed to trigger immediate refresh: {e}")
-    
-    def _set_presence_lock(self, state: str) -> bool:
-        """Set presence lock via API.
-        
-        Args:
-            state: "HOME" or "AWAY"
-        """
-        try:
-            token = _get_access_token()
-            if not token:
-                _LOGGER.error("Failed to get access token")
-                return False
-            
-            home_id = _get_home_id()
-            if not home_id:
-                _LOGGER.error("No home_id configured")
-                return False
-            
-            url = f"{TADO_API_BASE}/homes/{home_id}/presenceLock"
-            payload = {"homePresence": state}
-            
-            data = json.dumps(payload).encode()
-            req = Request(url, data=data, method="PUT")
-            req.add_header("Authorization", f"Bearer {token}")
-            req.add_header("Content-Type", "application/json")
-            
-            with urlopen(req, timeout=10) as resp:
-                _LOGGER.info(f"Presence lock set to {state}")
-                self._attr_is_on = (state == "AWAY")
-                self._presence_locked = True
-                return True
-                
-        except HTTPError as e:
-            if e.code == 401:
-                _LOGGER.error(f"Authentication failed (401) - please re-authenticate: {e}")
-            elif e.code == 429:
-                _LOGGER.error(f"Rate limit exceeded (429) - too many API calls: {e}")
-            else:
-                _LOGGER.error(f"HTTP error {e.code} while setting presence lock: {e}")
-            return False
-        except URLError as e:
-            _LOGGER.error(f"Network error while setting presence lock: {e}")
-            return False
-        except Exception as e:
-            _LOGGER.error(f"Unexpected error while setting presence lock: {e}")
-            return False
 
 
 class TadoEarlyStartSwitch(SwitchEntity):
@@ -259,71 +195,46 @@ class TadoEarlyStartSwitch(SwitchEntity):
         # It will be updated when user toggles it
         pass
     
-    def turn_on(self, **kwargs):
-        """Turn on early start."""
-        if self._set_early_start(True):
-            self._trigger_immediate_refresh("early_start_on")
+    async def async_turn_on(self, **kwargs):
+        """Turn on early start - async."""
+        success = await self._async_set_early_start(True)
+        if success:
+            await self._async_trigger_immediate_refresh("early_start_on")
     
-    def turn_off(self, **kwargs):
-        """Turn off early start."""
-        if self._set_early_start(False):
-            self._trigger_immediate_refresh("early_start_off")
+    async def async_turn_off(self, **kwargs):
+        """Turn off early start - async."""
+        success = await self._async_set_early_start(False)
+        if success:
+            await self._async_trigger_immediate_refresh("early_start_off")
     
-    def _trigger_immediate_refresh(self, reason: str):
+    async def _async_trigger_immediate_refresh(self, reason: str):
         """Trigger immediate refresh after state change."""
         try:
             from .immediate_refresh_handler import get_handler
             handler = get_handler(self.hass)
-            # Use call_soon_threadsafe to schedule the async task from sync context
-            self.hass.loop.call_soon_threadsafe(
-                lambda: self.hass.async_create_task(
-                    handler.trigger_refresh(self.entity_id, reason)
-                )
-            )
+            await handler.trigger_refresh(self.entity_id, reason)
         except Exception as e:
             _LOGGER.debug(f"Failed to trigger immediate refresh: {e}")
     
-    def _set_early_start(self, enabled: bool) -> bool:
-        """Set early start state via API."""
-        try:
-            token = _get_access_token()
-            if not token:
-                _LOGGER.error("Failed to get access token")
-                return False
-            
-            home_id = _get_home_id()
-            if not home_id:
-                _LOGGER.error("No home_id configured")
-                return False
-            
-            url = f"{TADO_API_BASE}/homes/{home_id}/zones/{self._zone_id}/earlyStart"
-            payload = {"enabled": enabled}
-            
-            data = json.dumps(payload).encode()
-            req = Request(url, data=data, method="PUT")
-            req.add_header("Authorization", f"Bearer {token}")
-            req.add_header("Content-Type", "application/json")
-            
-            with urlopen(req, timeout=10) as resp:
-                state_str = "enabled" if enabled else "disabled"
-                _LOGGER.info(f"Early Start {state_str} for {self._zone_name}")
-                self._attr_is_on = enabled
-                return True
-                
-        except HTTPError as e:
-            if e.code == 401:
-                _LOGGER.error(f"Authentication failed (401) - please re-authenticate: {e}")
-            elif e.code == 429:
-                _LOGGER.error(f"Rate limit exceeded (429) - too many API calls: {e}")
-            else:
-                _LOGGER.error(f"HTTP error {e.code} while setting early start: {e}")
-            return False
-        except URLError as e:
-            _LOGGER.error(f"Network error while setting early start: {e}")
-            return False
-        except Exception as e:
-            _LOGGER.error(f"Unexpected error while setting early start: {e}")
-            return False
+    async def _async_set_early_start(self, enabled: bool) -> bool:
+        """Set early start state via async API."""
+        from .async_api import get_async_client
+        
+        client = get_async_client(self.hass)
+        
+        # Early start uses a different endpoint format
+        endpoint = f"zones/{self._zone_id}/earlyStart"
+        result = await client.api_call(endpoint, method="PUT", data={"enabled": enabled})
+        
+        if result is not None:
+            state_str = "enabled" if enabled else "disabled"
+            _LOGGER.info(f"Early Start {state_str} for {self._zone_name}")
+            self._attr_is_on = enabled
+            self.async_write_ha_state()
+            return True
+        
+        _LOGGER.error(f"Failed to set early start for {self._zone_name}")
+        return False
 
 
 class TadoChildLockSwitch(SwitchEntity):
@@ -378,62 +289,64 @@ class TadoChildLockSwitch(SwitchEntity):
         except Exception:
             self._attr_available = False
     
-    def turn_on(self, **kwargs):
-        """Turn on child lock."""
-        if self._set_child_lock(True):
-            self._trigger_immediate_refresh("child_lock_on")
+    async def async_turn_on(self, **kwargs):
+        """Turn on child lock - async."""
+        success = await self._async_set_child_lock(True)
+        if success:
+            await self._async_trigger_immediate_refresh("child_lock_on")
     
-    def turn_off(self, **kwargs):
-        """Turn off child lock."""
-        if self._set_child_lock(False):
-            self._trigger_immediate_refresh("child_lock_off")
+    async def async_turn_off(self, **kwargs):
+        """Turn off child lock - async."""
+        success = await self._async_set_child_lock(False)
+        if success:
+            await self._async_trigger_immediate_refresh("child_lock_off")
     
-    def _trigger_immediate_refresh(self, reason: str):
+    async def _async_trigger_immediate_refresh(self, reason: str):
         """Trigger immediate refresh after state change."""
         try:
             from .immediate_refresh_handler import get_handler
             handler = get_handler(self.hass)
-            # Use call_soon_threadsafe to schedule the async task from sync context
-            self.hass.loop.call_soon_threadsafe(
-                lambda: self.hass.async_create_task(
-                    handler.trigger_refresh(self.entity_id, reason)
-                )
-            )
+            await handler.trigger_refresh(self.entity_id, reason)
         except Exception as e:
             _LOGGER.debug(f"Failed to trigger immediate refresh: {e}")
     
-    def _set_child_lock(self, enabled: bool) -> bool:
-        """Set child lock state via API."""
-        try:
-            token = _get_access_token()
-            if not token:
-                _LOGGER.error("Failed to get access token")
-                return False
-            
-            # API endpoint: PUT /devices/{serialNo}/childLock
-            url = f"{API_ENDPOINT_DEVICES}/{self._serial}/childLock"
-            payload = {"childLockEnabled": enabled}
-            
-            data = json.dumps(payload).encode()
-            req = Request(url, data=data, method="PUT")
-            req.add_header("Authorization", f"Bearer {token}")
-            req.add_header("Content-Type", "application/json")
-            
-            with urlopen(req, timeout=10) as resp:
-                state_str = "enabled" if enabled else "disabled"
-                _LOGGER.info(f"Child lock {state_str} for {self._zone_name} ({self._serial})")
-                self._attr_is_on = enabled
-                return True
-                
-        except HTTPError as e:
-            if e.code == 401:
-                _LOGGER.error(f"Authentication failed (401) - please re-authenticate: {e}")
-            elif e.code == 429:
-                _LOGGER.error(f"Rate limit exceeded (429) - too many API calls: {e}")
-            else:
-                _LOGGER.error(f"HTTP error {e.code} while setting child lock: {e}")
+    async def _async_set_child_lock(self, enabled: bool) -> bool:
+        """Set child lock state via async API."""
+        from .async_api import get_async_client
+        from homeassistant.helpers.aiohttp_client import async_get_clientsession
+        import aiohttp
+        
+        client = get_async_client(self.hass)
+        token = await client.get_access_token()
+        
+        if not token:
+            _LOGGER.error("Failed to get access token")
             return False
-        except URLError as e:
+        
+        # Child lock uses device endpoint (not home endpoint)
+        url = f"{API_ENDPOINT_DEVICES}/{self._serial}/childLock"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+        
+        session = async_get_clientsession(self.hass)
+        
+        try:
+            async with session.put(
+                url, headers=headers, json={"childLockEnabled": enabled}
+            ) as resp:
+                if resp.status in (200, 204):
+                    state_str = "enabled" if enabled else "disabled"
+                    _LOGGER.info(f"Child lock {state_str} for {self._zone_name} ({self._serial})")
+                    self._attr_is_on = enabled
+                    self.async_write_ha_state()
+                    return True
+                
+                _LOGGER.error(f"Failed to set child lock: {resp.status}")
+                return False
+                
+        except aiohttp.ClientError as e:
             _LOGGER.error(f"Network error while setting child lock: {e}")
             return False
         except Exception as e:

@@ -2,9 +2,6 @@
 import json
 import logging
 from datetime import timedelta
-from urllib.request import Request, urlopen
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
 
 from homeassistant.components.climate import ClimateEntity
 from homeassistant.components.climate.const import (
@@ -25,11 +22,16 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 
 from .const import (
-    DOMAIN, ZONES_FILE, ZONES_INFO_FILE, CONFIG_FILE, MOBILE_DEVICES_FILE, HOME_STATE_FILE,
-    TADO_API_BASE, TADO_AUTH_URL, CLIENT_ID, DEFAULT_ZONE_NAMES
+    DOMAIN, ZONES_FILE, ZONES_INFO_FILE, CONFIG_FILE, HOME_STATE_FILE,
+    DEFAULT_ZONE_NAMES
 )
-from .device_manager import get_hub_device_info, get_zone_device_info
-from .auth_manager import get_auth_manager
+from .device_manager import get_zone_device_info
+from .async_api import get_async_client
+from .data_loader import (
+    load_zones_file, load_zones_info_file, load_config_file,
+    load_home_state_file, load_offsets_file, load_ac_capabilities_file,
+    get_zone_names as dl_get_zone_names, get_zone_types as dl_get_zone_types
+)
 
 _LOGGER = logging.getLogger(__name__)
 SCAN_INTERVAL = timedelta(seconds=30)
@@ -46,70 +48,87 @@ TADO_TO_HA_HVAC_MODE = {
 
 HA_TO_TADO_HVAC_MODE = {v: k for k, v in TADO_TO_HA_HVAC_MODE.items()}
 
-# Fan speed mapping
+# Fan level mapping - Tado uses SILENT, LEVEL1-5, AUTO
+# Map to HA's limited fan modes (auto, low, medium, high)
 TADO_TO_HA_FAN = {
     "AUTO": FAN_AUTO,
+    "SILENT": FAN_LOW,
+    "LEVEL1": FAN_LOW,
+    "LEVEL2": FAN_LOW,
+    "LEVEL3": FAN_MEDIUM,
+    "LEVEL4": FAN_HIGH,
+    "LEVEL5": FAN_HIGH,
+    # Legacy mappings
     "HIGH": FAN_HIGH,
     "MIDDLE": FAN_MEDIUM,
     "LOW": FAN_LOW,
 }
 
-HA_TO_TADO_FAN = {v: k for k, v in TADO_TO_HA_FAN.items()}
+HA_TO_TADO_FAN = {
+    FAN_AUTO: "AUTO",
+    FAN_LOW: "LEVEL1",
+    FAN_MEDIUM: "LEVEL3",
+    FAN_HIGH: "LEVEL5",
+}
 
-# Swing mapping
+# Swing mapping - Tado has multiple positions, HA only has ON/OFF
 TADO_TO_HA_SWING = {
     "ON": SWING_ON,
     "OFF": SWING_OFF,
+    # Any specific position counts as ON
+    "UP": SWING_ON,
+    "MID_UP": SWING_ON,
+    "MID": SWING_ON,
+    "MID_DOWN": SWING_ON,
+    "DOWN": SWING_ON,
+    "LEFT": SWING_ON,
+    "MID_LEFT": SWING_ON,
+    "MID_RIGHT": SWING_ON,
+    "RIGHT": SWING_ON,
 }
 
 
 def get_zone_names():
     """Load zone names from API data."""
-    try:
-        with open(ZONES_INFO_FILE) as f:
-            zones_info = json.load(f)
-            return {str(z.get('id')): z.get('name', f"Zone {z.get('id')}") for z in zones_info}
-    except Exception as e:
-        _LOGGER.warning(f"Failed to load zone names: {e}")
-        return DEFAULT_ZONE_NAMES
+    return dl_get_zone_names()
 
 
 def get_zone_types():
     """Load zone types from API data."""
-    try:
-        with open(ZONES_INFO_FILE) as f:
-            zones_info = json.load(f)
-            return {str(z.get('id')): z.get('type', 'HEATING') for z in zones_info}
-    except Exception:
-        return {}
+    return dl_get_zone_types()
 
 
 def get_zone_capabilities():
-    """Load zone capabilities (for AC zones)."""
-    try:
-        with open(ZONES_INFO_FILE) as f:
-            zones_info = json.load(f)
-            caps = {}
-            for z in zones_info:
-                zone_id = str(z.get('id'))
-                # AC capabilities are in zone info
-                caps[zone_id] = {
-                    'type': z.get('type'),
-                    'capabilities': z.get('capabilities', {}),
-                }
-            return caps
-    except Exception:
-        return {}
-
-
-def get_access_token():
-    """Get access token using centralized AuthManager.
+    """Load zone capabilities (for AC zones).
     
-    DEPRECATED: This function is kept for backward compatibility.
-    New code should use AuthManager directly.
+    First tries to load from ac_capabilities.json (fetched from dedicated API endpoint).
+    Falls back to zones_info.json for basic capabilities.
     """
-    auth_manager = get_auth_manager(CONFIG_FILE, CLIENT_ID, TADO_AUTH_URL)
-    return auth_manager.get_access_token()
+    ac_caps = load_ac_capabilities_file() or {}
+    zones_info = load_zones_info_file()
+    
+    if not zones_info:
+        return {}
+    
+    caps = {}
+    for z in zones_info:
+        zone_id = str(z.get('id'))
+        zone_type = z.get('type')
+        
+        if zone_type == 'AIR_CONDITIONING' and zone_id in ac_caps:
+            # Use detailed AC capabilities from dedicated API
+            caps[zone_id] = {
+                'type': zone_type,
+                'ac_capabilities': ac_caps[zone_id],
+            }
+        else:
+            # Fallback to basic capabilities from zones_info
+            # Use 'or {}' pattern for null safety
+            caps[zone_id] = {
+                'type': zone_type,
+                'capabilities': z.get('capabilities') or {},
+            }
+    return caps
 
 
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
@@ -120,9 +139,11 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     
     climates = []
     try:
-        zones_data = await hass.async_add_executor_job(_load_zones_file)
+        zones_data = await hass.async_add_executor_job(load_zones_file)
         if zones_data:
-            for zone_id, zone_data in zones_data.get('zoneStates', {}).items():
+            # Use 'or {}' pattern for null safety
+            zone_states = zones_data.get('zoneStates') or {}
+            for zone_id, zone_data in zone_states.items():
                 zone_type = zone_types.get(zone_id, 'HEATING')
                 zone_name = zone_names.get(zone_id, f"Zone {zone_id}")
                 caps = zone_caps.get(zone_id, {})
@@ -136,15 +157,6 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     
     async_add_entities(climates, True)
     _LOGGER.info(f"Tado CE climates loaded: {len(climates)}")
-
-
-def _load_zones_file():
-    """Load zones file (blocking)."""
-    try:
-        with open(ZONES_FILE) as f:
-            return json.load(f)
-    except Exception:
-        return None
 
 
 class TadoClimate(ClimateEntity):
@@ -184,16 +196,21 @@ class TadoClimate(ClimateEntity):
         # Extra attributes
         self._overlay_type = None
         self._heating_power = None
+        self._offset_celsius = None  # Temperature offset (optional, enabled in config)
         self._attr_preset_mode = PRESET_HOME
 
     @property
     def extra_state_attributes(self):
         """Return extra state attributes."""
-        return {
+        attrs = {
             "overlay_type": self._overlay_type,
             "heating_power": self._heating_power,
             "zone_id": self._zone_id,
         }
+        # Only include offset_celsius if enabled and available
+        if self._offset_celsius is not None:
+            attrs["offset_celsius"] = self._offset_celsius
+        return attrs
 
     def update(self):
         """Update climate state from JSON file."""
@@ -205,31 +222,29 @@ class TadoClimate(ClimateEntity):
             
             with open(ZONES_FILE) as f:
                 data = json.load(f)
-                zone_data = data.get('zoneStates', {}).get(self._zone_id)
+                # Use 'or {}' pattern for null safety
+                zone_states = data.get('zoneStates') or {}
+                zone_data = zone_states.get(self._zone_id)
                 
                 if not zone_data:
                     self._attr_available = False
                     return
                 
-                # Current temperature
+                # Current temperature (use 'or {}' pattern for null safety)
+                sensor_data = zone_data.get('sensorDataPoints') or {}
                 self._attr_current_temperature = (
-                    zone_data.get('sensorDataPoints', {})
-                    .get('insideTemperature', {})
-                    .get('celsius')
+                    (sensor_data.get('insideTemperature') or {}).get('celsius')
                 )
                 
                 # Current humidity
                 self._attr_current_humidity = (
-                    zone_data.get('sensorDataPoints', {})
-                    .get('humidity', {})
-                    .get('percentage')
+                    (sensor_data.get('humidity') or {}).get('percentage')
                 )
                 
                 # Heating power
+                activity_data = zone_data.get('activityDataPoints') or {}
                 self._heating_power = (
-                    zone_data.get('activityDataPoints', {})
-                    .get('heatingPower', {})
-                    .get('percentage', 0)
+                    (activity_data.get('heatingPower') or {}).get('percentage', 0)
                 )
                 
                 # HVAC action based on heating power
@@ -239,32 +254,68 @@ class TadoClimate(ClimateEntity):
                     self._attr_hvac_action = HVACAction.IDLE
                 
                 # Setting (target temp and mode)
-                setting = zone_data.get('setting', {})
+                setting = zone_data.get('setting') or {}
                 power = setting.get('power')
                 self._overlay_type = zone_data.get('overlayType')
                 
                 if power == 'ON':
-                    temp = setting.get('temperature', {}).get('celsius')
+                    temp = (setting.get('temperature') or {}).get('celsius')
                     self._attr_target_temperature = temp
                     
-                    # Determine HVAC mode
+                    # Determine HVAC mode - match official Tado integration behavior
+                    # Show AUTO when following schedule (even if scheduled OFF)
+                    # Show HEAT only when there's a MANUAL overlay
                     if self._overlay_type == 'MANUAL':
                         self._attr_hvac_mode = HVACMode.HEAT
                     else:
                         self._attr_hvac_mode = HVACMode.AUTO
                 else:
-                    self._attr_hvac_mode = HVACMode.OFF
+                    # Power is OFF
+                    # Match official Tado integration: show AUTO if following schedule
+                    # This helps distinguish "OFF by schedule" vs "OFF by manual override"
+                    if self._overlay_type == 'MANUAL':
+                        self._attr_hvac_mode = HVACMode.OFF
+                    else:
+                        # Following schedule (even if scheduled to be OFF)
+                        self._attr_hvac_mode = HVACMode.AUTO
                     self._attr_target_temperature = None
                     self._attr_hvac_action = HVACAction.OFF
                 
                 self._attr_available = True
             
-            # Update preset mode from mobile devices
+            # Update preset mode from home state
             self._update_preset_mode()
+            
+            # Update offset if enabled
+            self._update_offset()
                 
         except Exception as e:
             _LOGGER.debug(f"Failed to update {self.name}: {e}")
             self._attr_available = False
+    
+    def _update_offset(self):
+        """Update temperature offset from cached offsets file.
+        
+        Offset is synced during full sync if offset_enabled is True in config.
+        Only reads offset if offset_enabled is True in config.
+        """
+        try:
+            # Check if offset is enabled in config
+            config_manager = self.hass.data.get(DOMAIN, {}).get('config_manager')
+            if not config_manager or not config_manager.get_offset_enabled():
+                self._offset_celsius = None
+                return
+            
+            from .const import OFFSETS_FILE
+            if OFFSETS_FILE.exists():
+                with open(OFFSETS_FILE) as f:
+                    offsets = json.load(f)
+                    self._offset_celsius = offsets.get(self._zone_id)
+            else:
+                self._offset_celsius = None
+        except Exception:
+            # Keep existing offset value on error
+            pass
     
     def _update_preset_mode(self):
         """Update preset mode based on home state (not mobile devices).
@@ -281,222 +332,81 @@ class TadoClimate(ClimateEntity):
             # Keep last known preset mode
             pass
 
-    def set_preset_mode(self, preset_mode: str):
+    async def async_set_preset_mode(self, preset_mode: str):
         """Set preset mode (Home/Away).
         
         Uses 1 API call to set presence lock.
         """
-        if preset_mode == PRESET_AWAY:
-            self._set_presence_lock("AWAY")
-        else:
-            self._set_presence_lock("HOME")
-    
-    def _set_presence_lock(self, state: str) -> bool:
-        """Set presence lock via API."""
-        if not self._home_id:
-            _LOGGER.error("No home_id configured")
-            return False
+        client = get_async_client(self.hass)
+        state = "AWAY" if preset_mode == PRESET_AWAY else "HOME"
         
-        try:
-            token = get_access_token()
-            if not token:
-                _LOGGER.error("Failed to get access token")
-                return False
-            
-            url = f"{TADO_API_BASE}/homes/{self._home_id}/presenceLock"
-            payload = {"homePresence": state}
-            
-            data = json.dumps(payload).encode()
-            req = Request(url, data=data, method="PUT")
-            req.add_header("Authorization", f"Bearer {token}")
-            req.add_header("Content-Type", "application/json")
-            
-            with urlopen(req, timeout=10) as resp:
-                _LOGGER.info(f"Presence lock set to {state}")
-                self._attr_preset_mode = PRESET_AWAY if state == "AWAY" else PRESET_HOME
-                return True
-                
-        except HTTPError as e:
-            if e.code == 401:
-                _LOGGER.error(f"Authentication failed (401) - please re-authenticate: {e}")
-            elif e.code == 429:
-                _LOGGER.error(f"Rate limit exceeded (429) - too many API calls: {e}")
-            else:
-                _LOGGER.error(f"HTTP error {e.code} while setting presence lock: {e}")
-            return False
-        except URLError as e:
-            _LOGGER.error(f"Network error while setting presence lock: {e}")
-            return False
-        except Exception as e:
-            _LOGGER.error(f"Unexpected error while setting presence lock: {e}")
-            return False
+        if await client.set_presence_lock(state):
+            self._attr_preset_mode = preset_mode
+            await self._async_trigger_immediate_refresh("preset_mode_change")
 
-    def set_temperature(self, **kwargs):
+    async def async_set_temperature(self, **kwargs):
         """Set new target temperature."""
         temperature = kwargs.get(ATTR_TEMPERATURE)
         if temperature is None:
             return
         
-        if self._set_overlay(temperature):
+        client = get_async_client(self.hass)
+        setting = {
+            "type": "HEATING",
+            "power": "ON",
+            "temperature": {"celsius": temperature}
+        }
+        termination = {"type": "MANUAL"}
+        
+        if await client.set_zone_overlay(self._zone_id, setting, termination):
             self._attr_target_temperature = temperature
             self._attr_hvac_mode = HVACMode.HEAT
-            
-            # Trigger immediate refresh
-            self._trigger_immediate_refresh("temperature_change")
+            _LOGGER.info(f"Set {self._zone_name} to {temperature}°C")
+            await self._async_trigger_immediate_refresh("temperature_change")
 
-    def set_hvac_mode(self, hvac_mode: HVACMode):
+    async def async_set_hvac_mode(self, hvac_mode: HVACMode):
         """Set new HVAC mode."""
+        client = get_async_client(self.hass)
+        
         if hvac_mode == HVACMode.HEAT:
             temp = self._attr_target_temperature or 20
-            if self._set_overlay(temp):
+            setting = {
+                "type": "HEATING",
+                "power": "ON",
+                "temperature": {"celsius": temp}
+            }
+            termination = {"type": "MANUAL"}
+            
+            if await client.set_zone_overlay(self._zone_id, setting, termination):
                 self._attr_hvac_mode = HVACMode.HEAT
-                self._trigger_immediate_refresh("hvac_mode_change")
+                await self._async_trigger_immediate_refresh("hvac_mode_change")
+                
         elif hvac_mode == HVACMode.OFF:
-            if self._set_overlay_off():
+            setting = {
+                "type": "HEATING",
+                "power": "OFF"
+            }
+            termination = {"type": "MANUAL"}
+            
+            if await client.set_zone_overlay(self._zone_id, setting, termination):
                 self._attr_hvac_mode = HVACMode.OFF
-                self._trigger_immediate_refresh("hvac_mode_change")
+                await self._async_trigger_immediate_refresh("hvac_mode_change")
+                
         elif hvac_mode == HVACMode.AUTO:
-            if self._delete_overlay():
+            if await client.delete_zone_overlay(self._zone_id):
                 self._attr_hvac_mode = HVACMode.AUTO
-                self._trigger_immediate_refresh("hvac_mode_change")
+                await self._async_trigger_immediate_refresh("hvac_mode_change")
     
-    def _trigger_immediate_refresh(self, reason: str):
+    async def _async_trigger_immediate_refresh(self, reason: str):
         """Trigger immediate refresh after state change."""
         try:
             from .immediate_refresh_handler import get_handler
             handler = get_handler(self.hass)
-            # Use call_soon_threadsafe to schedule the coroutine from sync context
-            self.hass.loop.call_soon_threadsafe(
-                lambda: self.hass.async_create_task(
-                    handler.trigger_refresh(self.entity_id, reason)
-                )
-            )
+            await handler.trigger_refresh(self.entity_id, reason)
         except Exception as e:
             _LOGGER.debug(f"Failed to trigger immediate refresh: {e}")
 
-    def _set_overlay(self, temperature: float) -> bool:
-        """Set manual overlay with temperature."""
-        if not self._home_id:
-            _LOGGER.error("No home_id configured")
-            return False
-        
-        try:
-            token = get_access_token()
-            if not token:
-                _LOGGER.error("Failed to get access token")
-                return False
-            
-            url = f"{TADO_API_BASE}/homes/{self._home_id}/zones/{self._zone_id}/overlay"
-            payload = {
-                "setting": {
-                    "type": "HEATING",
-                    "power": "ON",
-                    "temperature": {"celsius": temperature}
-                },
-                "termination": {"type": "MANUAL"}
-            }
-            
-            data = json.dumps(payload).encode()
-            req = Request(url, data=data, method="PUT")
-            req.add_header("Authorization", f"Bearer {token}")
-            req.add_header("Content-Type", "application/json")
-            
-            with urlopen(req, timeout=10) as resp:
-                _LOGGER.info(f"Set {self._zone_name} to {temperature}°C")
-                return True
-                
-        except HTTPError as e:
-            if e.code == 401:
-                _LOGGER.error(f"Authentication failed (401) - please re-authenticate: {e}")
-            elif e.code == 429:
-                _LOGGER.error(f"Rate limit exceeded (429) - too many API calls: {e}")
-            else:
-                _LOGGER.error(f"HTTP error {e.code} while setting temperature: {e}")
-            return False
-        except URLError as e:
-            _LOGGER.error(f"Network error while setting temperature: {e}")
-            return False
-        except Exception as e:
-            _LOGGER.error(f"Unexpected error while setting temperature: {e}")
-            return False
-
-    def _set_overlay_off(self) -> bool:
-        """Set overlay to OFF."""
-        if not self._home_id:
-            return False
-        
-        try:
-            token = get_access_token()
-            if not token:
-                return False
-            
-            url = f"{TADO_API_BASE}/homes/{self._home_id}/zones/{self._zone_id}/overlay"
-            payload = {
-                "setting": {
-                    "type": "HEATING",
-                    "power": "OFF"
-                },
-                "termination": {"type": "MANUAL"}
-            }
-            
-            data = json.dumps(payload).encode()
-            req = Request(url, data=data, method="PUT")
-            req.add_header("Authorization", f"Bearer {token}")
-            req.add_header("Content-Type", "application/json")
-            
-            with urlopen(req, timeout=10) as resp:
-                _LOGGER.info(f"Turned off {self._zone_name}")
-                return True
-                
-        except HTTPError as e:
-            if e.code == 401:
-                _LOGGER.error(f"Authentication failed (401) - please re-authenticate: {e}")
-            elif e.code == 429:
-                _LOGGER.error(f"Rate limit exceeded (429) - too many API calls: {e}")
-            else:
-                _LOGGER.error(f"HTTP error {e.code} while turning off: {e}")
-            return False
-        except URLError as e:
-            _LOGGER.error(f"Network error while turning off: {e}")
-            return False
-        except Exception as e:
-            _LOGGER.error(f"Unexpected error while turning off: {e}")
-            return False
-
-    def _delete_overlay(self) -> bool:
-        """Delete overlay (return to schedule)."""
-        if not self._home_id:
-            return False
-        
-        try:
-            token = get_access_token()
-            if not token:
-                return False
-            
-            url = f"{TADO_API_BASE}/homes/{self._home_id}/zones/{self._zone_id}/overlay"
-            req = Request(url, method="DELETE")
-            req.add_header("Authorization", f"Bearer {token}")
-            
-            with urlopen(req, timeout=10) as resp:
-                _LOGGER.info(f"Deleted overlay for {self._zone_name}")
-                return True
-                
-        except HTTPError as e:
-            if e.code == 401:
-                _LOGGER.error(f"Authentication failed (401) - please re-authenticate: {e}")
-            elif e.code == 429:
-                _LOGGER.error(f"Rate limit exceeded (429) - too many API calls: {e}")
-            else:
-                _LOGGER.error(f"HTTP error {e.code} while deleting overlay: {e}")
-            return False
-        except URLError as e:
-            _LOGGER.error(f"Network error while deleting overlay: {e}")
-            return False
-        except Exception as e:
-            _LOGGER.error(f"Unexpected error while deleting overlay: {e}")
-            return False
-
-    def set_timer(self, temperature: float, duration_minutes: int = None, overlay: str = None) -> bool:
+    async def async_set_timer(self, temperature: float, duration_minutes: int = None, overlay: str = None) -> bool:
         """Set temperature with timer or overlay type.
         
         Args:
@@ -504,64 +414,32 @@ class TadoClimate(ClimateEntity):
             duration_minutes: Duration in minutes (for TIMER termination)
             overlay: Overlay type - 'next_time_block' for TADO_MODE, None for MANUAL
         """
-        if not self._home_id:
-            _LOGGER.error("No home_id configured")
-            return False
+        client = get_async_client(self.hass)
         
-        try:
-            token = get_access_token()
-            if not token:
-                _LOGGER.error("Failed to get access token")
-                return False
-            
-            url = f"{TADO_API_BASE}/homes/{self._home_id}/zones/{self._zone_id}/overlay"
-            
-            # Determine termination type
-            if duration_minutes:
-                termination = {
-                    "type": "TIMER",
-                    "durationInSeconds": duration_minutes * 60
-                }
-                term_desc = f"for {duration_minutes} minutes"
-            elif overlay == "next_time_block":
-                termination = {"type": "TADO_MODE"}
-                term_desc = "until next schedule block"
-            else:
-                termination = {"type": "MANUAL"}
-                term_desc = "manually"
-            
-            payload = {
-                "setting": {
-                    "type": "HEATING",
-                    "power": "ON",
-                    "temperature": {"celsius": temperature}
-                },
-                "termination": termination
+        setting = {
+            "type": "HEATING",
+            "power": "ON",
+            "temperature": {"celsius": temperature}
+        }
+        
+        # Determine termination type
+        if duration_minutes:
+            termination = {
+                "type": "TIMER",
+                "durationInSeconds": duration_minutes * 60
             }
-            
-            data = json.dumps(payload).encode()
-            req = Request(url, data=data, method="PUT")
-            req.add_header("Authorization", f"Bearer {token}")
-            req.add_header("Content-Type", "application/json")
-            
-            with urlopen(req, timeout=10) as resp:
-                _LOGGER.info(f"Set {self._zone_name} to {temperature}°C {term_desc}")
-                return True
-                
-        except HTTPError as e:
-            if e.code == 401:
-                _LOGGER.error(f"Authentication failed (401) - please re-authenticate: {e}")
-            elif e.code == 429:
-                _LOGGER.error(f"Rate limit exceeded (429) - too many API calls: {e}")
-            else:
-                _LOGGER.error(f"HTTP error {e.code} while setting timer: {e}")
-            return False
-        except URLError as e:
-            _LOGGER.error(f"Network error while setting timer: {e}")
-            return False
-        except Exception as e:
-            _LOGGER.error(f"Unexpected error while setting timer: {e}")
-            return False
+            term_desc = f"for {duration_minutes} minutes"
+        elif overlay == "next_time_block":
+            termination = {"type": "TADO_MODE"}
+            term_desc = "until next schedule block"
+        else:
+            termination = {"type": "MANUAL"}
+            term_desc = "manually"
+        
+        if await client.set_zone_overlay(self._zone_id, setting, termination):
+            _LOGGER.info(f"Set {self._zone_name} to {temperature}°C {term_desc}")
+            return True
+        return False
 
 
 class TadoACClimate(ClimateEntity):
@@ -581,34 +459,89 @@ class TadoACClimate(ClimateEntity):
         # Use zone device info instead of hub device info
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, "AIR_CONDITIONING")
         
+        # Get AC capabilities from dedicated API endpoint
+        # Format: {"COOL": {...}, "HEAT": {...}, "DRY": {...}, "FAN": {...}, "AUTO": {...}}
+        # Use 'or {}' pattern for null safety
+        ac_caps = capabilities.get('ac_capabilities') or {}
+        
         # Build supported features based on capabilities
         features = ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.TURN_OFF | ClimateEntityFeature.TURN_ON
         
-        # Check AC capabilities
-        ac_caps = capabilities.get('capabilities', {})
-        if ac_caps.get('FAN') or ac_caps.get('fanLevel'):
+        # Check if any mode has fan levels
+        has_fan = any((ac_caps.get(mode) or {}).get('fanLevel') for mode in ['COOL', 'HEAT', 'DRY', 'FAN', 'AUTO'])
+        if has_fan:
             features |= ClimateEntityFeature.FAN_MODE
-        if ac_caps.get('SWING') or ac_caps.get('swing'):
+        
+        # Check if any mode has swing options
+        has_swing = any(
+            (ac_caps.get(mode) or {}).get('verticalSwing') or (ac_caps.get(mode) or {}).get('horizontalSwing')
+            for mode in ['COOL', 'HEAT', 'DRY', 'FAN', 'AUTO']
+        )
+        if has_swing:
             features |= ClimateEntityFeature.SWING_MODE
         
         self._attr_supported_features = features
         
         # Build HVAC modes based on capabilities
+        # Always include OFF and AUTO (schedule)
         self._attr_hvac_modes = [HVACMode.OFF, HVACMode.AUTO]
-        for tado_mode, ha_mode in TADO_TO_HA_HVAC_MODE.items():
-            if ac_caps.get(tado_mode) or tado_mode in ['COOL', 'HEAT']:
-                if ha_mode not in self._attr_hvac_modes:
+        
+        # Add modes that exist in capabilities
+        for tado_mode in ['COOL', 'HEAT', 'DRY', 'FAN']:
+            if tado_mode in ac_caps:
+                ha_mode = TADO_TO_HA_HVAC_MODE.get(tado_mode)
+                if ha_mode and ha_mode not in self._attr_hvac_modes:
                     self._attr_hvac_modes.append(ha_mode)
         
-        # Fan modes
-        self._attr_fan_modes = [FAN_AUTO, FAN_LOW, FAN_MEDIUM, FAN_HIGH]
+        # If AUTO mode exists in capabilities, it maps to HEAT_COOL
+        if 'AUTO' in ac_caps:
+            # AUTO is already added above, but ensure HEAT_COOL is there
+            if HVACMode.HEAT_COOL not in self._attr_hvac_modes:
+                self._attr_hvac_modes.append(HVACMode.HEAT_COOL)
         
-        # Swing modes
-        self._attr_swing_modes = [SWING_ON, SWING_OFF]
+        _LOGGER.debug(f"AC zone {zone_id} HVAC modes: {self._attr_hvac_modes}")
         
-        self._attr_min_temp = 16
-        self._attr_max_temp = 30
-        self._attr_target_temperature_step = 1
+        # Fan modes - collect from all modes that have fanLevel
+        fan_levels = set()
+        for mode_caps in ac_caps.values():
+            if isinstance(mode_caps, dict) and 'fanLevel' in mode_caps:
+                fan_levels.update(mode_caps['fanLevel'])
+        
+        if fan_levels:
+            # Map Tado fan levels to HA fan modes
+            self._attr_fan_modes = []
+            if 'AUTO' in fan_levels:
+                self._attr_fan_modes.append(FAN_AUTO)
+            if any(f in fan_levels for f in ['SILENT', 'LEVEL1', 'LEVEL2', 'LOW']):
+                self._attr_fan_modes.append(FAN_LOW)
+            if any(f in fan_levels for f in ['LEVEL3', 'MIDDLE']):
+                self._attr_fan_modes.append(FAN_MEDIUM)
+            if any(f in fan_levels for f in ['LEVEL4', 'LEVEL5', 'HIGH']):
+                self._attr_fan_modes.append(FAN_HIGH)
+            _LOGGER.debug(f"AC zone {zone_id} fan modes: {self._attr_fan_modes} (from {fan_levels})")
+        else:
+            self._attr_fan_modes = [FAN_AUTO, FAN_LOW, FAN_MEDIUM, FAN_HIGH]
+        
+        # Swing modes - HA only supports ON/OFF
+        self._attr_swing_modes = [SWING_ON, SWING_OFF] if has_swing else None
+        
+        # Temperature range from capabilities
+        # Get from any mode that has temperatures (COOL is most common)
+        temp_caps = None
+        for mode in ['COOL', 'HEAT', 'AUTO', 'DRY']:
+            if mode in ac_caps and 'temperatures' in ac_caps[mode]:
+                # Use 'or {}' pattern for null safety
+                temp_caps = (ac_caps[mode]['temperatures'].get('celsius') or {})
+                break
+        
+        if temp_caps:
+            self._attr_min_temp = temp_caps.get('min', 16)
+            self._attr_max_temp = temp_caps.get('max', 30)
+            self._attr_target_temperature_step = temp_caps.get('step', 1)
+        else:
+            self._attr_min_temp = 16
+            self._attr_max_temp = 30
+            self._attr_target_temperature_step = 1
         
         self._attr_current_temperature = None
         self._attr_target_temperature = None
@@ -641,41 +574,39 @@ class TadoACClimate(ClimateEntity):
             
             with open(ZONES_FILE) as f:
                 data = json.load(f)
-                zone_data = data.get('zoneStates', {}).get(self._zone_id)
+                # Use 'or {}' pattern for null safety
+                zone_states = data.get('zoneStates') or {}
+                zone_data = zone_states.get(self._zone_id)
                 
                 if not zone_data:
                     self._attr_available = False
                     return
                 
-                # Current temperature
+                # Current temperature (use 'or {}' pattern for null safety)
+                sensor_data = zone_data.get('sensorDataPoints') or {}
                 self._attr_current_temperature = (
-                    zone_data.get('sensorDataPoints', {})
-                    .get('insideTemperature', {})
-                    .get('celsius')
+                    (sensor_data.get('insideTemperature') or {}).get('celsius')
                 )
                 
                 # Current humidity
                 self._attr_current_humidity = (
-                    zone_data.get('sensorDataPoints', {})
-                    .get('humidity', {})
-                    .get('percentage')
+                    (sensor_data.get('humidity') or {}).get('percentage')
                 )
                 
                 # AC power percentage
+                activity_data = zone_data.get('activityDataPoints') or {}
                 self._ac_power_percentage = (
-                    zone_data.get('activityDataPoints', {})
-                    .get('acPower', {})
-                    .get('percentage')
+                    (activity_data.get('acPower') or {}).get('percentage')
                 )
                 
                 # Setting
-                setting = zone_data.get('setting', {})
+                setting = zone_data.get('setting') or {}
                 power = setting.get('power')
                 self._overlay_type = zone_data.get('overlayType')
                 
                 if power == 'ON':
                     # Temperature
-                    temp = setting.get('temperature', {}).get('celsius')
+                    temp = (setting.get('temperature') or {}).get('celsius')
                     self._attr_target_temperature = temp
                     
                     # Mode
@@ -715,223 +646,119 @@ class TadoACClimate(ClimateEntity):
             _LOGGER.debug(f"Failed to update {self.name}: {e}")
             self._attr_available = False
 
-    def set_temperature(self, **kwargs):
+    async def async_set_temperature(self, **kwargs):
         """Set new target temperature."""
         temperature = kwargs.get(ATTR_TEMPERATURE)
         if temperature is None:
             return
         
-        if self._set_ac_overlay(temperature=temperature):
+        if await self._async_set_ac_overlay(temperature=temperature):
             self._attr_target_temperature = temperature
-            
-            # Trigger immediate refresh
-            self._trigger_immediate_refresh("temperature_change")
+            await self._async_trigger_immediate_refresh("temperature_change")
 
-    def set_hvac_mode(self, hvac_mode: HVACMode):
+    async def async_set_hvac_mode(self, hvac_mode: HVACMode):
         """Set new HVAC mode."""
+        client = get_async_client(self.hass)
+        
         if hvac_mode == HVACMode.OFF:
-            if self._set_ac_overlay_off():
+            setting = {
+                "type": "AIR_CONDITIONING",
+                "power": "OFF"
+            }
+            termination = {"type": "MANUAL"}
+            
+            if await client.set_zone_overlay(self._zone_id, setting, termination):
                 self._attr_hvac_mode = HVACMode.OFF
-                self._trigger_immediate_refresh("hvac_mode_change")
+                await self._async_trigger_immediate_refresh("hvac_mode_change")
+                
         elif hvac_mode == HVACMode.AUTO:
-            if self._delete_overlay():
+            if await client.delete_zone_overlay(self._zone_id):
                 self._attr_hvac_mode = HVACMode.AUTO
-                self._trigger_immediate_refresh("hvac_mode_change")
+                await self._async_trigger_immediate_refresh("hvac_mode_change")
         else:
             tado_mode = HA_TO_TADO_HVAC_MODE.get(hvac_mode, 'COOL')
-            if self._set_ac_overlay(mode=tado_mode):
+            if await self._async_set_ac_overlay(mode=tado_mode):
                 self._attr_hvac_mode = hvac_mode
-                self._trigger_immediate_refresh("hvac_mode_change")
+                await self._async_trigger_immediate_refresh("hvac_mode_change")
 
-    def set_fan_mode(self, fan_mode: str):
+    async def async_set_fan_mode(self, fan_mode: str):
         """Set new fan mode."""
         tado_fan = HA_TO_TADO_FAN.get(fan_mode, 'AUTO')
-        if self._set_ac_overlay(fan_speed=tado_fan):
+        if await self._async_set_ac_overlay(fan_speed=tado_fan):
             self._attr_fan_mode = fan_mode
-            self._trigger_immediate_refresh("fan_mode_change")
+            await self._async_trigger_immediate_refresh("fan_mode_change")
 
-    def set_swing_mode(self, swing_mode: str):
+    async def async_set_swing_mode(self, swing_mode: str):
         """Set new swing mode."""
         tado_swing = "ON" if swing_mode == SWING_ON else "OFF"
-        if self._set_ac_overlay(swing=tado_swing):
+        if await self._async_set_ac_overlay(swing=tado_swing):
             self._attr_swing_mode = swing_mode
-            self._trigger_immediate_refresh("swing_mode_change")
+            await self._async_trigger_immediate_refresh("swing_mode_change")
     
-    def _trigger_immediate_refresh(self, reason: str):
+    async def _async_trigger_immediate_refresh(self, reason: str):
         """Trigger immediate refresh after state change."""
         try:
             from .immediate_refresh_handler import get_handler
             handler = get_handler(self.hass)
-            # Use call_soon_threadsafe to schedule the coroutine from sync context
-            self.hass.loop.call_soon_threadsafe(
-                lambda: self.hass.async_create_task(
-                    handler.trigger_refresh(self.entity_id, reason)
-                )
-            )
+            await handler.trigger_refresh(self.entity_id, reason)
         except Exception as e:
             _LOGGER.debug(f"Failed to trigger immediate refresh: {e}")
 
-    def _set_ac_overlay(self, temperature: float = None, mode: str = None, 
-                        fan_speed: str = None, swing: str = None,
-                        duration_minutes: int = None) -> bool:
+    async def _async_set_ac_overlay(self, temperature: float = None, mode: str = None, 
+                                    fan_speed: str = None, swing: str = None,
+                                    duration_minutes: int = None) -> bool:
         """Set AC overlay with optional parameters."""
-        if not self._home_id:
-            _LOGGER.error("No home_id configured")
-            return False
+        client = get_async_client(self.hass)
         
-        try:
-            token = get_access_token()
-            if not token:
-                _LOGGER.error("Failed to get access token")
-                return False
-            
-            # Build setting from current state + changes
-            setting = {
-                "type": "AIR_CONDITIONING",
-                "power": "ON",
-            }
-            
-            # Mode
-            if mode:
-                setting["mode"] = mode
-            elif self._attr_hvac_mode and self._attr_hvac_mode != HVACMode.OFF:
-                setting["mode"] = HA_TO_TADO_HVAC_MODE.get(self._attr_hvac_mode, 'COOL')
-            else:
-                setting["mode"] = "COOL"
-            
-            # Temperature (not all modes need it)
-            if setting["mode"] not in ["FAN", "DRY"]:
-                if temperature:
-                    setting["temperature"] = {"celsius": temperature}
-                elif self._attr_target_temperature:
-                    setting["temperature"] = {"celsius": self._attr_target_temperature}
-                else:
-                    setting["temperature"] = {"celsius": 24}
-            
-            # Fan speed
-            if fan_speed:
-                setting["fanSpeed"] = fan_speed
-            elif self._attr_fan_mode:
-                setting["fanSpeed"] = HA_TO_TADO_FAN.get(self._attr_fan_mode, 'AUTO')
-            
-            # Swing
-            if swing:
-                setting["swing"] = swing
-            elif self._attr_swing_mode:
-                setting["swing"] = "ON" if self._attr_swing_mode == SWING_ON else "OFF"
-            
-            # Termination
-            if duration_minutes:
-                termination = {"type": "TIMER", "durationInSeconds": duration_minutes * 60}
-            else:
-                termination = {"type": "MANUAL"}
-            
-            url = f"{TADO_API_BASE}/homes/{self._home_id}/zones/{self._zone_id}/overlay"
-            payload = {"setting": setting, "termination": termination}
-            
-            data = json.dumps(payload).encode()
-            req = Request(url, data=data, method="PUT")
-            req.add_header("Authorization", f"Bearer {token}")
-            req.add_header("Content-Type", "application/json")
-            
-            with urlopen(req, timeout=10) as resp:
-                _LOGGER.info(f"Set AC {self._zone_name}: {setting}")
-                return True
-                
-        except HTTPError as e:
-            if e.code == 401:
-                _LOGGER.error(f"Authentication failed (401) - please re-authenticate: {e}")
-            elif e.code == 429:
-                _LOGGER.error(f"Rate limit exceeded (429) - too many API calls: {e}")
-            else:
-                _LOGGER.error(f"HTTP error {e.code} while setting AC: {e}")
-            return False
-        except URLError as e:
-            _LOGGER.error(f"Network error while setting AC: {e}")
-            return False
-        except Exception as e:
-            _LOGGER.error(f"Unexpected error while setting AC: {e}")
-            return False
-
-    def _set_ac_overlay_off(self) -> bool:
-        """Turn off AC."""
-        if not self._home_id:
-            return False
+        # Build setting from current state + changes
+        setting = {
+            "type": "AIR_CONDITIONING",
+            "power": "ON",
+        }
         
-        try:
-            token = get_access_token()
-            if not token:
-                return False
-            
-            url = f"{TADO_API_BASE}/homes/{self._home_id}/zones/{self._zone_id}/overlay"
-            payload = {
-                "setting": {
-                    "type": "AIR_CONDITIONING",
-                    "power": "OFF"
-                },
-                "termination": {"type": "MANUAL"}
-            }
-            
-            data = json.dumps(payload).encode()
-            req = Request(url, data=data, method="PUT")
-            req.add_header("Authorization", f"Bearer {token}")
-            req.add_header("Content-Type", "application/json")
-            
-            with urlopen(req, timeout=10) as resp:
-                _LOGGER.info(f"Turned off AC {self._zone_name}")
-                return True
-                
-        except HTTPError as e:
-            if e.code == 401:
-                _LOGGER.error(f"Authentication failed (401) - please re-authenticate: {e}")
-            elif e.code == 429:
-                _LOGGER.error(f"Rate limit exceeded (429) - too many API calls: {e}")
-            else:
-                _LOGGER.error(f"HTTP error {e.code} while turning off AC: {e}")
-            return False
-        except URLError as e:
-            _LOGGER.error(f"Network error while turning off AC: {e}")
-            return False
-        except Exception as e:
-            _LOGGER.error(f"Unexpected error while turning off AC: {e}")
-            return False
-
-    def _delete_overlay(self) -> bool:
-        """Delete overlay (return to schedule)."""
-        if not self._home_id:
-            return False
+        # Mode
+        if mode:
+            setting["mode"] = mode
+        elif self._attr_hvac_mode and self._attr_hvac_mode != HVACMode.OFF:
+            setting["mode"] = HA_TO_TADO_HVAC_MODE.get(self._attr_hvac_mode, 'COOL')
+        else:
+            setting["mode"] = "COOL"
         
-        try:
-            token = get_access_token()
-            if not token:
-                return False
-            
-            url = f"{TADO_API_BASE}/homes/{self._home_id}/zones/{self._zone_id}/overlay"
-            req = Request(url, method="DELETE")
-            req.add_header("Authorization", f"Bearer {token}")
-            
-            with urlopen(req, timeout=10) as resp:
-                _LOGGER.info(f"Deleted overlay for AC {self._zone_name}")
-                return True
-                
-        except HTTPError as e:
-            if e.code == 401:
-                _LOGGER.error(f"Authentication failed (401) - please re-authenticate: {e}")
-            elif e.code == 429:
-                _LOGGER.error(f"Rate limit exceeded (429) - too many API calls: {e}")
+        # Temperature (FAN mode doesn't need it, but DRY does)
+        if setting["mode"] != "FAN":
+            if temperature:
+                setting["temperature"] = {"celsius": temperature}
+            elif self._attr_target_temperature:
+                setting["temperature"] = {"celsius": self._attr_target_temperature}
             else:
-                _LOGGER.error(f"HTTP error {e.code} while deleting AC overlay: {e}")
-            return False
-        except URLError as e:
-            _LOGGER.error(f"Network error while deleting AC overlay: {e}")
-            return False
-        except Exception as e:
-            _LOGGER.error(f"Unexpected error while deleting AC overlay: {e}")
-            return False
+                setting["temperature"] = {"celsius": 24}
+        
+        # Fan speed
+        if fan_speed:
+            setting["fanSpeed"] = fan_speed
+        elif self._attr_fan_mode:
+            setting["fanSpeed"] = HA_TO_TADO_FAN.get(self._attr_fan_mode, 'AUTO')
+        
+        # Swing
+        if swing:
+            setting["swing"] = swing
+        elif self._attr_swing_mode:
+            setting["swing"] = "ON" if self._attr_swing_mode == SWING_ON else "OFF"
+        
+        # Termination
+        if duration_minutes:
+            termination = {"type": "TIMER", "durationInSeconds": duration_minutes * 60}
+        else:
+            termination = {"type": "MANUAL"}
+        
+        if await client.set_zone_overlay(self._zone_id, setting, termination):
+            _LOGGER.info(f"Set AC {self._zone_name}: {setting}")
+            return True
+        return False
 
-    def set_timer(self, temperature: float, duration_minutes: int, mode: str = None) -> bool:
+    async def async_set_timer(self, temperature: float, duration_minutes: int, mode: str = None) -> bool:
         """Set AC with timer."""
-        return self._set_ac_overlay(
+        return await self._async_set_ac_overlay(
             temperature=temperature,
             mode=mode,
             duration_minutes=duration_minutes

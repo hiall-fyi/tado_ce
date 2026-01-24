@@ -2,6 +2,27 @@
 
 Complete list of all entities created by Tado CE integration.
 
+## 📋 v1.5.0 Changes
+
+### Climate Entity Enhancements
+- **Optional `offset_celsius` attribute**: Enable in options to show temperature offset on climate entities
+- **Full AC support**: DRY/FAN modes, fan levels (Low/Medium/High/Auto), swing modes now properly supported
+
+### Hot Water Temperature Control
+- **Auto-detected**: If your hot water zone supports temperature (e.g., hot water tanks), you can now see and set target temperature
+- **Works with V2 systems**: Verified working with Tado V2 thermostats
+
+### New Sensors
+- **Power sensor** (Hot water zones): Shows ON/OFF status
+
+### New Service
+- **`tado_ce.get_temperature_offset`**: Fetch current offset for use in automations
+
+### Mobile Device Sync
+- **Frequent sync option**: Enable to sync mobile devices every quick sync (for presence automations)
+
+---
+
 ## 📋 v1.4.0 Changes
 
 ### Boiler Flow Temperature Sensor
@@ -87,6 +108,7 @@ For each heating zone (e.g. "Lounge"), you get:
 | `overlay_type` | Manual/Schedule/Timer |
 | `heating_power` | Heating demand (0-100%) |
 | `zone_id` | Tado zone ID |
+| `offset_celsius` | Temperature offset (v1.5.0, optional - enable in options) |
 
 ### Climate Preset Modes
 
@@ -104,6 +126,7 @@ For each zone, you get these sensors:
 | `sensor.{zone}_temperature` | Temperature | Current temperature |
 | `sensor.{zone}_humidity` | Percentage | Current humidity |
 | `sensor.{zone}_heating` | Percentage | Heating power (0-100%) |
+| `sensor.{zone}_power` | State | Power state (ON/OFF) (v1.5.0) |
 | `sensor.{zone}_target` | Temperature | Target temperature |
 | `sensor.{zone}_mode` | State | Mode (Manual/Schedule/Off) |
 | `sensor.{zone}_battery` | State | Battery status (NORMAL/LOW) |
@@ -134,9 +157,15 @@ If you have hot water control:
 
 | Entity | Type | Description | API Calls |
 |--------|------|-------------|-----------|
-| `water_heater.{zone}` | Water Heater | Hot water control | 1 per action |
+| `water_heater.{zone}` | Water Heater | Hot water control (with temperature if supported) | 1 per action |
+| `sensor.{zone}_mode` | Sensor | Mode (Manual/Schedule/Off) | 0 |
+| `sensor.{zone}_power` | Sensor | Power state (ON/OFF) (v1.5.0) | 0 |
 
 **Note:** Entity naming changed in v1.2.0 - no "tado_ce_" prefix for zone entities.
+
+### Hot Water Temperature Control (v1.5.0)
+
+If your hot water zone supports temperature (e.g., hot water tanks with V2 thermostats), the water heater entity will show and allow setting target temperature. This is auto-detected from the API response.
 
 ### Hot Water Operation Modes (v1.2.0)
 
@@ -179,15 +208,19 @@ For each mobile device with geo tracking enabled:
 |--------|------|-------------|
 | `device_tracker.tado_ce_{device}` | Device Tracker | Presence (home/not_home) |
 
-## AC Zones
+## AC Zones (v1.5.0 Enhanced)
 
 For air conditioning zones, climate entities support additional features:
 
 | Feature | Description |
 |---------|-------------|
 | `hvac_modes` | off/auto/cool/heat/dry/fan_only |
-| `fan_mode` | auto/low/medium/high |
-| `swing_mode` | on/off |
+| `fan_mode` | auto/low/medium/high (mapped from Tado's SILENT/LEVEL1-5/AUTO) |
+| `swing_mode` | on/off/vertical/horizontal (when supported by AC unit) |
+| `min_temp` / `max_temp` | Read from AC capabilities API |
+| `target_temp_step` | Read from AC capabilities API |
+
+**Note (v1.5.0):** AC capabilities are now fetched from Tado API instead of hardcoded values.
 
 ---
 

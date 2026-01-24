@@ -184,3 +184,17 @@ set_away_configuration:
           min: 0
           max: 100
           step: 50
+
+get_temperature_offset:
+  name: Get Temperature Offset
+  description: Fetch the current temperature offset (calibration) for a Tado climate device. Returns the offset value for use in automations.
+  fields:
+    entity_id:
+      name: Entity
+      description: The climate entity to get offset for.
+      required: true
+      example: climate.tado_ce_lounge
+      selector:
+        entity:
+          integration: tado_ce
+          domain: climate

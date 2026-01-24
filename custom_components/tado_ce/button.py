@@ -1,13 +1,12 @@
 """Tado CE Button Platform."""
-import json
 import logging
 from homeassistant.components.button import ButtonEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import EntityCategory
 
-from .const import ZONES_INFO_FILE
 from .device_manager import get_zone_device_info
 from .config_manager import ConfigurationManager
+from .data_loader import load_zones_info_file
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -15,19 +14,10 @@ _LOGGER = logging.getLogger(__name__)
 DEFAULT_TIMER_PRESETS = [30, 60, 90]
 
 
-def _load_zones_info_file():
-    """Load zones info file (blocking)."""
-    try:
-        with open(ZONES_INFO_FILE) as f:
-            return json.load(f)
-    except Exception:
-        return None
-
-
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     """Set up Tado CE buttons from a config entry."""
     _LOGGER.debug("Tado CE button: Setting up...")
-    zones_info = await hass.async_add_executor_job(_load_zones_info_file)
+    zones_info = await hass.async_add_executor_job(load_zones_info_file)
     
     buttons = []
     

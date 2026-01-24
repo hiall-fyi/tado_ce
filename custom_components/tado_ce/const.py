@@ -1,10 +1,16 @@
 """Constants for Tado CE integration."""
 from pathlib import Path
+import os
 
 DOMAIN = "tado_ce"
 
 # Data directory (persistent storage)
-DATA_DIR = Path("/config/custom_components/tado_ce/data")
+# Use environment variable if set (for testing), otherwise use standard HA path
+# CRITICAL: /config is the standard path in Home Assistant containers
+# For development/testing, set TADO_CE_DATA_DIR environment variable
+_BASE_CONFIG_DIR = os.environ.get("TADO_CE_CONFIG_DIR", "/config")
+DATA_DIR = Path(_BASE_CONFIG_DIR) / "custom_components" / "tado_ce" / "data"
+
 CONFIG_FILE = DATA_DIR / "config.json"
 ZONES_FILE = DATA_DIR / "zones.json"
 ZONES_INFO_FILE = DATA_DIR / "zones_info.json"
@@ -13,6 +19,8 @@ WEATHER_FILE = DATA_DIR / "weather.json"
 MOBILE_DEVICES_FILE = DATA_DIR / "mobile_devices.json"
 HOME_STATE_FILE = DATA_DIR / "home_state.json"
 API_CALL_HISTORY_FILE = DATA_DIR / "api_call_history.json"
+OFFSETS_FILE = DATA_DIR / "offsets.json"
+AC_CAPABILITIES_FILE = DATA_DIR / "ac_capabilities.json"
 
 # API Base URLs
 TADO_API_BASE = "https://my.tado.com/api/v2"

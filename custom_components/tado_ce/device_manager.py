@@ -4,7 +4,8 @@ This module manages device creation and entity assignment for the Tado CE integr
 It provides functions to generate device info for both the hub device and individual zone devices.
 
 CRITICAL: This module must be called from async context with proper executor handling.
-The get_home_id() function performs blocking I/O and should be called via hass.async_add_executor_job().
+The load_home_id() and load_version() functions perform blocking I/O and should be 
+called via hass.async_add_executor_job() during integration setup.
 """
 import json
 import logging
@@ -20,25 +21,50 @@ _LOGGER = logging.getLogger(__name__)
 # Cache for home_id - MUST be set via load_home_id() before use
 _CACHED_HOME_ID: Optional[str] = None
 
-# Cache for version from manifest
+# Cache for version from manifest - loaded lazily on first access
 _CACHED_VERSION: Optional[str] = None
+_VERSION_LOADED: bool = False
 
 
-def _load_version() -> str:
-    """Load version from manifest.json."""
-    global _CACHED_VERSION
-    if _CACHED_VERSION is not None:
-        return _CACHED_VERSION
+def load_version() -> str:
+    """Load version from manifest.json (blocking I/O).
+    
+    This function performs blocking file I/O and MUST be called via
+    hass.async_add_executor_job() from async context during integration setup.
+    
+    Returns:
+        str: The version string, or "unknown" if not available.
+    """
+    global _CACHED_VERSION, _VERSION_LOADED
+    if _VERSION_LOADED:
+        return _CACHED_VERSION or "unknown"
     
     try:
         manifest_path = Path(__file__).parent / "manifest.json"
         with open(manifest_path) as f:
             manifest = json.load(f)
             _CACHED_VERSION = manifest.get("version", "unknown")
-            return _CACHED_VERSION
     except Exception as e:
         _LOGGER.warning(f"Failed to load version from manifest: {e}")
+        _CACHED_VERSION = "unknown"
+    
+    _VERSION_LOADED = True
+    return _CACHED_VERSION or "unknown"
+
+
+def _get_cached_version() -> str:
+    """Get cached version.
+    
+    Returns the version if already loaded, otherwise returns "unknown".
+    Use load_version() to load the version first.
+    
+    Returns:
+        str: The cached version, or "unknown" if not loaded.
+    """
+    global _CACHED_VERSION, _VERSION_LOADED
+    if not _VERSION_LOADED:
         return "unknown"
+    return _CACHED_VERSION or "unknown"
 
 
 def load_home_id() -> str:
@@ -99,7 +125,7 @@ def get_hub_device_info() -> DeviceInfo:
         name="Tado CE Hub",
         manufacturer="Joe Yiu (@hiall-fyi)",
         model="Tado CE Integration",
-        sw_version=_load_version(),
+        sw_version=_get_cached_version(),
     )
 
 
