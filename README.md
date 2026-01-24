@@ -317,11 +317,6 @@ The water heater entity supports three operation modes:
 - **HEAT**: Temporary boost - heat water for a specific duration (e.g., unexpected guests)
 - **OFF**: Turn off water heating (e.g., going on vacation)
 
-<div align="center">
-  <img src="images/hot-water-controls.png" alt="Hot Water Controls with Timer Presets" width="600">
-  <p><em>Hot water entity with AUTO/HEAT/OFF modes, timer presets, and boiler temperature</em></p>
-</div>
-
 ---
 
 ## 🔧 Services
