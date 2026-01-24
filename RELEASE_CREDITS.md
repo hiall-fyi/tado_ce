@@ -4,6 +4,30 @@
 
 ---
 
+## v1.5.3 (2026-01-24) - AC Fix & Resume All Schedules
+
+### Bug Reports & Issue Reporters
+
+**[@neonsp](https://github.com/neonsp)** - [Issue #31](https://github.com/hiall-fyi/tado_ce/issues/31)
+- Reported AC control 422 errors
+- Provided critical API payload from app.tado.com showing correct field names
+- Helped identify `fanSpeed` → `fanLevel`, `swing` → `verticalSwing`/`horizontalSwing` fix
+
+### Feature Contributors
+
+**[@hapklaar](https://github.com/hapklaar)** - [Discussion #39](https://github.com/hiall-fyi/tado_ce/discussions/39)
+- Requested Resume All Schedules button
+- Shared automation use case for resetting manual overrides
+
+### What Was Fixed/Added
+
+- ✅ **Issue #31**: AC control 422 error - fixed API field names
+- ✅ **Discussion #39**: Resume All Schedules button on Hub device
+- ✅ Blocking I/O warning in config_flow.py
+- ✅ Comprehensive upgrade logging at INFO level
+
+---
+
 ## v1.5.2 (2026-01-24) - Data Storage Fix
 
 ### Bug Reports & Issue Reporters

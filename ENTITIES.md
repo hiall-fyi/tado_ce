@@ -51,6 +51,14 @@ Complete list of all entities created by Tado CE integration.
 
 ---
 
+## Hub Buttons (v1.5.3)
+
+| Entity | Type | Description | API Calls |
+|--------|------|-------------|-----------|
+| `button.tado_ce_resume_all_schedules` | Button | Delete all zone overlays and return to schedules | 1 per zone |
+
+---
+
 ## Hub Sensors
 
 Global sensors for the Tado CE Hub device.

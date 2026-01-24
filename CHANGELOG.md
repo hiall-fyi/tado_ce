@@ -5,6 +5,28 @@ All notable changes to Tado CE will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.3] - 2026-01-24
+
+### Added
+- **Resume All Schedules button** (Discussion #39 - @hapklaar): New `button.tado_ce_resume_all_schedules` on the Hub device. Pressing it deletes all zone overlays and returns all zones to their schedules. Useful for automations to reset manual overrides.
+
+### Fixed
+- **AC control 422 error** (Issue #31 - @neonsp): Fixed AC overlay API using wrong field names. Changed `fanSpeed` → `fanLevel`, `swing` → `verticalSwing`/`horizontalSwing` to match Tado API v2 format. AC mode, temperature, fan level, and swing controls now work correctly.
+- **Blocking I/O warning in config_flow.py**: Fixed synchronous file write inside async context. Now uses `async_add_executor_job()` for all config file saves during setup and reconfigure flows.
+
+### Enhanced
+- **Comprehensive upgrade logging**: Added detailed logging during migration and setup to help diagnose upgrade issues. Logs are at INFO level so they appear by default - no need to enable debug logging. If upgrade fails, users can share logs with file system state, migration steps, and config validation details.
+- **Better error logging for AC overlay**: API errors now log the full response text and payload for easier debugging.
+
+### Community Credits
+- **Issue #31**: @neonsp (AC control 422 error, API payload analysis)
+- **Discussion #39**: @hapklaar (Resume All Schedules button request)
+
+### Documentation
+- Simplify README structure (remove emojis, consolidate sections)
+- Services section: replace code examples with table
+- Remove images/ folder (unused)
+
 ## [1.5.2] - 2026-01-24
 
 ### Fixed

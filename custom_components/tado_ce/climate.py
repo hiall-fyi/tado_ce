@@ -684,14 +684,14 @@ class TadoACClimate(ClimateEntity):
     async def async_set_fan_mode(self, fan_mode: str):
         """Set new fan mode."""
         tado_fan = HA_TO_TADO_FAN.get(fan_mode, 'AUTO')
-        if await self._async_set_ac_overlay(fan_speed=tado_fan):
+        if await self._async_set_ac_overlay(fan_level=tado_fan):
             self._attr_fan_mode = fan_mode
             await self._async_trigger_immediate_refresh("fan_mode_change")
 
     async def async_set_swing_mode(self, swing_mode: str):
         """Set new swing mode."""
         tado_swing = "ON" if swing_mode == SWING_ON else "OFF"
-        if await self._async_set_ac_overlay(swing=tado_swing):
+        if await self._async_set_ac_overlay(vertical_swing=tado_swing):
             self._attr_swing_mode = swing_mode
             await self._async_trigger_immediate_refresh("swing_mode_change")
     
@@ -705,9 +705,13 @@ class TadoACClimate(ClimateEntity):
             _LOGGER.debug(f"Failed to trigger immediate refresh: {e}")
 
     async def _async_set_ac_overlay(self, temperature: float = None, mode: str = None, 
-                                    fan_speed: str = None, swing: str = None,
+                                    fan_level: str = None, vertical_swing: str = None,
+                                    horizontal_swing: str = None,
                                     duration_minutes: int = None) -> bool:
-        """Set AC overlay with optional parameters."""
+        """Set AC overlay with optional parameters.
+        
+        Uses Tado API v2 format with fanLevel, verticalSwing, horizontalSwing.
+        """
         client = get_async_client(self.hass)
         
         # Build setting from current state + changes
@@ -733,23 +737,31 @@ class TadoACClimate(ClimateEntity):
             else:
                 setting["temperature"] = {"celsius": 24}
         
-        # Fan speed
-        if fan_speed:
-            setting["fanSpeed"] = fan_speed
+        # Fan level - use fanLevel (not fanSpeed) per Tado API v2
+        if fan_level:
+            setting["fanLevel"] = fan_level
         elif self._attr_fan_mode:
-            setting["fanSpeed"] = HA_TO_TADO_FAN.get(self._attr_fan_mode, 'AUTO')
+            setting["fanLevel"] = HA_TO_TADO_FAN.get(self._attr_fan_mode, 'AUTO')
         
-        # Swing
-        if swing:
-            setting["swing"] = swing
+        # Swing - use verticalSwing/horizontalSwing per Tado API v2
+        if vertical_swing is not None:
+            setting["verticalSwing"] = vertical_swing
         elif self._attr_swing_mode:
-            setting["swing"] = "ON" if self._attr_swing_mode == SWING_ON else "OFF"
+            setting["verticalSwing"] = "ON" if self._attr_swing_mode == SWING_ON else "OFF"
+        
+        # Horizontal swing - default to OFF if not specified
+        if horizontal_swing is not None:
+            setting["horizontalSwing"] = horizontal_swing
+        else:
+            setting["horizontalSwing"] = "OFF"
         
         # Termination
         if duration_minutes:
             termination = {"type": "TIMER", "durationInSeconds": duration_minutes * 60}
         else:
             termination = {"type": "MANUAL"}
+        
+        _LOGGER.debug(f"AC overlay payload: setting={setting}, termination={termination}")
         
         if await client.set_zone_overlay(self._zone_id, setting, termination):
             _LOGGER.info(f"Set AC {self._zone_name}: {setting}")

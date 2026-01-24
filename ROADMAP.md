@@ -41,6 +41,13 @@ v1.4.0 supports selecting a home during setup, but only one home per integration
 
 ## Completed
 
+### v1.5.3 (2026-01-24)
+
+- [x] **Resume All Schedules button** - New `button.tado_ce_resume_all_schedules` on Hub device to reset all manual overrides ([Discussion #39](https://github.com/hiall-fyi/tado_ce/discussions/39) - @hapklaar)
+- [x] **Fix AC control 422 error** - Fixed wrong API field names (`fanSpeed` → `fanLevel`, `swing` → `verticalSwing`/`horizontalSwing`) ([#31](https://github.com/hiall-fyi/tado_ce/issues/31) - @neonsp)
+- [x] **Fix blocking I/O warning in config_flow.py** - Use `async_add_executor_job()` for file writes
+- [x] **Comprehensive upgrade logging** - Detailed logs during migration/setup at INFO level (no debug enable needed)
+
 ### v1.5.2 (2026-01-24)
 
 - [x] **Fix token loss on HACS upgrade** - Move data directory from `custom_components/tado_ce/data/` to `/config/.storage/tado_ce/` so HACS upgrades don't overwrite credentials ([#34](https://github.com/hiall-fyi/tado_ce/issues/34) - @jeverley, @hapklaar, @wrowlands3)

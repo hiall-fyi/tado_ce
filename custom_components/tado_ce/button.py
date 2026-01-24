@@ -4,7 +4,7 @@ from homeassistant.components.button import ButtonEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import EntityCategory
 
-from .device_manager import get_zone_device_info
+from .device_manager import get_zone_device_info, get_hub_device_info
 from .config_manager import ConfigurationManager
 from .data_loader import load_zones_info_file
 
@@ -20,6 +20,9 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     zones_info = await hass.async_add_executor_job(load_zones_info_file)
     
     buttons = []
+    
+    # Add Resume All Schedules button (hub-level)
+    buttons.append(TadoResumeAllSchedulesButton(hass))
     
     if zones_info:
         for zone in zones_info:
@@ -39,6 +42,57 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
         _LOGGER.info(f"Tado CE buttons loaded: {len(buttons)}")
     else:
         _LOGGER.info("Tado CE: No buttons to create")
+
+
+class TadoResumeAllSchedulesButton(ButtonEntity):
+    """Button to resume schedules for all zones (delete all overlays)."""
+    
+    def __init__(self, hass: HomeAssistant):
+        """Initialize the button."""
+        self.hass = hass
+        
+        self._attr_name = "Tado CE Resume All Schedules"
+        self._attr_unique_id = "tado_ce_resume_all_schedules"
+        self._attr_device_info = get_hub_device_info()
+        self._attr_icon = "mdi:calendar-refresh"
+    
+    async def async_press(self) -> None:
+        """Handle button press - resume schedules for all zones."""
+        from .async_api import get_async_client
+        from .data_loader import load_zones_info_file
+        
+        _LOGGER.info("Resume All Schedules button pressed")
+        
+        client = get_async_client(self.hass)
+        zones_info = await self.hass.async_add_executor_job(load_zones_info_file)
+        
+        if not zones_info:
+            _LOGGER.warning("No zones found to resume schedules")
+            return
+        
+        success_count = 0
+        fail_count = 0
+        
+        for zone in zones_info:
+            zone_id = str(zone.get('id'))
+            zone_name = zone.get('name', f"Zone {zone_id}")
+            
+            try:
+                if await client.delete_zone_overlay(zone_id):
+                    _LOGGER.debug(f"Resumed schedule for {zone_name} (zone {zone_id})")
+                    success_count += 1
+                else:
+                    # API returned False - might mean no overlay existed
+                    _LOGGER.debug(f"No overlay to delete for {zone_name} (zone {zone_id})")
+                    success_count += 1  # Still count as success
+            except Exception as e:
+                _LOGGER.error(f"Failed to resume schedule for {zone_name}: {e}")
+                fail_count += 1
+        
+        if fail_count == 0:
+            _LOGGER.info(f"Resume All Schedules complete: {success_count} zones processed")
+        else:
+            _LOGGER.warning(f"Resume All Schedules: {success_count} succeeded, {fail_count} failed")
 
 
 class TadoWaterHeaterTimerButton(ButtonEntity):

@@ -332,7 +332,10 @@ class TadoAsyncClient:
                 if resp.status in (200, 201):
                     return True
                 
-                _LOGGER.error(f"Failed to set overlay: {resp.status}")
+                # Log detailed error for debugging
+                error_text = await resp.text()
+                _LOGGER.error(f"Failed to set overlay: {resp.status} - {error_text}")
+                _LOGGER.debug(f"Overlay payload was: {payload}")
                 return False
                 
         except Exception as e:

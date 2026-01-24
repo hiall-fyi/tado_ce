@@ -220,8 +220,10 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             "refresh_token": self._refresh_token
         }
         
-        with open(CONFIG_FILE, 'w') as f:
-            json.dump(config, f, indent=2)
+        # Use executor to avoid blocking I/O in event loop
+        await self.hass.async_add_executor_job(
+            self._save_config_sync, config
+        )
         
         _LOGGER.info(f"Saved credentials for home: {home_name} (ID: {home_id})")
         
@@ -229,6 +231,12 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             title=f"Tado CE ({home_name})",
             data={"home_id": str(home_id)},
         )
+    
+    def _save_config_sync(self, config: dict):
+        """Save config synchronously (for executor)."""
+        import json
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(config, f, indent=2)
 
     # ========== Reconfigure Flow (Re-authenticate) ==========
     
@@ -282,8 +290,6 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_reconfigure_confirm(self, user_input: dict[str, Any] | None = None):
         """Save new credentials and finish reconfigure."""
-        import json
-        
         # Get the existing config entry
         reconfigure_entry = self._get_reconfigure_entry()
         home_id = reconfigure_entry.data.get("home_id")
@@ -303,8 +309,10 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             "refresh_token": self._refresh_token
         }
         
-        with open(CONFIG_FILE, 'w') as f:
-            json.dump(config, f, indent=2)
+        # Use executor to avoid blocking I/O in event loop
+        await self.hass.async_add_executor_job(
+            self._save_config_sync, config
+        )
         
         _LOGGER.info(f"Re-authentication successful, saved new credentials for home ID: {home_id}")
         
@@ -313,8 +321,6 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_reconfigure_select_home(self, user_input: dict[str, Any] | None = None):
         """Handle home selection during reconfigure (if original home no longer exists)."""
-        import json
-        
         if not self._homes:
             return self.async_abort(reason="no_homes")
         
@@ -329,8 +335,10 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 "refresh_token": self._refresh_token
             }
             
-            with open(CONFIG_FILE, 'w') as f:
-                json.dump(config, f, indent=2)
+            # Use executor to avoid blocking I/O in event loop
+            await self.hass.async_add_executor_job(
+                self._save_config_sync, config
+            )
             
             _LOGGER.info(f"Re-authentication successful with new home ID: {home_id}")
             
