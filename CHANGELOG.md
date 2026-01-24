@@ -5,6 +5,20 @@ All notable changes to Tado CE will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.2] - 2026-01-24
+
+### Fixed
+- **CRITICAL: Token loss on HACS upgrade** (Issue #34 - @jeverley, @hapklaar, @wrowlands3): Moved data directory from `custom_components/tado_ce/data/` to `/config/.storage/tado_ce/`. HACS upgrades now preserve your credentials and data files. Automatic migration from old location on first startup.
+
+### Changed
+- Data files (config.json, zones.json, etc.) now stored in `/config/.storage/tado_ce/` instead of inside the integration folder
+- Config entry version updated to 5
+
+### Notes
+- **Automatic migration**: Existing data files will be automatically copied to the new location on upgrade
+- **No re-authentication required**: Your existing credentials will be preserved
+- **Legacy cleanup**: After confirming the integration works, you can optionally delete the old `custom_components/tado_ce/data/` folder
+
 ## [1.5.1] - 2026-01-24
 
 ### Fixed

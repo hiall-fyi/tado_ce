@@ -8,8 +8,8 @@ Usage:
   python3 tado_api.py auth          # Interactive device authorization
   python3 tado_api.py status        # Show current status
   
-Config file: /tmp/tado_ce_config.json
-Output files: /tmp/tado_zones.json, /tmp/tado_ratelimit.json
+Config file: /config/.storage/tado_ce/config.json
+Output files: /config/.storage/tado_ce/zones.json, etc.
 """
 
 import json
@@ -23,9 +23,25 @@ from urllib.request import Request, urlopen
 from urllib.parse import urlencode
 from urllib.error import HTTPError, URLError
 
-# Configuration - use persistent storage
-DATA_DIR = Path("/config/custom_components/tado_ce/data")
-DATA_DIR.mkdir(exist_ok=True)
+# Configuration - use persistent storage in .storage directory
+# v1.5.2: Moved from custom_components/tado_ce/data/ to .storage/tado_ce/
+# This prevents HACS upgrades from overwriting credentials and data files
+DATA_DIR = Path("/config/.storage/tado_ce")
+LEGACY_DATA_DIR = Path("/config/custom_components/tado_ce/data")
+
+# Auto-migrate from legacy location if needed
+if LEGACY_DATA_DIR.exists() and not DATA_DIR.exists():
+    import shutil
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    for file in LEGACY_DATA_DIR.glob("*.json"):
+        shutil.copy2(file, DATA_DIR / file.name)
+    # Copy log file too if exists
+    legacy_log = LEGACY_DATA_DIR / "api.log"
+    if legacy_log.exists():
+        shutil.copy2(legacy_log, DATA_DIR / "api.log")
+    print(f"Migrated data from {LEGACY_DATA_DIR} to {DATA_DIR}")
+
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 CONFIG_FILE = DATA_DIR / "config.json"
 ZONES_FILE = DATA_DIR / "zones.json"

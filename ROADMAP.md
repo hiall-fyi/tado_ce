@@ -2,13 +2,6 @@
 
 Feature requests and planned improvements for Tado CE.
 
-## v1.5.1 (2026-01-24) ✅ Released
-
-- [x] **Fix OAuth flow "invalid flow specified" error** - New users unable to complete setup ([#36](https://github.com/hiall-fyi/tado_ce/issues/36) - @mkruiver)
-- [x] **Re-authenticate option in UI** - Add reconfigure flow to re-authenticate without SSH ([#34](https://github.com/hiall-fyi/tado_ce/issues/34) - @jeverley, @hapklaar)
-
----
-
 ## Planned for v1.6.0
 
 - [ ] **Better upgrade path testing** - Release beta versions for community testing before major releases
@@ -47,6 +40,15 @@ v1.4.0 supports selecting a home during setup, but only one home per integration
 ---
 
 ## Completed
+
+### v1.5.2 (2026-01-24)
+
+- [x] **Fix token loss on HACS upgrade** - Move data directory from `custom_components/tado_ce/data/` to `/config/.storage/tado_ce/` so HACS upgrades don't overwrite credentials ([#34](https://github.com/hiall-fyi/tado_ce/issues/34) - @jeverley, @hapklaar, @wrowlands3)
+
+### v1.5.1 (2026-01-24)
+
+- [x] **Fix OAuth flow "invalid flow specified" error** - New users unable to complete setup ([#36](https://github.com/hiall-fyi/tado_ce/issues/36) - @mkruiver)
+- [x] **Re-authenticate option in UI** - Add reconfigure flow to re-authenticate without SSH ([#34](https://github.com/hiall-fyi/tado_ce/issues/34) - @jeverley, @hapklaar)
 
 ### v1.5.0 (2026-01-24)
 

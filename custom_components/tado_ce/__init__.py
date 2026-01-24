@@ -165,7 +165,28 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Migrate old entry to new version."""
-    _LOGGER.info("Migrating Tado CE config entry from version %s to version 4", config_entry.version)
+    _LOGGER.info("Migrating Tado CE config entry from version %s to version 5", config_entry.version)
+    
+    # v1.5.2: Migrate data directory from custom_components/tado_ce/data/ to .storage/tado_ce/
+    from .const import LEGACY_DATA_DIR
+    if LEGACY_DATA_DIR.exists() and not DATA_DIR.exists():
+        _LOGGER.info("Migrating data directory from legacy location to .storage/tado_ce/")
+        import shutil
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        for file in LEGACY_DATA_DIR.glob("*.json"):
+            try:
+                shutil.copy2(file, DATA_DIR / file.name)
+                _LOGGER.info(f"Migrated {file.name} to new location")
+            except Exception as e:
+                _LOGGER.error(f"Failed to migrate {file.name}: {e}")
+        # Copy log file too if exists
+        legacy_log = LEGACY_DATA_DIR / "api.log"
+        if legacy_log.exists():
+            try:
+                shutil.copy2(legacy_log, DATA_DIR / "api.log")
+            except Exception:
+                pass  # Log file is not critical
+        _LOGGER.info("Data directory migration complete")
 
     if config_entry.version == 1:
         # Version 1 (v1.1.0) -> 2 (v1.2.0): Handle zone-based device migration
@@ -192,7 +213,7 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
         _LOGGER.info("Migrating from version %s to version 4 (v1.4.0)", config_entry.version)
         
         # Ensure data directory exists
-        DATA_DIR.mkdir(exist_ok=True)
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
         
         # Check if config.json exists with valid refresh_token
         if CONFIG_FILE.exists():
@@ -215,13 +236,23 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
                 "Delete and re-add the integration to authenticate."
             )
         
-        # Update to version 4
+        # Update to version 4, then fall through to version 5 migration
         hass.config_entries.async_update_entry(config_entry, version=4)
         _LOGGER.info("Migration to version 4 successful")
-        return True
+        # Fall through to version 5 migration
 
     if config_entry.version == 4:
-        _LOGGER.info("Config entry already at version 4, no migration needed")
+        # Version 4 -> 5 (v1.5.2): Data directory moved to .storage/tado_ce/
+        _LOGGER.info("Migrating from version 4 to version 5 (v1.5.2)")
+        
+        # Data migration already handled at the top of this function
+        # Just update the version
+        hass.config_entries.async_update_entry(config_entry, version=5)
+        _LOGGER.info("Migration to version 5 successful")
+        return True
+
+    if config_entry.version == 5:
+        _LOGGER.info("Config entry already at version 5, no migration needed")
         return True
 
     _LOGGER.warning("Unknown config entry version %s, attempting to continue", config_entry.version)
@@ -280,8 +311,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # Verify cleanup
             _LOGGER.info(f"Duplicate cleanup complete. Keeper: {keeper_entry_id}")
     
+    # v1.5.2: Migrate data from legacy location if needed
+    # This handles cases where migration didn't run (e.g., fresh install with old data)
+    from .const import LEGACY_DATA_DIR
+    if LEGACY_DATA_DIR.exists() and not DATA_DIR.exists():
+        _LOGGER.info("Migrating data directory from legacy location to .storage/tado_ce/")
+        import shutil
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        for file in LEGACY_DATA_DIR.glob("*.json"):
+            try:
+                shutil.copy2(file, DATA_DIR / file.name)
+                _LOGGER.info(f"Migrated {file.name} to new location")
+            except Exception as e:
+                _LOGGER.error(f"Failed to migrate {file.name}: {e}")
+        _LOGGER.info("Data directory migration complete")
+    
     # Ensure data directory exists
-    DATA_DIR.mkdir(exist_ok=True)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
     
     # Initialize configuration manager
     config_manager = ConfigurationManager(entry, hass)

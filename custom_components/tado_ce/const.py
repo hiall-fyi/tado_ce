@@ -5,11 +5,14 @@ import os
 DOMAIN = "tado_ce"
 
 # Data directory (persistent storage)
+# v1.5.2: Moved from custom_components/tado_ce/data/ to .storage/tado_ce/
+# This prevents HACS upgrades from overwriting credentials and data files
 # Use environment variable if set (for testing), otherwise use standard HA path
-# CRITICAL: /config is the standard path in Home Assistant containers
-# For development/testing, set TADO_CE_DATA_DIR environment variable
 _BASE_CONFIG_DIR = os.environ.get("TADO_CE_CONFIG_DIR", "/config")
-DATA_DIR = Path(_BASE_CONFIG_DIR) / "custom_components" / "tado_ce" / "data"
+DATA_DIR = Path(_BASE_CONFIG_DIR) / ".storage" / "tado_ce"
+
+# Legacy data directory (for migration from v1.5.1 and earlier)
+LEGACY_DATA_DIR = Path(_BASE_CONFIG_DIR) / "custom_components" / "tado_ce" / "data"
 
 CONFIG_FILE = DATA_DIR / "config.json"
 ZONES_FILE = DATA_DIR / "zones.json"
