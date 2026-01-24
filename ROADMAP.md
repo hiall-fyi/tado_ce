@@ -2,38 +2,10 @@
 
 Feature requests and planned improvements for Tado CE.
 
-## v1.5.0 (2026-01-24) ✅ Released
+## Planned for v1.5.1
 
-> **🚀 Major Code Quality Release**: Near-complete rewrite with async architecture, comprehensive null-safe patterns, and centralized data loading. Focus on stability, maintainability, and future-proofing.
-
-### Features
-- [x] Async architecture (migrate from urllib to aiohttp) - entity control methods now use non-blocking aiohttp
-- [x] Centralize all API URLs in const.py (hardcoded fallbacks kept in tado_api.py for standalone mode)
-- [x] `tado_ce.get_temperature_offset` service - on-demand fetch of current offset for automations ([#24](https://github.com/hiall-fyi/tado_ce/issues/24) - @pisolofin)
-- [x] Optional `offset_celsius` attribute on climate entities - enable in options, synced during full sync ([#25](https://github.com/hiall-fyi/tado_ce/issues/25) - @ohipe)
-- [x] HVAC mode logic: show `auto` when following schedule (even if scheduled OFF) - match official Tado integration behavior ([#25](https://github.com/hiall-fyi/tado_ce/issues/25) - @ohipe)
-- [x] Frequent mobile device sync option - sync presence every quick sync instead of every 6 hours ([#28](https://github.com/hiall-fyi/tado_ce/issues/28) - @beltrao)
-- [x] Fix blocking I/O warning for manifest.json read ([#27](https://github.com/hiall-fyi/tado_ce/issues/27))
-- [x] Fix null value crash in water_heater/climate when API returns `temperature: null` ([#26](https://github.com/hiall-fyi/tado_ce/issues/26) - @hapklaar)
-- [x] Fix HOT_WATER zone sensors showing "unknown" instead of "unavailable"
-- [x] AC zone capabilities: fetch DRY/FAN modes, fan levels, swing options from dedicated API endpoint ([#31](https://github.com/hiall-fyi/tado_ce/issues/31) - @neonsp)
-
-### Code Quality
-- [x] **Consolidate file loading helpers**: Created `data_loader.py` module with centralized file loading functions. Used by `sensor.py`, `climate.py`, `water_heater.py`.
-- [x] **Comprehensive null-safe patterns**: Audited and fixed ALL `.get('key', {})` patterns to use `(data.get('key') or {})` pattern across 7 files. Prevents crashes when Tado API returns null values.
-- [x] **Async API architecture**: New `async_api.py` module with `TadoAsyncClient` class using aiohttp for non-blocking API calls.
-- [x] **Memory leak fixes**: Proper cleanup of async clients, polling timers, and hass.data on integration reload.
-- [x] **Token refresh race condition fix**: All token validity checks now inside async lock.
-- [x] **238 tests passing**: Full test coverage for all new features and fixes.
-
----
-
-## Technical Debt (Future Refactoring)
-
-Low priority improvements that don't affect functionality but improve code quality:
-
-- [ ] **Migrate sensors to async_update()**: Current sync `update()` methods work fine (HA runs them in executor), but explicit `async_update()` with `hass.async_add_executor_job()` is more modern.
-- [ ] **Reduce file I/O**: Consider caching zone data in memory with TTL instead of reading files on every update.
+- [ ] **Re-authenticate option in UI** - Add reconfigure flow to re-authenticate without SSH ([#34](https://github.com/hiall-fyi/tado_ce/issues/34) - @jeverley, @hapklaar)
+- [ ] **Better upgrade path testing** - Release beta versions for community testing before major releases
 
 ---
 
@@ -69,6 +41,23 @@ v1.4.0 supports selecting a home during setup, but only one home per integration
 ---
 
 ## Completed
+
+### v1.5.0 (2026-01-24)
+
+**Major Code Quality Release** - Near-complete rewrite with async architecture, comprehensive null-safe patterns, and centralized data loading.
+
+- [x] Async architecture (migrate from urllib to aiohttp)
+- [x] `tado_ce.get_temperature_offset` service ([#24](https://github.com/hiall-fyi/tado_ce/issues/24) - @pisolofin)
+- [x] Optional `offset_celsius` attribute on climate entities ([#25](https://github.com/hiall-fyi/tado_ce/issues/25) - @ohipe)
+- [x] HVAC mode logic fix - show `auto` when following schedule ([#25](https://github.com/hiall-fyi/tado_ce/issues/25) - @ohipe)
+- [x] Frequent mobile device sync option ([#28](https://github.com/hiall-fyi/tado_ce/issues/28) - @beltrao)
+- [x] Fix blocking I/O warning ([#27](https://github.com/hiall-fyi/tado_ce/issues/27))
+- [x] Fix null value crash in water_heater/climate ([#26](https://github.com/hiall-fyi/tado_ce/issues/26) - @hapklaar)
+- [x] AC zone capabilities: DRY/FAN modes, fan levels, swing ([#31](https://github.com/hiall-fyi/tado_ce/issues/31) - @neonsp)
+- [x] New `data_loader.py` module for centralized file loading
+- [x] Comprehensive null-safe patterns across 7 files
+- [x] Memory leak fixes, token refresh race condition fix
+- [x] 235 tests passing
 
 ### v1.4.1 (2026-01-23)
 
