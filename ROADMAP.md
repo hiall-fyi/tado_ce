@@ -6,6 +6,7 @@ Feature requests and planned improvements for Tado CE.
 
 - [ ] **Better upgrade path testing** - Release beta versions for community testing before major releases
 - [ ] **Deprecate tado_api.py** - Move sync functions to `__init__.py` or new `sync.py`, remove legacy CLI authentication tool (replaced by in-app OAuth flow since v1.4.0)
+- [ ] **API Usage sensor immediate update** - Update rate limit display after immediate refresh (currently only updates on full sync)
 
 ---
 
