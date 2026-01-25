@@ -507,21 +507,6 @@ Check the [Roadmap](ROADMAP.md) for planned features and ideas.
 
 ---
 
-## Testing
-
-Tado CE includes a comprehensive test suite with **235 tests** across 6 test suites:
-
-| Test Suite | Tests | Description |
-|------------|-------|-------------|
-| Core | 29 | Null-safe patterns, AC capabilities, mode mappings, edge cases |
-| Entities | 38 | Climate, water heater, sensor, binary sensor, switch, button, device tracker |
-| Services | 59 | Service call validation, API endpoints, config flow |
-| Async API | 40 | Async methods, service handlers, blocking code removal |
-| Data Loader | 31 | Centralized data loading, null-safe pattern consistency |
-| Upgrade | 38 | All upgrade paths from v1.0.0 to v1.5.5, config migration |
-
----
-
 ## Star History
 
 If you find this integration useful, please consider giving it a star!
