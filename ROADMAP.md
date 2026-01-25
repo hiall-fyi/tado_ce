@@ -65,6 +65,10 @@ Investigating local API to reduce cloud dependency and API call usage.
 
 ## Completed
 
+### v1.6.3 (2026-01-25)
+
+- [x] **HA History Detection for API Reset Time** - Detects reset time from `sensor.tado_ce_api_usage` history by finding when usage drops (e.g., 406 → 2), more accurate than extrapolation
+
 ### v1.6.2 (2026-01-25)
 
 - [x] **Comprehensive timezone fixes** - All timestamps now stored in UTC, displayed in Home Assistant's configured timezone ([#46](https://github.com/hiall-fyi/tado_ce/issues/46) - @hutten0)

@@ -1,7 +1,7 @@
 """Tado CE Integration."""
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import voluptuous as vol
@@ -48,6 +48,161 @@ POLLING_INTERVALS = [
     (5000, 10, 30),
     (20000, 5, 15),
 ]
+
+
+async def async_detect_reset_from_history(hass: HomeAssistant) -> datetime | None:
+    """Detect API reset time from Home Assistant sensor history.
+    
+    Queries the recorder for sensor.tado_ce_api_usage history and finds
+    the time when the value dropped to its minimum (reset point).
+    
+    Args:
+        hass: Home Assistant instance
+        
+    Returns:
+        Estimated reset time (datetime in UTC), or None if not enough data
+    """
+    try:
+        from homeassistant.components.recorder import get_instance
+        from homeassistant.components.recorder.history import get_significant_states
+        from homeassistant.util import dt as dt_util
+        
+        # Query last 36 hours of history (to catch reset even if it was yesterday)
+        end_time = dt_util.utcnow()
+        start_time = end_time - timedelta(hours=36)
+        
+        entity_id = "sensor.tado_ce_api_usage"
+        
+        # Get history from recorder
+        def _get_history():
+            return get_significant_states(
+                hass,
+                start_time,
+                end_time,
+                [entity_id],
+                significant_changes_only=False
+            )
+        
+        states = await get_instance(hass).async_add_executor_job(_get_history)
+        
+        if not states or entity_id not in states:
+            _LOGGER.debug("HA History Detection: No history found for sensor.tado_ce_api_usage")
+            return None
+        
+        history = states[entity_id]
+        if len(history) < 10:
+            _LOGGER.debug(f"HA History Detection: Not enough history points ({len(history)})")
+            return None
+        
+        # Parse states and find minimum value (reset point)
+        # The reset is when value drops from high to low
+        min_value = float('inf')
+        min_time = None
+        prev_value = None
+        
+        for state in history:
+            try:
+                value = int(state.state)
+                state_time = state.last_changed
+                
+                # Detect reset: value dropped significantly (>50% drop or to <10)
+                if prev_value is not None and prev_value > 50:
+                    if value < prev_value * 0.2 or value < 10:
+                        # This is likely the reset point
+                        _LOGGER.debug(
+                            f"HA History Detection: Reset detected! {prev_value} -> {value} at {state_time}"
+                        )
+                        return state_time.replace(tzinfo=timezone.utc) if state_time.tzinfo is None else state_time
+                
+                # Track minimum as fallback
+                if value < min_value:
+                    min_value = value
+                    min_time = state_time
+                
+                prev_value = value
+                
+            except (ValueError, TypeError):
+                continue
+        
+        # If no clear reset detected, use minimum value time
+        if min_time and min_value < 20:
+            _LOGGER.debug(f"HA History Detection: Using minimum value as reset: {min_value} at {min_time}")
+            return min_time.replace(tzinfo=timezone.utc) if min_time.tzinfo is None else min_time
+        
+        _LOGGER.debug(f"HA History Detection: Could not detect reset (min_value={min_value})")
+        return None
+        
+    except ImportError:
+        _LOGGER.debug("Recorder component not available")
+        return None
+    except Exception as e:
+        _LOGGER.debug(f"Failed to detect reset from history: {e}")
+        return None
+
+
+async def _update_ratelimit_reset_time(hass: HomeAssistant, detected_reset: datetime) -> None:
+    """Update ratelimit.json with detected reset time from HA history.
+    
+    This is called after sync when we detect the actual reset time from
+    sensor.tado_ce_api_usage history. It's more accurate than extrapolation.
+    
+    Args:
+        hass: Home Assistant instance
+        detected_reset: Detected reset time (datetime in UTC)
+    """
+    try:
+        def _update_file():
+            if not RATELIMIT_FILE.exists():
+                return
+            
+            with open(RATELIMIT_FILE) as f:
+                data = json.load(f)
+            
+            # Only update if detected time is different from stored time
+            current_reset = data.get("last_reset_utc")
+            new_reset = detected_reset.strftime("%Y-%m-%dT%H:%M:%SZ")
+            
+            if current_reset != new_reset:
+                data["last_reset_utc"] = new_reset
+                
+                # Recalculate reset_seconds, reset_at, reset_human
+                now_utc = datetime.now(timezone.utc)
+                next_reset = detected_reset + timedelta(hours=24)
+                
+                # If next_reset is in the past, add another 24h
+                while next_reset <= now_utc:
+                    next_reset += timedelta(hours=24)
+                
+                seconds_until_reset = int((next_reset - now_utc).total_seconds())
+                
+                if seconds_until_reset > 0:
+                    hours = seconds_until_reset // 3600
+                    minutes = (seconds_until_reset % 3600) // 60
+                    data["reset_seconds"] = seconds_until_reset
+                    data["reset_at"] = next_reset.isoformat()
+                    data["reset_human"] = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
+                
+                # Write back
+                import tempfile
+                import shutil
+                
+                with tempfile.NamedTemporaryFile(
+                    mode='w', dir=RATELIMIT_FILE.parent, delete=False, suffix='.tmp'
+                ) as tmp:
+                    json.dump(data, tmp, indent=2)
+                    temp_path = tmp.name
+                
+                shutil.move(temp_path, RATELIMIT_FILE)
+                _LOGGER.info(
+                    f"Updated reset time from HA history: {detected_reset.strftime('%H:%M')} UTC"
+                )
+        
+        await hass.async_add_executor_job(_update_file)
+        
+    except Exception as e:
+        _LOGGER.debug(f"Failed to update ratelimit reset time: {e}")
+
+
 DEFAULT_DAY_INTERVAL = 30
 DEFAULT_NIGHT_INTERVAL = 120
 FULL_SYNC_INTERVAL_HOURS = 6
@@ -600,6 +755,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if success:
                 if do_full_sync:
                     last_full_sync[0] = datetime.now()
+                
+                # v1.7.0: Detect API reset time from HA sensor history
+                # This is more accurate than extrapolation because it uses actual recorded data
+                detected_reset = await async_detect_reset_from_history(hass)
+                if detected_reset:
+                    _LOGGER.debug(f"Tado CE: HA history detected reset at {detected_reset.strftime('%H:%M')} UTC")
+                    await _update_ratelimit_reset_time(hass, detected_reset)
             else:
                 _LOGGER.warning("Tado CE sync returned failure status")
                 

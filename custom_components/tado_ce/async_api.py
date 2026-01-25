@@ -237,7 +237,7 @@ class TadoAsyncClient:
             calculated_reset_seconds = reset_seconds
         
         # Strategy 2: Calculate from last known reset time (rolling 24h window)
-        elif last_reset_utc:
+        if calculated_reset_seconds is None and last_reset_utc:
             try:
                 last_reset = datetime.fromisoformat(last_reset_utc.replace('Z', '+00:00'))
                 next_reset = last_reset + timedelta(hours=24)
@@ -250,7 +250,27 @@ class TadoAsyncClient:
             except Exception as e:
                 _LOGGER.debug(f"Failed to calculate reset from last_reset_utc: {e}")
         
-        # Strategy 3: Estimate from call history
+        # Strategy 3: Extrapolate from usage rate (NEW)
+        # Calculate average API calls per hour, then extrapolate backwards to find reset time.
+        # This is more accurate than "first call mode" because it uses actual usage patterns.
+        if calculated_reset_seconds is None and used > 0:
+            tracker = _get_tracker()
+            if tracker:
+                try:
+                    estimated_reset = tracker.extrapolate_reset_time(used)
+                    if estimated_reset:
+                        # Update last_reset_utc with extrapolated value
+                        last_reset_utc = estimated_reset.strftime("%Y-%m-%dT%H:%M:%SZ")
+                        next_reset = estimated_reset + timedelta(hours=24)
+                        seconds_until_reset = int((next_reset - now_utc).total_seconds())
+                        
+                        if seconds_until_reset > 0:
+                            calculated_reset_seconds = seconds_until_reset
+                            _LOGGER.debug(f"Using extrapolated reset time: {estimated_reset.strftime('%H:%M')} UTC")
+                except Exception as e:
+                    _LOGGER.debug(f"Failed to extrapolate reset time: {e}")
+        
+        # Strategy 4: Estimate from call history (first call mode)
         # Look at the first call of each day and find the most common time (mode).
         # This filters out outliers like HA restarts at odd hours.
         # The reset time is fixed (~11:24 UTC) based on when the account first made API calls.

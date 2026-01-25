@@ -295,6 +295,105 @@ class APICallTracker:
             by_type[type_name] = by_type.get(type_name, 0) + 1
         
         return {"date": date_key, "total_calls": len(date_calls), "by_type": by_type}
+    
+    def extrapolate_reset_time(self, current_used: int) -> Optional[datetime]:
+        """Extrapolate when the API reset happened by looking at usage rate.
+        
+        Uses a hybrid approach:
+        1. If call history has enough data, use actual call rate (more accurate)
+        2. Otherwise, fall back to config-based rate estimation
+        
+        Args:
+            current_used: Current number of API calls used today (from Tado API)
+            
+        Returns:
+            Estimated reset time (datetime in UTC), or None if not enough data
+        """
+        if current_used <= 0:
+            return None
+        
+        now_utc = datetime.now(timezone.utc)
+        calls_per_hour = None
+        rate_source = "unknown"
+        
+        # Strategy A: Try to use actual call history rate (more accurate)
+        self._ensure_initialized_sync()
+        calls = self.get_call_history(days=1)
+        
+        if len(calls) >= 20:  # Need enough calls for reliable rate
+            # Parse timestamps
+            call_times = []
+            for call in calls:
+                try:
+                    ts = call["timestamp"]
+                    call_time = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                    if call_time.tzinfo is None:
+                        call_time = call_time.replace(tzinfo=timezone.utc)
+                    call_times.append(call_time)
+                except Exception:
+                    continue
+            
+            if len(call_times) >= 20:
+                call_times.sort()
+                oldest_call = call_times[0]
+                newest_call = call_times[-1]
+                time_span_hours = (newest_call - oldest_call).total_seconds() / 3600
+                
+                if time_span_hours >= 1.0:  # Need at least 1 hour span
+                    # Calculate actual rate from history
+                    actual_calls_per_hour = len(call_times) / time_span_hours
+                    
+                    # Sanity check: rate should be reasonable (1-100 calls/hour)
+                    if 1 <= actual_calls_per_hour <= 100:
+                        calls_per_hour = actual_calls_per_hour
+                        rate_source = f"history ({len(call_times)} calls / {time_span_hours:.1f}h)"
+        
+        # Strategy B: Fall back to config-based rate
+        if calls_per_hour is None:
+            try:
+                from .config_manager import ConfigurationManager
+                config_manager = ConfigurationManager(None)
+                
+                # Get custom intervals or use defaults
+                custom_day = config_manager.get_custom_day_interval()
+                custom_night = config_manager.get_custom_night_interval()
+                
+                # Default intervals for 5000 limit
+                day_interval = custom_day if custom_day else 10
+                night_interval = custom_night if custom_night else 30
+                
+                # Use day rate (more conservative estimate)
+                polls_per_hour = 60 / day_interval
+                calls_per_poll = 2.5  # Average
+                calls_per_hour = polls_per_hour * calls_per_poll
+                rate_source = f"config (day={day_interval}min)"
+                
+            except Exception as e:
+                _LOGGER.debug(f"Failed to get config rate: {e}")
+                # Ultimate fallback: assume 15 calls/hour
+                calls_per_hour = 15
+                rate_source = "default"
+        
+        if calls_per_hour is None or calls_per_hour < 1:
+            _LOGGER.debug(f"Calls per hour invalid: {calls_per_hour}")
+            return None
+        
+        # Extrapolate backwards: how many hours ago was used = 0?
+        hours_since_reset = current_used / calls_per_hour
+        
+        # Sanity check: reset should be within last 24 hours
+        if hours_since_reset > 24 or hours_since_reset < 0:
+            _LOGGER.debug(f"Extrapolated reset time out of range: {hours_since_reset:.2f}h ago")
+            return None
+        
+        estimated_reset = now_utc - timedelta(hours=hours_since_reset)
+        
+        _LOGGER.debug(
+            f"Extrapolated reset time: {estimated_reset.strftime('%H:%M')} UTC "
+            f"(used={current_used}, rate={calls_per_hour:.1f}/h [{rate_source}], {hours_since_reset:.1f}h ago)"
+        )
+        
+        return estimated_reset
 
 
 def cleanup_executor():

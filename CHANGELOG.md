@@ -2,6 +2,14 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [1.6.3] - 2026-01-25
+
+**Accurate API Reset Time Detection** - Uses Home Assistant sensor history for precise reset time.
+
+- **NEW: HA History Detection** - Detects API reset time from `sensor.tado_ce_api_usage` history by finding when usage drops (e.g., 406 → 2)
+- **More accurate reset time** - No longer relies on extrapolation or Tado's incorrect `t=` header
+- **Works after HA reboots** - Uses recorded sensor history, not just call tracking
+
 ## [1.6.2] - 2026-01-25
 
 **Timezone Fixes & API Call Tracking** - Comprehensive timezone handling and async-safe file I/O.
