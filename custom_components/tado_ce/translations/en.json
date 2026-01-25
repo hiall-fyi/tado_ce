@@ -68,7 +68,7 @@
               "mobile_devices_enabled": "Track mobile devices for geofencing (+1 API call per full sync)",
               "home_state_sync_enabled": "Sync Tado home/away state for Away Mode switch and climate presets (+1 API call per quick sync)",
               "offset_enabled": "Add offset_celsius attribute to climate entities (+1 API call per device per full sync)",
-              "schedule_calendar_enabled": "Display heating schedules as calendar entities (read-only, uses cached schedule data)"
+              "schedule_calendar_enabled": "Display heating schedules as calendar entities (read-only). Initial sync fetches all zones, then uses cached data. Use Refresh Schedule button to update."
             }
           },
           "polling_schedule": {
