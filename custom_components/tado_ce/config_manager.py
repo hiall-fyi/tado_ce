@@ -29,6 +29,7 @@ DEFAULT_NIGHT_START_HOUR = 23
 DEFAULT_API_HISTORY_RETENTION_DAYS = 14  # 0 = keep forever
 DEFAULT_HOT_WATER_TIMER_DURATION = 60  # minutes
 DEFAULT_REFRESH_DEBOUNCE_SECONDS = 15  # v1.6.1: Debounce delay for immediate refresh
+DEFAULT_SCHEDULE_CALENDAR_ENABLED = False  # v1.8.0: Schedule Calendar (opt-in)
 
 # Validation constants
 MIN_HOUR = 0
@@ -371,6 +372,16 @@ class ConfigurationManager:
             _LOGGER.warning(f"Invalid refresh_debounce_seconds: {delay}, using default {DEFAULT_REFRESH_DEBOUNCE_SECONDS}")
             return DEFAULT_REFRESH_DEBOUNCE_SECONDS
         return delay
+    
+    def get_schedule_calendar_enabled(self) -> bool:
+        """Check if Schedule Calendar is enabled.
+        
+        v1.8.0: Opt-in feature to display heating schedules as calendar entities.
+        
+        Returns:
+            True if Schedule Calendar should be created, False otherwise
+        """
+        return self._options.get('schedule_calendar_enabled', DEFAULT_SCHEDULE_CALENDAR_ENABLED)
     
     def sync_all_to_config_json(self) -> None:
         """Sync all configuration values to config.json for tado_api.py to read.

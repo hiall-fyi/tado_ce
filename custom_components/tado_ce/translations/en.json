@@ -60,13 +60,15 @@
               "weather_enabled": "Enable Weather Sensors",
               "mobile_devices_enabled": "Enable Mobile Device Tracking",
               "home_state_sync_enabled": "Enable Home/Away State Sync",
-              "offset_enabled": "Enable Temperature Offset Attribute"
+              "offset_enabled": "Enable Temperature Offset Attribute",
+              "schedule_calendar_enabled": "Enable Schedule Calendar"
             },
             "data_description": {
               "weather_enabled": "Get outside temperature and solar intensity (+1 API call per quick sync)",
               "mobile_devices_enabled": "Track mobile devices for geofencing (+1 API call per full sync)",
               "home_state_sync_enabled": "Sync Tado home/away state for Away Mode switch and climate presets (+1 API call per quick sync)",
-              "offset_enabled": "Add offset_celsius attribute to climate entities (+1 API call per device per full sync)"
+              "offset_enabled": "Add offset_celsius attribute to climate entities (+1 API call per device per full sync)",
+              "schedule_calendar_enabled": "Display heating schedules as calendar entities (read-only, +1 API call per zone per full sync)"
             }
           },
           "polling_schedule": {

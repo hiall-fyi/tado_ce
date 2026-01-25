@@ -22,10 +22,12 @@ _LOGGER = logging.getLogger(__name__)
 # Platform.BUTTON was added in Home Assistant 2021.12
 # For backward compatibility, check if it exists
 try:
-    PLATFORMS = [Platform.SENSOR, Platform.CLIMATE, Platform.BINARY_SENSOR, Platform.WATER_HEATER, Platform.DEVICE_TRACKER, Platform.SWITCH, Platform.BUTTON, Platform.CALENDAR]
+    BASE_PLATFORMS = [Platform.SENSOR, Platform.CLIMATE, Platform.BINARY_SENSOR, Platform.WATER_HEATER, Platform.DEVICE_TRACKER, Platform.SWITCH, Platform.BUTTON]
+    CALENDAR_PLATFORM = Platform.CALENDAR
 except AttributeError:
     # Older Home Assistant version without Platform.BUTTON
-    PLATFORMS = [Platform.SENSOR, Platform.CLIMATE, Platform.BINARY_SENSOR, Platform.WATER_HEATER, Platform.DEVICE_TRACKER, Platform.SWITCH]
+    BASE_PLATFORMS = [Platform.SENSOR, Platform.CLIMATE, Platform.BINARY_SENSOR, Platform.WATER_HEATER, Platform.DEVICE_TRACKER, Platform.SWITCH]
+    CALENDAR_PLATFORM = None
     _LOGGER.debug("Platform.BUTTON not available - button entities will not be loaded")
 
 # v1.6.0: Removed SCRIPT_PATH - no longer using subprocess for sync
@@ -822,7 +824,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.info("Tado CE: Polling scheduled")
     
     # Forward setup to platforms
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    # Build platform list based on config
+    platforms_to_load = list(BASE_PLATFORMS)
+    
+    # v1.8.0: Add Calendar platform if enabled (opt-in)
+    if CALENDAR_PLATFORM and config_manager.get_schedule_calendar_enabled():
+        platforms_to_load.append(CALENDAR_PLATFORM)
+        _LOGGER.info("Tado CE: Schedule Calendar enabled")
+    
+    await hass.config_entries.async_forward_entry_setups(entry, platforms_to_load)
     
     # Register services
     await _async_register_services(hass)
@@ -1275,8 +1285,16 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from .api_call_tracker import cleanup_executor
     cleanup_executor()
     
+    # Build platform list to unload (same logic as setup)
+    config_manager = hass.data.get(DOMAIN, {}).get('config_manager')
+    platforms_to_unload = list(BASE_PLATFORMS)
+    
+    # v1.8.0: Add Calendar platform if it was loaded
+    if CALENDAR_PLATFORM and config_manager and config_manager.get_schedule_calendar_enabled():
+        platforms_to_unload.append(CALENDAR_PLATFORM)
+    
     # Unload platforms
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, platforms_to_unload)
     
     # Clean up hass.data
     if unload_ok and DOMAIN in hass.data:

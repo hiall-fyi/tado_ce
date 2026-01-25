@@ -392,7 +392,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             # Flatten features section
             if 'features' in user_input:
                 features = user_input['features']
-                for key in ['weather_enabled', 'mobile_devices_enabled', 'home_state_sync_enabled', 'offset_enabled']:
+                for key in ['weather_enabled', 'mobile_devices_enabled', 'home_state_sync_enabled', 'offset_enabled', 'schedule_calendar_enabled']:
                     if key in features:
                         processed_input[key] = features[key]
             
@@ -460,6 +460,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                         vol.Optional('mobile_devices_enabled', default=options.get('mobile_devices_enabled', False)): BooleanSelector(),
                         vol.Optional('home_state_sync_enabled', default=options.get('home_state_sync_enabled', True)): BooleanSelector(),
                         vol.Optional('offset_enabled', default=options.get('offset_enabled', False)): BooleanSelector(),
+                        vol.Optional('schedule_calendar_enabled', default=options.get('schedule_calendar_enabled', False)): BooleanSelector(),
                     }),
                     {"collapsed": True},
                 ),
