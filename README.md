@@ -85,14 +85,13 @@ Full climate, AC, hot water control with timer support, geofencing, presence det
 
 ## Quick Start
 
-### 1. Install
+### 1. Install via HACS (Recommended)
 
-**HACS (Recommended)**
-```
-Add this repository to HACS as a custom repository
-Install "Tado CE" from HACS
-Restart Home Assistant
-```
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=hiall-fyi&repository=tado_ce&category=integration)
+
+1. Click the button above (or add `https://github.com/hiall-fyi/tado_ce` as a custom repository in HACS)
+2. Install "Tado CE" from HACS
+3. Restart Home Assistant
 
 **Manual Installation**
 ```bash
