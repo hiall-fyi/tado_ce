@@ -1,6 +1,7 @@
 """Constants for Tado CE integration."""
 from pathlib import Path
 import os
+from typing import Optional
 
 DOMAIN = "tado_ce"
 MANUFACTURER = "Joe Yiu (@hiall-fyi)"
@@ -15,6 +16,53 @@ DATA_DIR = Path(_BASE_CONFIG_DIR) / ".storage" / "tado_ce"
 # Legacy data directory (for migration from v1.5.1 and earlier)
 LEGACY_DATA_DIR = Path(_BASE_CONFIG_DIR) / "custom_components" / "tado_ce" / "data"
 
+# v1.8.0: Multi-home support - per-home data files
+# Files that are per-home (need home_id suffix)
+PER_HOME_FILES = [
+    "config", "zones", "zones_info", "ratelimit", "weather",
+    "mobile_devices", "home_state", "api_call_history", "offsets",
+    "ac_capabilities", "schedules"
+]
+
+
+def get_data_file(base_name: str, home_id: Optional[str] = None) -> Path:
+    """Get data file path, with optional home_id suffix for multi-home support.
+    
+    v1.8.0: Supports per-home data files for multi-home setups.
+    
+    Args:
+        base_name: Base filename without extension (e.g., "zones", "config")
+        home_id: Optional home ID for per-home files
+        
+    Returns:
+        Path to the data file
+        
+    Examples:
+        get_data_file("zones") -> /config/.storage/tado_ce/zones.json
+        get_data_file("zones", "12345") -> /config/.storage/tado_ce/zones_12345.json
+    """
+    if home_id and base_name in PER_HOME_FILES:
+        return DATA_DIR / f"{base_name}_{home_id}.json"
+    return DATA_DIR / f"{base_name}.json"
+
+
+def get_legacy_file(base_name: str) -> Path:
+    """Get legacy file path (without home_id suffix).
+    
+    Used for backwards compatibility and migration.
+    
+    Args:
+        base_name: Base filename without extension
+        
+    Returns:
+        Path to the legacy data file
+    """
+    return DATA_DIR / f"{base_name}.json"
+
+
+# Legacy file paths (for backwards compatibility)
+# These are kept for existing code that imports them directly
+# New code should use get_data_file() with home_id
 CONFIG_FILE = DATA_DIR / "config.json"
 ZONES_FILE = DATA_DIR / "zones.json"
 ZONES_INFO_FILE = DATA_DIR / "zones_info.json"

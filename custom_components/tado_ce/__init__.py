@@ -530,18 +530,65 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
         
         _LOGGER.info("Migration step -> v6 complete")
 
+    if initial_version < 7:
+        # Version 6 -> 7 (v1.8.0): Per-home data files for multi-home support
+        _LOGGER.info("=== Migration: -> v7 ===")
+        _LOGGER.info("Migrating to v1.8.0 format (per-home data files)")
+        
+        # Get home_id from config entry data or config.json
+        home_id = config_entry.data.get("home_id")
+        
+        if not home_id and CONFIG_FILE.exists():
+            try:
+                with open(CONFIG_FILE) as f:
+                    config = json.load(f)
+                    home_id = config.get("home_id")
+                    _LOGGER.info(f"  Got home_id from config.json: {home_id}")
+            except Exception as e:
+                _LOGGER.warning(f"  Could not read home_id from config.json: {e}")
+        
+        if home_id:
+            from .const import PER_HOME_FILES, get_data_file, get_legacy_file
+            import shutil
+            
+            migrated_files = []
+            for base_name in PER_HOME_FILES:
+                legacy_path = get_legacy_file(base_name)
+                new_path = get_data_file(base_name, home_id)
+                
+                # Only migrate if legacy exists and new doesn't
+                if legacy_path.exists() and not new_path.exists():
+                    try:
+                        shutil.copy2(legacy_path, new_path)
+                        migrated_files.append(f"{base_name}.json -> {base_name}_{home_id}.json")
+                        _LOGGER.info(f"  Migrated {base_name}.json -> {base_name}_{home_id}.json")
+                    except Exception as e:
+                        _LOGGER.error(f"  Failed to migrate {base_name}.json: {e}")
+            
+            if migrated_files:
+                _LOGGER.info(f"  Migrated {len(migrated_files)} files for home_id {home_id}")
+            else:
+                _LOGGER.info("  No files needed migration (already migrated or new install)")
+        else:
+            _LOGGER.warning(
+                "  Could not determine home_id for data file migration. "
+                "Files will remain with legacy names until re-authentication."
+            )
+        
+        _LOGGER.info("Migration step -> v7 complete")
+
     # Update to final version (only once, at the end)
-    if initial_version < 6:
-        hass.config_entries.async_update_entry(config_entry, version=6)
+    if initial_version < 7:
+        hass.config_entries.async_update_entry(config_entry, version=7)
         _LOGGER.info(
             "=== Migration Complete ===\n"
             f"  Initial version: {initial_version}\n"
-            f"  Final version: 6\n"
+            f"  Final version: 7\n"
             f"  CONFIG_FILE exists: {CONFIG_FILE.exists()}\n"
             f"  DATA_DIR exists: {DATA_DIR.exists()}"
         )
     else:
-        _LOGGER.info("Config entry already at version 6, no migration needed")
+        _LOGGER.info("Config entry already at version 7, no migration needed")
     
     return True
 
@@ -649,6 +696,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Initialize configuration manager
     config_manager = ConfigurationManager(entry, hass)
     _LOGGER.info(f"Configuration loaded: {config_manager.get_all_config()}")
+    
+    # v1.8.0: Set current home_id for data_loader multi-home support
+    home_id = entry.data.get("home_id")
+    if home_id:
+        from .data_loader import set_current_home_id
+        set_current_home_id(home_id)
+        _LOGGER.info(f"Data loader home_id set to: {home_id}")
     
     # Store config_manager in hass.data for access by other components
     if DOMAIN not in hass.data:

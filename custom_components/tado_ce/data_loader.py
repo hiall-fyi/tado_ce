@@ -2,18 +2,54 @@
 
 This module provides thread-safe file loading helpers for all Tado CE components.
 All file I/O is blocking and should be called via hass.async_add_executor_job().
+
+v1.8.0: Added multi-home support with per-home data files.
 """
 import json
 import logging
+from pathlib import Path
 from typing import Optional
 
 from .const import (
     ZONES_FILE, ZONES_INFO_FILE, WEATHER_FILE, MOBILE_DEVICES_FILE,
     CONFIG_FILE, RATELIMIT_FILE, HOME_STATE_FILE, OFFSETS_FILE,
-    AC_CAPABILITIES_FILE, API_CALL_HISTORY_FILE
+    AC_CAPABILITIES_FILE, API_CALL_HISTORY_FILE, DATA_DIR,
+    get_data_file, get_legacy_file
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+# Global home_id cache (set during setup)
+_current_home_id: Optional[str] = None
+
+
+def set_current_home_id(home_id: str) -> None:
+    """Set the current home_id for data file lookups.
+    
+    Called during integration setup.
+    """
+    global _current_home_id
+    _current_home_id = home_id
+    _LOGGER.debug(f"Data loader home_id set to: {home_id}")
+
+
+def get_current_home_id() -> Optional[str]:
+    """Get the current home_id."""
+    return _current_home_id
+
+
+def _get_file_path(base_name: str) -> Path:
+    """Get file path with home_id support and fallback.
+    
+    Tries per-home file first, falls back to legacy file.
+    """
+    if _current_home_id:
+        per_home_path = get_data_file(base_name, _current_home_id)
+        if per_home_path.exists():
+            return per_home_path
+    
+    # Fallback to legacy path
+    return get_legacy_file(base_name)
 
 
 def load_zones_file() -> Optional[dict]:
@@ -23,7 +59,8 @@ def load_zones_file() -> Optional[dict]:
         Zone states dict, or None if file doesn't exist or is invalid.
     """
     try:
-        with open(ZONES_FILE) as f:
+        file_path = _get_file_path("zones")
+        with open(file_path) as f:
             return json.load(f)
     except FileNotFoundError:
         _LOGGER.debug("zones.json not found")
@@ -43,7 +80,8 @@ def load_zones_info_file() -> Optional[list]:
         List of zone info dicts, or None if file doesn't exist or is invalid.
     """
     try:
-        with open(ZONES_INFO_FILE) as f:
+        file_path = _get_file_path("zones_info")
+        with open(file_path) as f:
             return json.load(f)
     except FileNotFoundError:
         _LOGGER.debug("zones_info.json not found")
@@ -63,7 +101,8 @@ def load_weather_file() -> Optional[dict]:
         Weather data dict, or None if file doesn't exist or is invalid.
     """
     try:
-        with open(WEATHER_FILE) as f:
+        file_path = _get_file_path("weather")
+        with open(file_path) as f:
             return json.load(f)
     except FileNotFoundError:
         _LOGGER.debug("weather.json not found")
@@ -83,7 +122,8 @@ def load_mobile_devices_file() -> Optional[list]:
         List of mobile device dicts, or None if file doesn't exist or is invalid.
     """
     try:
-        with open(MOBILE_DEVICES_FILE) as f:
+        file_path = _get_file_path("mobile_devices")
+        with open(file_path) as f:
             return json.load(f)
     except FileNotFoundError:
         _LOGGER.debug("mobile_devices.json not found")
@@ -103,7 +143,8 @@ def load_config_file() -> Optional[dict]:
         Config dict, or None if file doesn't exist or is invalid.
     """
     try:
-        with open(CONFIG_FILE) as f:
+        file_path = _get_file_path("config")
+        with open(file_path) as f:
             return json.load(f)
     except FileNotFoundError:
         _LOGGER.debug("config.json not found")
@@ -123,7 +164,8 @@ def load_home_state_file() -> Optional[dict]:
         Home state dict, or None if file doesn't exist or is invalid.
     """
     try:
-        with open(HOME_STATE_FILE) as f:
+        file_path = _get_file_path("home_state")
+        with open(file_path) as f:
             return json.load(f)
     except FileNotFoundError:
         _LOGGER.debug("home_state.json not found")
@@ -143,7 +185,8 @@ def load_ratelimit_file() -> Optional[dict]:
         Rate limit data dict, or None if file doesn't exist or is invalid.
     """
     try:
-        with open(RATELIMIT_FILE) as f:
+        file_path = _get_file_path("ratelimit")
+        with open(file_path) as f:
             return json.load(f)
     except FileNotFoundError:
         _LOGGER.debug("ratelimit.json not found")
@@ -163,7 +206,8 @@ def load_offsets_file() -> Optional[dict]:
         Offsets dict (zone_id -> offset_celsius), or None if file doesn't exist.
     """
     try:
-        with open(OFFSETS_FILE) as f:
+        file_path = _get_file_path("offsets")
+        with open(file_path) as f:
             return json.load(f)
     except FileNotFoundError:
         _LOGGER.debug("offsets.json not found")
@@ -183,7 +227,8 @@ def load_ac_capabilities_file() -> Optional[dict]:
         AC capabilities dict (zone_id -> capabilities), or None if file doesn't exist.
     """
     try:
-        with open(AC_CAPABILITIES_FILE) as f:
+        file_path = _get_file_path("ac_capabilities")
+        with open(file_path) as f:
             return json.load(f)
     except FileNotFoundError:
         _LOGGER.debug("ac_capabilities.json not found")
@@ -203,7 +248,8 @@ def load_api_call_history_file() -> Optional[dict]:
         API call history dict, or None if file doesn't exist.
     """
     try:
-        with open(API_CALL_HISTORY_FILE) as f:
+        file_path = _get_file_path("api_call_history")
+        with open(file_path) as f:
             return json.load(f)
     except FileNotFoundError:
         _LOGGER.debug("api_call_history.json not found")
