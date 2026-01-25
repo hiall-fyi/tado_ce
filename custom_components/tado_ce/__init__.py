@@ -540,10 +540,11 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
         
         if not home_id and CONFIG_FILE.exists():
             try:
-                with open(CONFIG_FILE) as f:
-                    config = json.load(f)
-                    home_id = config.get("home_id")
-                    _LOGGER.info(f"  Got home_id from config.json: {home_id}")
+                def _read_home_id():
+                    with open(CONFIG_FILE) as f:
+                        return json.load(f).get("home_id")
+                home_id = await hass.async_add_executor_job(_read_home_id)
+                _LOGGER.info(f"  Got home_id from config.json: {home_id}")
             except Exception as e:
                 _LOGGER.warning(f"  Could not read home_id from config.json: {e}")
         
@@ -551,19 +552,26 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
             from .const import PER_HOME_FILES, get_data_file, get_legacy_file
             import shutil
             
-            migrated_files = []
-            for base_name in PER_HOME_FILES:
-                legacy_path = get_legacy_file(base_name)
-                new_path = get_data_file(base_name, home_id)
-                
-                # Only migrate if legacy exists and new doesn't
-                if legacy_path.exists() and not new_path.exists():
-                    try:
-                        shutil.copy2(legacy_path, new_path)
-                        migrated_files.append(f"{base_name}.json -> {base_name}_{home_id}.json")
-                        _LOGGER.info(f"  Migrated {base_name}.json -> {base_name}_{home_id}.json")
-                    except Exception as e:
-                        _LOGGER.error(f"  Failed to migrate {base_name}.json: {e}")
+            def _migrate_files():
+                """Migrate files in executor to avoid blocking I/O."""
+                migrated = []
+                for base_name in PER_HOME_FILES:
+                    legacy_path = get_legacy_file(base_name)
+                    new_path = get_data_file(base_name, home_id)
+                    
+                    # Only migrate if legacy exists and new doesn't
+                    if legacy_path.exists() and not new_path.exists():
+                        try:
+                            shutil.copy2(legacy_path, new_path)
+                            migrated.append(f"{base_name}.json -> {base_name}_{home_id}.json")
+                        except Exception as e:
+                            _LOGGER.error(f"  Failed to migrate {base_name}.json: {e}")
+                return migrated
+            
+            migrated_files = await hass.async_add_executor_job(_migrate_files)
+            
+            for f in migrated_files:
+                _LOGGER.info(f"  Migrated {f}")
             
             if migrated_files:
                 _LOGGER.info(f"  Migrated {len(migrated_files)} files for home_id {home_id}")
