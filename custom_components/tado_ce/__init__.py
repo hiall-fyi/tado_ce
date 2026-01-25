@@ -22,7 +22,7 @@ _LOGGER = logging.getLogger(__name__)
 # Platform.BUTTON was added in Home Assistant 2021.12
 # For backward compatibility, check if it exists
 try:
-    PLATFORMS = [Platform.SENSOR, Platform.CLIMATE, Platform.BINARY_SENSOR, Platform.WATER_HEATER, Platform.DEVICE_TRACKER, Platform.SWITCH, Platform.BUTTON]
+    PLATFORMS = [Platform.SENSOR, Platform.CLIMATE, Platform.BINARY_SENSOR, Platform.WATER_HEATER, Platform.DEVICE_TRACKER, Platform.SWITCH, Platform.BUTTON, Platform.CALENDAR]
 except AttributeError:
     # Older Home Assistant version without Platform.BUTTON
     PLATFORMS = [Platform.SENSOR, Platform.CLIMATE, Platform.BINARY_SENSOR, Platform.WATER_HEATER, Platform.DEVICE_TRACKER, Platform.SWITCH]

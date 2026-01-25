@@ -702,6 +702,66 @@ class TadoAsyncClient:
             _LOGGER.error(f"Error deleting overlay: {e}")
             return False
     
+    async def get_zone_schedule(self, zone_id: str) -> dict | None:
+        """Get zone schedule (timetable and blocks).
+        
+        Returns:
+            dict with 'type' (timetable type) and 'blocks' (dict of day_type -> blocks)
+        """
+        config = await self._load_config()
+        home_id = config.get("home_id")
+        if not home_id:
+            return None
+        
+        token = await self.get_access_token()
+        if not token:
+            return None
+        
+        headers = {"Authorization": f"Bearer {token}"}
+        
+        try:
+            # Get active timetable
+            url = f"{TADO_API_BASE}/homes/{home_id}/zones/{zone_id}/schedule/activeTimetable"
+            async with self._session.get(url, headers=headers) as resp:
+                self._parse_ratelimit_headers(dict(resp.headers))
+                if resp.status != 200:
+                    _LOGGER.error(f"Failed to get active timetable: {resp.status}")
+                    return None
+                active = await resp.json()
+            
+            timetable_id = active.get("id", 0)
+            timetable_type = active.get("type", "ONE_DAY")
+            
+            # Determine which day types to fetch based on timetable type
+            day_types_map = {
+                "ONE_DAY": ["MONDAY_TO_SUNDAY"],
+                "THREE_DAY": ["MONDAY_TO_FRIDAY", "SATURDAY", "SUNDAY"],
+                "SEVEN_DAY": ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"],
+            }
+            day_types = day_types_map.get(timetable_type, ["MONDAY_TO_SUNDAY"])
+            
+            # Fetch blocks for each day type
+            blocks_by_day = {}
+            for day_type in day_types:
+                url = f"{TADO_API_BASE}/homes/{home_id}/zones/{zone_id}/schedule/timetables/{timetable_id}/blocks/{day_type}"
+                async with self._session.get(url, headers=headers) as resp:
+                    self._parse_ratelimit_headers(dict(resp.headers))
+                    if resp.status == 200:
+                        blocks_by_day[day_type] = await resp.json()
+                    else:
+                        _LOGGER.warning(f"Failed to get blocks for {day_type}: {resp.status}")
+                        blocks_by_day[day_type] = []
+            
+            return {
+                "type": timetable_type,
+                "timetable_id": timetable_id,
+                "blocks": blocks_by_day,
+            }
+            
+        except Exception as e:
+            _LOGGER.error(f"Error fetching zone schedule: {e}")
+            return None
+    
     async def set_presence_lock(self, state: str) -> bool:
         """Set home presence lock (HOME/AWAY)."""
         config = await self._load_config()
