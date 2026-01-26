@@ -2,6 +2,13 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [1.8.1] - 2026-01-26
+
+**Hotfix: AC Optimistic Updates** - Fixed optimistic state updates for AC zones.
+
+- **Fixed AC optimistic updates not working** - AC zones now have the same optimistic update protection as heating zones ([#44](https://github.com/hiall-fyi/tado_ce/issues/44) - @neonsp)
+- AC state changes (temperature, mode, fan, swing) now update immediately without bouncing back
+
 ## [1.8.0] - 2026-01-26
 
 **Multi-Home Data Migration + Schedule Calendar** - Per-home data files and heating schedule visualization.
