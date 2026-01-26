@@ -29,6 +29,11 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     # Add Resume All Schedules button (hub-level)
     buttons.append(TadoResumeAllSchedulesButton(hass))
     
+    # Add Refresh AC Capabilities button (hub-level) - only if there are AC zones
+    has_ac_zones = any(z.get('type') == 'AIR_CONDITIONING' for z in (zones_info or []))
+    if has_ac_zones:
+        buttons.append(TadoRefreshACCapabilitiesButton(hass))
+    
     if zones_info:
         for zone in zones_info:
             zone_id = str(zone.get('id'))
@@ -112,6 +117,52 @@ class TadoResumeAllSchedulesButton(ButtonEntity):
             await handler.trigger_refresh(self.entity_id, "resume_all_schedules", force=True, skip_debounce=True)
         except Exception as e:
             _LOGGER.debug(f"Failed to trigger immediate refresh: {e}")
+
+
+class TadoRefreshACCapabilitiesButton(ButtonEntity):
+    """Button to refresh AC capabilities cache."""
+    
+    def __init__(self, hass: HomeAssistant):
+        """Initialize the button."""
+        self.hass = hass
+        
+        self._attr_name = "Tado CE Refresh AC Capabilities"
+        self._attr_unique_id = "tado_ce_refresh_ac_capabilities"
+        self._attr_device_info = get_hub_device_info()
+        self._attr_entity_category = EntityCategory.CONFIG
+        self._attr_icon = "mdi:air-conditioner"
+    
+    async def async_press(self) -> None:
+        """Handle button press - refresh AC capabilities from API."""
+        from .async_api import get_async_client
+        from .const import AC_CAPABILITIES_FILE
+        
+        _LOGGER.info("Refresh AC Capabilities button pressed")
+        
+        # Delete existing cache to force re-fetch
+        def _delete_cache():
+            if AC_CAPABILITIES_FILE.exists():
+                AC_CAPABILITIES_FILE.unlink()
+                _LOGGER.debug("Deleted AC capabilities cache")
+        
+        await self.hass.async_add_executor_job(_delete_cache)
+        
+        # Fetch fresh capabilities
+        client = get_async_client(self.hass)
+        zones_info = await self.hass.async_add_executor_job(load_zones_info_file)
+        
+        if not zones_info:
+            _LOGGER.warning("No zones found")
+            return
+        
+        # Call the sync method to re-fetch AC capabilities
+        try:
+            await client._sync_ac_capabilities(zones_info)
+            _LOGGER.info("AC capabilities refreshed successfully")
+        except Exception as e:
+            _LOGGER.error(f"Failed to refresh AC capabilities: {e}")
+        
+        _LOGGER.info("AC capabilities refreshed successfully")
 
 
 class TadoWaterHeaterTimerButton(ButtonEntity):

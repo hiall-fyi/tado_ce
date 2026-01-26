@@ -65,11 +65,14 @@ Complete list of all entities created by Tado CE integration.
 
 ---
 
-## Hub Buttons (v1.5.3)
+## Hub Buttons (v1.5.3+)
 
 | Entity | Type | Description | API Calls |
 |--------|------|-------------|-----------|
 | `button.tado_ce_resume_all_schedules` | Button | Delete all zone overlays and return to schedules | 1 per zone |
+| `button.tado_ce_refresh_ac_capabilities` | Button | Refresh AC capabilities cache (v1.8.3, AC zones only) | 1 per AC zone |
+
+**Note (v1.8.3):** The Refresh AC Capabilities button only appears if you have AC zones. Use it to refresh cached capabilities after AC firmware updates or for troubleshooting.
 
 ---
 

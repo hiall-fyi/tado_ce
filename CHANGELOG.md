@@ -2,6 +2,14 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [1.8.3] - 2026-01-26
+
+**AC Optimistic Updates & Cached Capabilities** - Complete AC state feedback and reduced restart API calls.
+
+- **Cached AC capabilities** - AC zone capabilities now cached on first fetch, saving API calls on every restart ([#61](https://github.com/hiall-fyi/tado_ce/issues/61) - @neonsp)
+- **NEW: Refresh AC Capabilities button** - Button on Hub device to manually refresh AC capabilities cache (for troubleshooting)
+- **Fixed AC OFF→ON state feedback** - When AC is OFF and user changes temperature/fan/swing, hvac_mode and hvac_action now update immediately ([#44](https://github.com/hiall-fyi/tado_ce/issues/44) - @neonsp)
+
 ## [1.8.2] - 2026-01-26
 
 **AC Optimistic Updates Enhancement & Resume All Schedules Fix** - Improved AC state feedback and faster button response.

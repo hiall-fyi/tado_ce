@@ -933,6 +933,11 @@ class TadoAsyncClient:
         
         shutil.move(temp_path, file_path)
     
+    def _load_json_file_sync(self, file_path: Path) -> Any:
+        """Load JSON file synchronously (for executor)."""
+        with open(file_path) as f:
+            return json.load(f)
+    
     async def _sync_offsets(self, zones_info: list):
         """Sync temperature offsets for all devices.
         
@@ -969,9 +974,25 @@ class TadoAsyncClient:
     async def _sync_ac_capabilities(self, zones_info: list):
         """Sync AC zone capabilities.
         
+        v1.8.3: Skip fetch if cache exists - AC capabilities don't change.
+        This saves API calls on every restart (Issue #61).
+        
         Args:
             zones_info: List of zone info dicts from API.
         """
+        # Check if cache already exists - AC capabilities don't change
+        if AC_CAPABILITIES_FILE.exists():
+            try:
+                loop = asyncio.get_event_loop()
+                existing = await loop.run_in_executor(
+                    None, self._load_json_file_sync, AC_CAPABILITIES_FILE
+                )
+                if existing:
+                    _LOGGER.debug(f"AC capabilities loaded from cache ({len(existing)} zones)")
+                    return
+            except Exception:
+                pass  # Cache corrupted, fetch fresh
+        
         ac_capabilities = {}
         
         for zone in zones_info:

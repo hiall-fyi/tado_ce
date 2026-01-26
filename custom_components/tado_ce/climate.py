@@ -768,10 +768,28 @@ class TadoACClimate(ClimateEntity):
         # Optimistic update BEFORE API call
         old_temp = self._attr_target_temperature
         old_mode = self._attr_hvac_mode
+        old_action = self._attr_hvac_action
+        
         if temperature is not None:
             self._attr_target_temperature = temperature
         if hvac_mode is not None:
             self._attr_hvac_mode = hvac_mode
+        
+        # If AC is OFF, setting temperature will turn it ON
+        if old_mode == HVACMode.OFF:
+            self._attr_hvac_mode = hvac_mode if hvac_mode else HVACMode.COOL
+            # Set hvac_action based on the new mode
+            if self._attr_hvac_mode == HVACMode.COOL:
+                self._attr_hvac_action = HVACAction.COOLING
+            elif self._attr_hvac_mode == HVACMode.HEAT:
+                self._attr_hvac_action = HVACAction.HEATING
+            elif self._attr_hvac_mode == HVACMode.DRY:
+                self._attr_hvac_action = HVACAction.DRYING
+            elif self._attr_hvac_mode == HVACMode.FAN_ONLY:
+                self._attr_hvac_action = HVACAction.FAN
+            else:
+                self._attr_hvac_action = HVACAction.COOLING  # Default fallback
+        
         self._overlay_type = "MANUAL"
         self._optimistic_set_at = time.time()
         _LOGGER.debug(f"AC Optimistic update: {self._zone_name} target_temp={temperature}")
@@ -785,6 +803,7 @@ class TadoACClimate(ClimateEntity):
             _LOGGER.warning(f"AC ROLLBACK: {self._zone_name} API call failed, reverting")
             self._attr_target_temperature = old_temp
             self._attr_hvac_mode = old_mode
+            self._attr_hvac_action = old_action
             self._optimistic_set_at = None
             self.async_write_ha_state()
 
@@ -885,7 +904,17 @@ class TadoACClimate(ClimateEntity):
         import time
         # Optimistic update BEFORE API call
         old_fan = self._attr_fan_mode
+        old_mode = self._attr_hvac_mode
+        old_action = self._attr_hvac_action
+        
         self._attr_fan_mode = fan_mode
+        
+        # If AC is OFF, setting fan mode will turn it ON
+        if self._attr_hvac_mode == HVACMode.OFF:
+            self._attr_hvac_mode = HVACMode.COOL  # Default mode when turning on via fan
+            self._attr_hvac_action = HVACAction.COOLING
+            self._overlay_type = "MANUAL"
+        
         self._optimistic_set_at = time.time()
         self.async_write_ha_state()
         
@@ -895,6 +924,8 @@ class TadoACClimate(ClimateEntity):
         else:
             # Rollback on failure
             self._attr_fan_mode = old_fan
+            self._attr_hvac_mode = old_mode
+            self._attr_hvac_action = old_action
             self._optimistic_set_at = None
             self.async_write_ha_state()
 
@@ -923,7 +954,17 @@ class TadoACClimate(ClimateEntity):
         
         # Optimistic update BEFORE API call
         old_swing = self._attr_swing_mode
+        old_mode = self._attr_hvac_mode
+        old_action = self._attr_hvac_action
+        
         self._attr_swing_mode = swing_mode
+        
+        # If AC is OFF, setting swing mode will turn it ON
+        if self._attr_hvac_mode == HVACMode.OFF:
+            self._attr_hvac_mode = HVACMode.COOL  # Default mode when turning on via swing
+            self._attr_hvac_action = HVACAction.COOLING
+            self._overlay_type = "MANUAL"
+        
         self._optimistic_set_at = time.time()
         self.async_write_ha_state()
         
@@ -932,6 +973,8 @@ class TadoACClimate(ClimateEntity):
         else:
             # Rollback on failure
             self._attr_swing_mode = old_swing
+            self._attr_hvac_mode = old_mode
+            self._attr_hvac_action = old_action
             self._optimistic_set_at = None
             self.async_write_ha_state()
     

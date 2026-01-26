@@ -4,6 +4,22 @@
 
 ---
 
+## v1.8.3 (2026-01-26) - AC Optimistic Updates & Cached Capabilities
+
+### Bug Reports & Issue Reporters
+
+**[@neonsp](https://github.com/neonsp)** - [Issue #44](https://github.com/hiall-fyi/tado_ce/issues/44), [Issue #61](https://github.com/hiall-fyi/tado_ce/issues/61)
+- Reported AC OFF→ON only shows mode change, not temperature/fan/hvac_action
+- Reported restart consuming 6 API calls (4 for AC capabilities that don't change)
+- Identified that AC capabilities should be cached
+
+### What Was Fixed
+
+- ✅ **Issue #44**: AC OFF→ON optimistic updates now include hvac_mode and hvac_action
+- ✅ **Issue #61**: AC capabilities now cached on first fetch, saving API calls on every restart
+
+---
+
 ## v1.8.2 (2026-01-26) - AC Optimistic Updates Enhancement
 
 ### Bug Reports & Issue Reporters
