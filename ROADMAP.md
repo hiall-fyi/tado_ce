@@ -2,7 +2,7 @@
 
 Feature requests and planned improvements for Tado CE.
 
-## v1.7.0 - Multi-Home Preparation ✅
+## v1.7.0 - Multi-Home Preparation ✅ RELEASED
 
 Foundation work for future multi-home support, plus performance improvements.
 
@@ -16,6 +16,8 @@ Foundation work for future multi-home support, plus performance improvements.
 - [x] **Auto-migration** - Existing entries automatically updated, no user action needed
 - [x] **Backwards compatible** - Single home users unaffected
 - [x] **Code cleanup** - Removed unused imports and deprecated mappings
+
+*Released: 2026-01-26*
 
 ---
 
@@ -94,6 +96,14 @@ Entity IDs remain stable throughout migration if entity `unique_id` is unchanged
 ---
 
 ## Completed
+
+### v1.7.0 (2026-01-26)
+
+- [x] **Optimistic state updates** - Immediate UI feedback when changing modes/temperature, with rollback on API failure ([#44](https://github.com/hiall-fyi/tado_ce/issues/44) - @neonsp)
+- [x] **Optional homeState sync** - Add option to disable homeState API call, saves 1 API call per quick sync ([#31](https://github.com/hiall-fyi/tado_ce/issues/31) - @neonsp)
+- [x] **Fix options float validation** - HA NumberSelector returns float, config_manager now converts to int properly
+- [x] **Change integration unique_id** - From `tado_ce_integration` to `tado_ce_{home_id}` for multi-home prep
+- [x] **Auto-migration** - Existing entries automatically updated, no user action needed
 
 ### v1.6.3 (2026-01-25)
 

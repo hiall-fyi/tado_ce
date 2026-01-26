@@ -2,6 +2,16 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [1.7.0] - 2026-01-26
+
+**Multi-Home Preparation** - Foundation for future multi-home support with UX improvements.
+
+- **NEW: Optimistic state updates** - Immediate UI feedback when changing modes/temperature, with rollback on API failure
+- **NEW: Optional homeState sync** - Disable home/away state sync to save 1 API call per quick sync (for users not using Tado geofencing)
+- **Multi-home prep: unique_id migration** - Integration unique_id changed from `tado_ce_integration` to `tado_ce_{home_id}`
+- **Auto-migration** - Existing entries automatically updated, no user action needed
+- **Fixed options float validation** - HA NumberSelector returns float, config_manager now converts to int properly
+
 ## [1.6.3] - 2026-01-25
 
 **Accurate API Reset Time Detection** - Uses Home Assistant sensor history for precise reset time.

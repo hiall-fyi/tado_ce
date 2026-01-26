@@ -4,6 +4,24 @@
 
 ---
 
+## v1.7.0 (2026-01-26) - Multi-Home Preparation
+
+### Bug Reports & Feature Contributors
+
+**[@neonsp](https://github.com/neonsp)** - [Issue #44](https://github.com/hiall-fyi/tado_ce/issues/44), [Issue #31](https://github.com/hiall-fyi/tado_ce/issues/31)
+- Reported UI not updating immediately after state changes
+- Requested optional homeState sync to save API calls
+- Continued testing and feedback
+
+### What Was Added/Fixed
+
+- ✅ **Issue #44**: Optimistic state updates - immediate UI feedback with rollback on failure
+- ✅ **Issue #31**: Optional homeState sync - saves 1 API call per quick sync
+- ✅ Multi-home prep: unique_id migration to `tado_ce_{home_id}`
+- ✅ Fixed options float validation (NumberSelector returns float)
+
+---
+
 ## v1.6.0 (2026-01-25) - Refresh & Automation Fixes
 
 ### Bug Reports & Issue Reporters
