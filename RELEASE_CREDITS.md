@@ -4,6 +4,25 @@
 
 ---
 
+## v1.8.2 (2026-01-26) - AC Optimistic Updates Enhancement
+
+### Bug Reports & Issue Reporters
+
+**[@neonsp](https://github.com/neonsp)** - [Issue #44](https://github.com/hiall-fyi/tado_ce/issues/44)
+- Reported AC turning on from OFF only shows mode change, not temperature/fan mode
+- Identified that optimistic updates needed to include all attributes
+
+**[@hapklaar](https://github.com/hapklaar)** - [Issue #44](https://github.com/hiall-fyi/tado_ce/issues/44)
+- Reported Resume All Schedules button taking ~20 seconds to update
+- Identified debounce delay was being applied unnecessarily
+
+### What Was Fixed
+
+- ✅ **Issue #44**: AC optimistic updates now include temperature, fan mode, and hvac action when turning on
+- ✅ **Issue #44**: Resume All Schedules button now refreshes immediately (skips debounce delay)
+
+---
+
 ## v1.8.1 (2026-01-26) - AC Optimistic Updates Hotfix
 
 ### Bug Reports & Issue Reporters

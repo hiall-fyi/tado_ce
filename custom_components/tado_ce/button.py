@@ -109,7 +109,7 @@ class TadoResumeAllSchedulesButton(ButtonEntity):
         # Trigger immediate refresh to update all entities
         try:
             handler = get_handler(self.hass)
-            await handler.trigger_refresh(self.entity_id, "resume_all_schedules", force=True)
+            await handler.trigger_refresh(self.entity_id, "resume_all_schedules", force=True, skip_debounce=True)
         except Exception as e:
             _LOGGER.debug(f"Failed to trigger immediate refresh: {e}")
 

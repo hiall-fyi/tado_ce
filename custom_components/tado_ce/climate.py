@@ -837,18 +837,46 @@ class TadoACClimate(ClimateEntity):
                 self.async_write_ha_state()
         else:
             # Optimistic update BEFORE API call
+            # Include all attributes that will be set by _async_set_ac_overlay
             old_mode = self._attr_hvac_mode
+            old_temp = self._attr_target_temperature
+            old_fan = self._attr_fan_mode
+            old_action = self._attr_hvac_action
+            
             self._attr_hvac_mode = hvac_mode
             self._overlay_type = "MANUAL"
+            
+            # Set default temperature if not already set (matches _async_set_ac_overlay logic)
+            tado_mode = HA_TO_TADO_HVAC_MODE.get(hvac_mode, 'COOL')
+            if tado_mode != "FAN":
+                if not self._attr_target_temperature:
+                    self._attr_target_temperature = 24.0
+            
+            # Set default fan mode if not already set
+            if not self._attr_fan_mode:
+                self._attr_fan_mode = "auto"
+            
+            # Set hvac_action based on mode
+            if hvac_mode == HVACMode.HEAT:
+                self._attr_hvac_action = HVACAction.HEATING
+            elif hvac_mode == HVACMode.COOL:
+                self._attr_hvac_action = HVACAction.COOLING
+            elif hvac_mode == HVACMode.DRY:
+                self._attr_hvac_action = HVACAction.DRYING
+            elif hvac_mode == HVACMode.FAN_ONLY:
+                self._attr_hvac_action = HVACAction.FAN
+            
             self._optimistic_set_at = time.time()
             self.async_write_ha_state()
             
-            tado_mode = HA_TO_TADO_HVAC_MODE.get(hvac_mode, 'COOL')
             if await self._async_set_ac_overlay(mode=tado_mode):
                 await self._async_trigger_immediate_refresh("hvac_mode_change")
             else:
                 # Rollback on failure
                 self._attr_hvac_mode = old_mode
+                self._attr_target_temperature = old_temp
+                self._attr_fan_mode = old_fan
+                self._attr_hvac_action = old_action
                 self._optimistic_set_at = None
                 self.async_write_ha_state()
 

@@ -183,7 +183,7 @@ class ImmediateRefreshHandler:
         
         return True
     
-    async def trigger_refresh(self, entity_id: str, reason: str = "state_change", force: bool = False):
+    async def trigger_refresh(self, entity_id: str, reason: str = "state_change", force: bool = False, skip_debounce: bool = False):
         """Trigger immediate refresh for an entity.
         
         Uses debouncing to batch multiple rapid changes into a single refresh.
@@ -192,6 +192,7 @@ class ImmediateRefreshHandler:
             entity_id: Entity ID that triggered the refresh
             reason: Reason for refresh (for logging)
             force: If True, skip entity type check (for buttons like Resume All Schedules)
+            skip_debounce: If True, execute refresh immediately without debounce delay
         """
         if not force and not self.should_refresh(entity_id):
             _LOGGER.debug(f"Entity {entity_id} does not trigger immediate refresh")
@@ -220,8 +221,11 @@ class ImmediateRefreshHandler:
         # Schedule debounced refresh
         async def _debounced_refresh():
             import asyncio
-            delay = self._get_debounce_delay()
-            await asyncio.sleep(delay)
+            
+            # Skip debounce delay if requested (for buttons like Resume All Schedules)
+            if not skip_debounce:
+                delay = self._get_debounce_delay()
+                await asyncio.sleep(delay)
             
             if not self._pending_refresh:
                 return

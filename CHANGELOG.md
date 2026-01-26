@@ -2,6 +2,13 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [1.8.2] - 2026-01-26
+
+**AC Optimistic Updates Enhancement & Resume All Schedules Fix** - Improved AC state feedback and faster button response.
+
+- **Enhanced AC optimistic updates** - When turning AC on from OFF, temperature/fan mode/hvac action now update immediately (not just mode) ([#44](https://github.com/hiall-fyi/tado_ce/issues/44) - @neonsp)
+- **Fixed Resume All Schedules delay** - Button now refreshes immediately without waiting for debounce delay ([#44](https://github.com/hiall-fyi/tado_ce/issues/44) - @hapklaar)
+
 ## [1.8.1] - 2026-01-26
 
 **Hotfix: AC Optimistic Updates & Resume All Schedules** - Fixed optimistic state updates for AC zones and Resume All Schedules refresh.
