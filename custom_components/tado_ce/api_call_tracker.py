@@ -69,6 +69,8 @@ class APICallTracker:
         
         # Ensure data directory exists
         self.data_dir.mkdir(parents=True, exist_ok=True)
+        # Also ensure parent directory of history file exists (may differ from data_dir)
+        self.history_file.parent.mkdir(parents=True, exist_ok=True)
     
     def _load_history_sync(self) -> Dict:
         """Load call history from disk synchronously."""
@@ -86,6 +88,8 @@ class APICallTracker:
         import shutil
         
         try:
+            # Ensure parent directory exists
+            self.history_file.parent.mkdir(parents=True, exist_ok=True)
             # Write to temp file first
             with tempfile.NamedTemporaryFile(
                 mode='w', dir=self.data_dir, delete=False, suffix='.tmp'
@@ -118,8 +122,8 @@ class APICallTracker:
     async def _save_history_async(self, data: Dict):
         """Save call history to disk using native async I/O with atomic write."""
         try:
-            # Ensure directory exists
-            await aiofiles.os.makedirs(self.data_dir, exist_ok=True)
+            # Ensure parent directory of history file exists
+            await aiofiles.os.makedirs(self.history_file.parent, exist_ok=True)
             
             # Write to temp file then atomic rename
             temp_path = self.history_file.with_suffix('.tmp')
