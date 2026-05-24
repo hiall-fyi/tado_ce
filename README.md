@@ -113,13 +113,14 @@ Tado CE: Integration loaded successfully
 
 ### 4. Enable HomeKit local control (recommended)
 
-If you have an Internet Bridge V3 or V3+, pair it to Home Assistant via HomeKit:
+If you have an Internet Bridge V3 or V3+, pair it directly with Tado CE:
 
 1. In the Tado app: **Settings → Home Information → HomeKit** — enable HomeKit and note the 8-digit pairing code.
-2. In Home Assistant: **Settings → Devices & Services → Add Integration → HomeKit Device**, then enter the code.
-3. Open Tado CE's **Configure → General Settings → Hardware Connections → HomeKit**, enable it, and restart Home Assistant.
+2. In Home Assistant, open Tado CE's **Configure → General Settings → Hardware Connections → HomeKit**, enable it, and enter the code when prompted.
 
-Temperature and humidity entities will now show `data_source: homekit` when values arrive locally. See [FEATURES_GUIDE.md](FEATURES_GUIDE.md#homekit-local-control) for details.
+Tado CE drives the pairing itself, so don't add the bridge through Home Assistant's standard **HomeKit Device** integration first. The Tado bridge only allows one HomeKit controller at a time, and a pre-existing pairing will block Tado CE. If you've already paired the bridge with Apple Home or HomeKit Device, unpair there before enabling local control here.
+
+Temperature and humidity entities will then show `data_source: homekit` when values arrive locally. See [FEATURES_GUIDE.md](FEATURES_GUIDE.md#homekit-local-control) for details.
 
 ### 5. Configure
 
@@ -247,7 +248,7 @@ Yes, though there's usually no reason to. Both integrations read from the same T
 <details>
 <summary><strong>Does HomeKit pairing interfere with other HomeKit apps (Apple Home, etc.)?</strong></summary>
 
-No. Home Assistant's HomeKit Device integration pairs as a second controller — your existing Apple Home setup keeps working unchanged.
+The Tado bridge only allows one HomeKit controller at a time, so Tado CE and Apple Home (or Home Assistant's standard HomeKit Device integration) can't both pair with it directly. If you want to keep your Tado zones in Apple Home, unpair the bridge there first and then pair with Tado CE. You can re-expose the resulting `climate.*` entities to Apple Home through Home Assistant's **HomeKit Bridge** integration, which is a separate component that publishes HA entities back out as a HomeKit accessory.
 
 </details>
 
