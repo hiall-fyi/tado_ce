@@ -203,6 +203,32 @@
           },
           "zone_type": {
             "name": "Tipo de zona"
+          },
+          "swing_mode": {
+            "name": "Balanço (vertical)",
+            "state": {
+              "auto": "Auto",
+              "off": "Desligado",
+              "on": "Ligado",
+              "up": "Para cima",
+              "mid_up": "Médio (para cima)",
+              "mid": "Meio",
+              "mid_down": "Meio (para baixo)",
+              "down": "Para baixo"
+            }
+          },
+          "swing_horizontal_mode": {
+            "name": "Balanço (horizontal)",
+            "state": {
+              "auto": "Auto",
+              "off": "Desligado",
+              "on": "Ligado",
+              "left": "Esquerda",
+              "mid_left": "Centro (à esquerda)",
+              "mid": "Meio",
+              "mid_right": "Centro (direita)",
+              "right": "Direita"
+            }
           }
         }
       }

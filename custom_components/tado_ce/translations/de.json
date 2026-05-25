@@ -203,6 +203,32 @@
           },
           "zone_type": {
             "name": "Art der Zone"
+          },
+          "swing_mode": {
+            "name": "Schaukel (vertikal)",
+            "state": {
+              "auto": "Auto",
+              "off": "Aus",
+              "on": "An",
+              "up": "Nach oben",
+              "mid_up": "Mitte (nach oben)",
+              "mid": "Mitte",
+              "mid_down": "Mitte (nach unten)",
+              "down": "Nach unten"
+            }
+          },
+          "swing_horizontal_mode": {
+            "name": "Schaukel (horizontal)",
+            "state": {
+              "auto": "Auto",
+              "off": "Aus",
+              "on": "An",
+              "left": "Links",
+              "mid_left": "Mitte (links)",
+              "mid": "Mitte",
+              "mid_right": "Mitte (rechts)",
+              "right": "Rechts"
+            }
           }
         }
       }

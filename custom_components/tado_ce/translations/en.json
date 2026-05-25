@@ -203,6 +203,32 @@
           },
           "zone_type": {
             "name": "Zone type"
+          },
+          "swing_mode": {
+            "name": "Swing (vertical)",
+            "state": {
+              "auto": "Auto",
+              "off": "Off",
+              "on": "On",
+              "up": "Up",
+              "mid_up": "Mid (up)",
+              "mid": "Mid",
+              "mid_down": "Mid (down)",
+              "down": "Down"
+            }
+          },
+          "swing_horizontal_mode": {
+            "name": "Swing (horizontal)",
+            "state": {
+              "auto": "Auto",
+              "off": "Off",
+              "on": "On",
+              "left": "Left",
+              "mid_left": "Mid (left)",
+              "mid": "Mid",
+              "mid_right": "Mid (right)",
+              "right": "Right"
+            }
           }
         }
       }

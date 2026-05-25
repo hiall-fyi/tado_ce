@@ -224,6 +224,7 @@ async def api_call_with_rollback(
         preserved_attrs={
             "fan_mode": getattr(entity, "_attr_fan_mode", None),
             "swing_mode": getattr(entity, "_attr_swing_mode", None),
+            "swing_horizontal_mode": getattr(entity, "_attr_swing_horizontal_mode", None),
         } if hasattr(entity, "_attr_fan_mode") else None,
     )
     entity.async_write_ha_state()

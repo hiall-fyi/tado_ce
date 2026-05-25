@@ -203,6 +203,32 @@
           },
           "zone_type": {
             "name": "Tipo de zona"
+          },
+          "swing_mode": {
+            "name": "Columpio (vertical)",
+            "state": {
+              "auto": "Auto",
+              "off": "Apagado",
+              "on": "Encendido",
+              "up": "Arriba",
+              "mid_up": "Medio (arriba)",
+              "mid": "Medio",
+              "mid_down": "Centro (abajo)",
+              "down": "Abajo"
+            }
+          },
+          "swing_horizontal_mode": {
+            "name": "Columpio (horizontal)",
+            "state": {
+              "auto": "Auto",
+              "off": "Apagado",
+              "on": "Encendido",
+              "left": "Izquierda",
+              "mid_left": "Centro (izquierda)",
+              "mid": "Medio",
+              "mid_right": "Centro (derecha)",
+              "right": "Derecha"
+            }
           }
         }
       }

@@ -203,6 +203,32 @@
           },
           "zone_type": {
             "name": "Type de zone"
+          },
+          "swing_mode": {
+            "name": "Balançoire (verticale)",
+            "state": {
+              "auto": "Auto",
+              "off": "Désactivé",
+              "on": "Activé",
+              "up": "Haut",
+              "mid_up": "Milieu (haut)",
+              "mid": "Milieu",
+              "mid_down": "Milieu (bas)",
+              "down": "Bas"
+            }
+          },
+          "swing_horizontal_mode": {
+            "name": "Balançoire (horizontale)",
+            "state": {
+              "auto": "Auto",
+              "off": "Désactivé",
+              "on": "Activé",
+              "left": "À gauche",
+              "mid_left": "Au milieu (à gauche)",
+              "mid": "Milieu",
+              "mid_right": "Au milieu (à droite)",
+              "right": "À droite"
+            }
           }
         }
       }

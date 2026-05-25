@@ -22,6 +22,10 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 
 Community contributors who helped shape each release through bug reports, feature requests, testing, and feedback.
 
+### v4.1.0-beta.1
+
+- **[@Ralf84](https://github.com/Ralf84)** — Drove the AC swing axis split from feature request to merged design ([#270](https://github.com/hiall-fyi/tado_ce/issues/270)). The original "Off / None option" request would have been a one-line patch; the debug log Ralf captured on his unit (`vertical={MID, AUTO, UP, MID_DOWN, DOWN, MID_UP, ON}`, `horizontal={MID, LEFT, MID_LEFT, MID_RIGHT, RIGHT, ON}`) exposed how lossy the v4.0 unified four-value dropdown was on fine-grained AC units, and turned the fix into a proper split-axis rework using `ClimateEntityFeature.SWING_HORIZONTAL_MODE`. The same root cause had produced [#128](https://github.com/hiall-fyi/tado_ce/issues/128) (@BirbByte, Mitsubishi swing) and [#142](https://github.com/hiall-fyi/tado_ce/issues/142) (@BirbByte, Mitsubishi/Fujitsu fan levels) in earlier cycles — closing all three together was only possible because Ralf grabbed the right log line on the first ask.
+
 ### v4.0.0
 
 The 4.0 cycle ran across 16 betas between April and May 2026. The contributors below shaped the release through bug reports, feature ideas, multi-round debugging, and field testing. Many of them returned across multiple betas as fixes uncovered new edge cases — credit covers the cycle as a whole, not a single point in time.

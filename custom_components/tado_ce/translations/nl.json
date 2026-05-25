@@ -203,6 +203,32 @@
           },
           "zone_type": {
             "name": "Type zone"
+          },
+          "swing_mode": {
+            "name": "Schommel (verticaal)",
+            "state": {
+              "auto": "Auto",
+              "off": "Uit",
+              "on": "Aan",
+              "up": "Omhoog",
+              "mid_up": "Midden (omhoog)",
+              "mid": "Midden",
+              "mid_down": "Midden (omlaag)",
+              "down": "Omlaag"
+            }
+          },
+          "swing_horizontal_mode": {
+            "name": "Schommel (horizontaal)",
+            "state": {
+              "auto": "Auto",
+              "off": "Uit",
+              "on": "Aan",
+              "left": "Links",
+              "mid_left": "Midden (links)",
+              "mid": "Midden",
+              "mid_right": "Midden (rechts)",
+              "right": "Rechts"
+            }
           }
         }
       }

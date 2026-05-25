@@ -8,16 +8,38 @@ For completed features, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Up Next
 
+**v4.1.0-beta.1 — May 2026.** AC swing dropdown is now split into
+independent vertical and horizontal axes, populated directly from the
+cloud-reported capability set. Units that report fine-grained louver
+positions (Mitsubishi, Fujitsu, etc.) can now be parked at fixed
+positions like `Up`, `Mid (down)`, `Left`, instead of being forced
+into a sweeping motion. See [CHANGELOG.md](CHANGELOG.md) for the
+migration recipe.
+
 **v4.0.0 shipped — May 2026.** Headline changes: HomeKit local
 control, Smart Valve Control (Offset Sync + Valve Target modes),
 Weather Compensation, multi-home support, actionable insights, and a
 redesigned Options Flow. See [CHANGELOG.md](CHANGELOG.md) for what
 changed for users coming from v3.5.3.
 
-The next milestone is gathering field feedback and triaging which
-items below to schedule for the 4.x cycle.
+The next milestone is gathering field feedback on v4.1.0-beta.1 and
+triaging the items below for the rest of the 4.x cycle.
 
 ## Future Consideration
+
+### AC
+
+- **HomeKit local path for AC swing (vertical, ON/OFF)** — v4.1's
+  split swing dropdown still goes through Tado's cloud, so picking a
+  swing position uses cloud quota and confirms on the next poll.
+  HomeKit's accessory protocol can carry only a binary swing on/off
+  (no axes, no fixed positions), but for the largest user segment —
+  simple ON/OFF AC units — that's already useful. Wire HomeKit's
+  binary `SwingMode` characteristic into the new vertical-axis dropdown
+  for those units; cloud stays the path for fine-grained positions and
+  the horizontal axis. Gated on confirming Tado's bridge actually
+  advertises the characteristic — beta-tester help wanted. Tracker
+  issue coming once that's confirmed.
 
 ### Smart Valve Control
 

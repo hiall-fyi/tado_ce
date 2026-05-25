@@ -275,9 +275,9 @@ Skips API calls when the requested state already matches the current state. If y
 | Setting | Value |
 |---------|-------|
 | Behavior | Always active |
-| Covers | Temperature, HVAC mode, fan mode, swing mode, preset mode |
+| Covers | Temperature, HVAC mode, fan mode, vertical swing, horizontal swing, preset mode |
 
-**Checked states:** temperature, HVAC mode, fan mode, swing mode, and preset mode. Each is compared against the coordinator's cached state — no extra API call needed for the check.
+**Checked states:** temperature, HVAC mode, fan mode, vertical swing, horizontal swing, and preset mode. Each is compared against the coordinator's cached state — no extra API call needed for the check.
 
 #### 3. Device Sync Queue
 

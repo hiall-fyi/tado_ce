@@ -2,6 +2,62 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [4.1.0-beta.1] - 2026-05-25
+
+**Split AC swing into vertical and horizontal axes**
+
+The unified `Off / Vertical / Horizontal / Both` swing dropdown is replaced with two independent dropdowns, one per axis. Units that report fine-grained louver positions (Mitsubishi, Fujitsu, and similar) can now be parked at a fixed direction such as Up, Mid, or Mid (left) instead of being forced into a sweeping motion.
+
+### Features
+
+- **Split AC swing into vertical and horizontal axes** ([#270](https://github.com/hiall-fyi/tado_ce/issues/270) - @Ralf84) — AC zones now expose a `Swing (vertical)` and a `Swing (horizontal)` dropdown, each populated from the cloud-reported capability set for your specific unit. Pick a fixed louver position on either dropdown to stop oscillation on that axis — useful in bedrooms or children's rooms where a constantly moving louver is disruptive. Simple `On / Off` units keep a two-value dropdown.
+- **Fine-grained louver positions for capable AC units** — Units that report values like `UP`, `MID_DOWN`, `LEFT`, `MID_RIGHT` now expose those values directly in the dropdowns. Translations land in German, Spanish, French, Italian, Dutch, and Portuguese alongside English.
+
+### Bug Fixes
+
+- **Swing changes no longer silently drop the off-axis on `OFF`-less units** ([#270](https://github.com/hiall-fyi/tado_ce/issues/270) - @Ralf84) — Picking "Vertical" on a Mitsubishi or Fujitsu unit (which doesn't report `OFF` as a swing value) used to send only `verticalSwing=ON` and omit `horizontalSwing` from the payload, leaving the bridge to keep whatever horizontal state it last had. Each axis now writes its own value independently and the silent-drop fallback is gone.
+- **Picking "On" from a swing dropdown no longer silently moves the off-axis** — `On` was incorrectly being translated as a legacy v4.0 unified value, which set the opposite axis to `Off` and logged a deprecation warning the user hadn't earned. `On` is now treated as a v4.1 raw axis value and only the axis you picked moves.
+
+### Improvements
+
+- **One log line per AC write failure, not two** — Temperature, HVAC mode, fan mode, and swing writes used to log the specific failure reason (timeout, exception, or "rejected by Tado") and then a generic "write failed" warning right after. The generic line now fires only when no specific reason was logged, so a timeout produces a single warning rather than two.
+
+### ⚠️ Migration
+
+**Service-call automations** — calls using the old unified value (`swing_mode: off / vertical / horizontal / both`) keep working with a deprecation warning logged each call. The compat shim is removed in v4.2.0. Recipe:
+
+```yaml
+# Before (v4.0)
+- service: climate.set_swing_mode
+  data:
+    entity_id: climate.tado_ce_living_room
+    swing_mode: both
+
+# After (v4.1+)
+- service: climate.set_swing_mode
+  data:
+    entity_id: climate.tado_ce_living_room
+    swing_mode: on        # or 'auto', 'up', 'mid', etc. — your unit's capability
+- service: climate.set_swing_horizontal_mode
+  data:
+    entity_id: climate.tado_ce_living_room
+    swing_horizontal_mode: on
+```
+
+**Dashboard templates and Lovelace conditions** — anything reading `state_attr('climate.X', 'swing_mode')` and matching `'both'`, `'vertical'`, or `'horizontal'` needs updating. The compat shim covers service calls, not state reads. After v4.1 the attribute holds raw values like `'on'`, `'off'`, `'up'`, `'auto'`. Cards and templates should switch to checking `swing_mode` and `swing_horizontal_mode` separately:
+
+```jinja
+{# Before #}
+{% if state_attr('climate.tado_ce_living_room', 'swing_mode') == 'both' %}
+
+{# After #}
+{% set v = state_attr('climate.tado_ce_living_room', 'swing_mode') %}
+{% set h = state_attr('climate.tado_ce_living_room', 'swing_horizontal_mode') %}
+{% if v not in ['off', None] and h not in ['off', None] %}
+```
+
+**HomeKit users with AC zones** — temperature and HVAC mode still update locally via HomeKit (typically within 2 seconds). Swing changes still go through Tado's cloud, so picking a swing position uses cloud quota and confirms on the next cloud poll (typically 5–30 minutes). Same as v4.0 — not a regression. A follow-up to wire HomeKit's binary `SwingMode` characteristic into the new vertical-axis dropdown for ON/OFF AC units is being scoped separately.
+
 ## [4.0.0] - 2026-05-23
 
 **HomeKit Local Control & Smart Valve Control**
