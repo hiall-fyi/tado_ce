@@ -6,6 +6,7 @@ from datetime import timedelta
 import logging
 from typing import TYPE_CHECKING, Any, Final
 
+from homeassistant.components.climate.const import HVACAction
 from homeassistant.util import dt as dt_util
 
 from .const import HOMEKIT_STALENESS_THRESHOLD
@@ -19,6 +20,16 @@ _LOGGER = logging.getLogger(__name__)
 # so the bridge's stale post-write read can't overwrite the user's
 # fresh setpoint.
 WRITE_PROTECTION_WINDOW: Final[timedelta] = timedelta(minutes=3)
+
+# HAP "Current Heating Cooling State" characteristic values (0=Off,
+# 1=Heat, 2=Cool). Maps to HVACAction.IDLE rather than OFF for 0: the
+# entity's hvac_mode already owns the OFF action, this only reports
+# whether the zone is actively calling for heat right now.
+_CURRENT_HEATING_STATE_TO_ACTION: Final[dict[int, HVACAction]] = {
+    0: HVACAction.IDLE,
+    1: HVACAction.HEATING,
+    2: HVACAction.COOLING,
+}
 
 
 class StateReconciler:
@@ -203,6 +214,25 @@ class StateReconciler:
 
         self._log_source_transition(zone_id, "target_temp", "cloud", cloud_value)
         return cloud_value, "cloud"
+
+    def get_zone_hvac_action(self, zone_id: str) -> HVACAction | None:
+        """Return the bridge's live current-heating-state as an HVACAction, or None.
+
+        Unlike temperature/target-temperature there's no cloud value to
+        negotiate against here (cloud only offers heating_power, which the
+        caller already falls back to), so a fresh local reading is used
+        outright. `freshness_mode="observed"` keeps this valid across the
+        periodic cache refresh even while the state itself hasn't changed,
+        the same way room-temperature stays fresh while stable.
+        """
+        local_val, is_fresh = self._get_fresh_local_value(zone_id, "get_hvac_state")
+        if not is_fresh or local_val is None:
+            return None
+        action = _CURRENT_HEATING_STATE_TO_ACTION.get(int(local_val))
+        if action is None:
+            return None
+        self._log_source_transition(zone_id, "hvac_action", "homekit", local_val)
+        return action
 
     def is_local_write_protected(self, zone_id: str) -> bool:
         """Return True while a recent local write protects this zone's value.
