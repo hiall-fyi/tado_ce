@@ -281,8 +281,12 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Return True when HomeKit local provider is wired and currently connected."""
         return self.homekit_provider is not None and self.homekit_provider.is_connected
 
-    def _log_cloud_unavailable(self, exc: Exception) -> None:
-        """Log INFO on the first cloud→unreachable transition (idempotent)."""
+    def _log_cloud_unavailable(self, exc: Exception | str) -> None:
+        """Log INFO on the first cloud→unreachable transition (idempotent).
+
+        Accepts a plain reason string as well, so the pre-emptive quota
+        pause can reuse it without inventing an exception.
+        """
         if not self._cloud_unavailable_logged:
             _LOGGER.info(
                 "Coordinator: Tado cloud unreachable (%s), keeping "
@@ -647,6 +651,16 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 _LOGGER.warning("Coordinator: %s", reason)
                 self._was_paused = True
                 self.update_interval = timedelta(minutes=15)
+                if self.is_homekit_active:
+                    # The local provider is still serving this home, so the
+                    # zones keep updating without spending a cloud call.
+                    # Raising UpdateFailed here would mark every
+                    # CoordinatorEntity unavailable for the whole quota
+                    # window; hold the last cloud snapshot instead and let
+                    # StateReconciler merge fresh local values over it, the
+                    # same way the TadoRateLimitError handler below does.
+                    self._log_cloud_unavailable(reason)
+                    return self.data or {}
                 # retry_after lets HA defer the next refresh precisely.
                 reset_seconds = self._cached_ratelimit.get("reset_seconds")
                 retry_after = _sanitize_retry_after(reset_seconds)
