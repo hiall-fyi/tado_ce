@@ -651,7 +651,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 _LOGGER.warning("Coordinator: %s", reason)
                 self._was_paused = True
                 self.update_interval = timedelta(minutes=15)
-                if self.is_homekit_active:
+                if self.is_homekit_active and self.data:
                     # The local provider is still serving this home, so the
                     # zones keep updating without spending a cloud call.
                     # Raising UpdateFailed here would mark every
@@ -659,8 +659,13 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     # window; hold the last cloud snapshot instead and let
                     # StateReconciler merge fresh local values over it, the
                     # same way the TadoRateLimitError handler below does.
+                    #
+                    # `self.data` is falsy until the first successful poll,
+                    # so a cold start during a pause still raises and lets
+                    # async_config_entry_first_refresh retry via
+                    # ConfigEntryNotReady rather than coming up empty.
                     self._log_cloud_unavailable(reason)
-                    return self.data or {}
+                    return self.data
                 # retry_after lets HA defer the next refresh precisely.
                 reset_seconds = self._cached_ratelimit.get("reset_seconds")
                 retry_after = _sanitize_retry_after(reset_seconds)
