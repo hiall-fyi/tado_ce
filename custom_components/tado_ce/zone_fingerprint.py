@@ -51,13 +51,15 @@ def ac_device_fingerprints_changed(
     zones_info: list[Any],
     prev_fp: dict[str, Any],
 ) -> tuple[set[str], dict[str, list[list[str]]]]:
-    """Return AC zone_ids whose device fingerprint changed, plus the fresh map.
+    """Return AC or hot-water zone_ids whose device fingerprint changed, plus the fresh map.
 
     Fingerprint = `[sorted shortSerialNo list, sorted currentFwVersion list]`
-    per AC zone. A changed serial set (hardware swap / re-pair) or firmware
-    version (new fan / swing modes) means the cached capabilities may be stale.
+    per zone whose capabilities are cached. A changed serial set (hardware swap
+    / re-pair) or firmware version (new fan / swing modes, or a tank gaining or
+    losing temperature control) means the cached capabilities may be stale.
     connectionState is deliberately excluded so an offline / online flip does
-    not trigger a capabilities re-fetch (quota waste).
+    not trigger a capabilities re-fetch (quota waste). A combi hot-water zone
+    reports no devices, so its fingerprint is empty and never changes.
 
     `prev_fp` is the persisted sidecar baseline (`{zone_id: [serials, fws]}`,
     JSON shape). A zone absent from `prev_fp` is treated as no baseline, so it
@@ -72,7 +74,7 @@ def ac_device_fingerprints_changed(
     changed: set[str] = set()
     fresh: dict[str, list[list[str]]] = {}
     for zone in zones_info:
-        if zone.get("type") != "AIR_CONDITIONING":
+        if zone.get("type") not in ("AIR_CONDITIONING", "HOT_WATER"):
             continue
         zone_id = str(zone.get("id"))
         devices = zone.get("devices") or []

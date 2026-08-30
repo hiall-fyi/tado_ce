@@ -14,10 +14,13 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
     from homeassistant.helpers.entity_registry import EntityRegistry
 
+    from .coordinator import TadoDataUpdateCoordinator
+
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
 from .const import DOMAIN
+from .device_manager import _hub_identifier
 from .entity_registry import ENTITY_REGISTRY
 
 _LOGGER = logging.getLogger(__name__)
@@ -290,14 +293,14 @@ def cleanup_orphan_device(
 def cleanup_orphan_devices(
     hass: HomeAssistant,
     entry: ConfigEntry,
+    coordinator: TadoDataUpdateCoordinator,
 ) -> int:
     """Sweep every device with zero remaining entities (hub device always protected)."""
     device_registry = dr.async_get(hass)
     entity_registry = er.async_get(hass)
-    home_id = entry.data.get("home_id")
 
     # Hub device identifier: never remove
-    hub_identifier = f"tado_ce_hub_{home_id}" if home_id else "tado_ce_hub"
+    hub_identifier = _hub_identifier(str(coordinator.home_id))
 
     removed = 0
     for device_entry in list(device_registry.devices.values()):
@@ -454,7 +457,10 @@ def cleanup_disabled_feature_entities(
         )
 
     if total_removed > 0:
-        orphan_count = cleanup_orphan_devices(hass, entry)
+        # domain_data is only non-empty (making total_removed > 0 reachable) when
+        # `coordinator` was truthy above, so this is proven non-None here.
+        assert coordinator is not None
+        orphan_count = cleanup_orphan_devices(hass, entry, coordinator)
         if orphan_count:
             _LOGGER.info(
                 "Entity Cleanup: removed %d orphan device(s)",

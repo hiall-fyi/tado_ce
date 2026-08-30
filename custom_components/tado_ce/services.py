@@ -16,6 +16,7 @@ from .const import (
     DOMAIN,
     FORCEABLE_FETCH_HOME_STATE,
     FORCEABLE_FETCH_MOBILE,
+    FORCEABLE_FETCH_ZONE_STATES,
     OPEN_WINDOW_DEFAULT_TEMP,
     OPEN_WINDOW_DEFAULT_TIMEOUT,
     SERVICE_ACTIVATE_OPEN_WINDOW,
@@ -1138,6 +1139,13 @@ async def handle_refresh(hass: HomeAssistant, call: ServiceCall) -> None:
     coord = _resolve_single_coordinator(hass)
     cm = coord.config_manager
 
+    if fetch_type == FORCEABLE_FETCH_ZONE_STATES:
+        # Zone states are core polling data, not an optional feature, so
+        # there's no toggle to gate on here.
+        coord.request_forced_zone_fetch()
+        await coord.async_request_refresh()
+        return
+
     if fetch_type == FORCEABLE_FETCH_MOBILE:
         enabled = cm.get_mobile_devices_enabled() and cm.get_mobile_devices_frequent_sync()
     elif fetch_type == FORCEABLE_FETCH_HOME_STATE:
@@ -1737,7 +1745,9 @@ async def _async_register_services(hass: HomeAssistant) -> None:
         functools.partial(handle_refresh, hass),
         schema=vol.Schema(
             {
-                vol.Required("data"): vol.In([FORCEABLE_FETCH_MOBILE, FORCEABLE_FETCH_HOME_STATE]),
+                vol.Required("data"): vol.In(
+                    [FORCEABLE_FETCH_MOBILE, FORCEABLE_FETCH_HOME_STATE, FORCEABLE_FETCH_ZONE_STATES],
+                ),
             },
         ),
     )

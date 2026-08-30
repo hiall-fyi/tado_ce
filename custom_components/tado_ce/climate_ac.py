@@ -576,15 +576,17 @@ class TadoACClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdat
                 zcm.get_zone_value(self._zone_id, "display_temp_source", "auto")
                 if zcm else "auto"
             )
-            cloud_target = self._attr_target_temperature
+            # Sibling of the heating path: not necessarily cloud-derived, so
+            # the reconciler names it "local-write" while a write is protected.
+            current_target = self._attr_target_temperature
             merged_target, target_src = reconciler.merge_zone_target_temperature(
-                self._zone_id, cloud_target, display_source=display_source,
+                self._zone_id, current_target, display_source=display_source,
             )
             if merged_target is not None and merged_target != self._attr_target_temperature:
                 self._attr_target_temperature = merged_target
                 _LOGGER.debug(
                     "Climate AC: %s target %s → %s°C (source %s)",
-                    self._zone_name, cloud_target, merged_target, target_src,
+                    self._zone_name, current_target, merged_target, target_src,
                 )
 
             # HVAC mode is intentionally NOT derived from HomeKit here (sibling

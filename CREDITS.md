@@ -15,13 +15,33 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 | ☕☕☕☕☕ | Marcel v.H., [@Prodeguerriero](https://github.com/Prodeguerriero), [@rodneyha](https://github.com/rodneyha), [@UKICS](https://github.com/UKICS), [@wisskid](https://github.com/wisskid) |
 | ☕☕☕☕ | [@hapklaar](https://github.com/hapklaar) |
 | ☕☕ | Arnaud L., [@janchrillesen](https://github.com/janchrillesen), [@jeromewir](https://github.com/jeromewir), Luke R., [@marcovn](https://github.com/marcovn), [@ratormat](https://github.com/ratormat), Vit P. |
-| ☕ | Alby T., kottrupk, [@MathiasB112](https://github.com/MathiasB112) |
+| ☕ | Alby T., kottrupk, [@MathiasB112](https://github.com/MathiasB112), Philipp H. |
+
+---
+
+## 💻 Code Contributors
+
+Community members who sent an actual patch, not just a report — reviewed and either merged directly or folded into the shipped fix on the same diagnosis.
+
+- **[@nicohabets](https://github.com/nicohabets)** — [PR #341](https://github.com/hiall-fyi/tado_ce/pull/341), the quota-reserve fix for [#340](https://github.com/hiall-fyi/tado_ce/issues/340). Landed as its own commit sharing the same diagnosis rather than a direct merge, since `main` runs ahead of what's on GitHub, plus the two sibling handlers he flagged separately.
+- **[@Flavien](https://github.com/Flavien)** — [PR #330](https://github.com/hiall-fyi/tado_ce/pull/330), three HomeKit sync fixes for v4.3.2, two shipped as written.
+- **[@hacker4257](https://github.com/hacker4257)** — [PR #132](https://github.com/hiall-fyi/tado_ce/pull/132), the API call history directory fix for v2.2.0.
 
 ---
 
 ## Per-Version Credits
 
 Community contributors who helped shape each release through bug reports, feature requests, testing, feedback, and code.
+
+### v4.4.0
+
+- **[@nicohabets](https://github.com/nicohabets)** — Reported that every entity went unavailable for hours when the daily API quota ran low, even with HomeKit connected ([#340](https://github.com/hiall-fyi/tado_ce/issues/340)), then opened [PR #341](https://github.com/hiall-fyi/tado_ce/pull/341) with a fix and the diagnosis behind it: the pre-emptive reserve guard raised `UpdateFailed` unconditionally while a separate guard right next to it already checked HomeKit first. Caught his own regression before anyone else saw it: a cold start with the first version of his fix applied would have returned an empty refresh as if it had succeeded, so he gated the fallback on the coordinator already holding data instead. Then built a standalone offline harness that lifts the real code block out of `coordinator.py` by line range and runs it against both the released version and his branch with a stub coordinator, rather than just describing the fix in words. The shipped fix lands as its own commit sharing his diagnosis, extended to two sibling handlers he'd separately flagged as carrying the identical gap.
+- **[@EDelsman](https://github.com/EDelsman)** — Reported the exact crash Home Assistant's 2026.9 beta produces ([#338](https://github.com/hiall-fyi/tado_ce/issues/338)) with the full traceback, which turned a beta-compatibility question into a concrete fix rather than a wait-and-see. Stayed through a long side investigation into an unrelated temperature swing on his own setup, and offered to test a release candidate.
+- **[@bobbinz](https://github.com/bobbinz)** — Kept a debug log running through a HomeKit bridge that kept losing its pairing ([#322](https://github.com/hiall-fyi/tado_ce/issues/322)), and the fresh log from this round showed something new: the bridge resetting the connection mid-handshake, with the underlying HomeKit library retrying several times a second and no backoff at all, a different failure to the clean auth-refusal his same thread had already got fixed back in v4.3.0. That log is what separated the two failure modes and is why this one earned its own fix rather than being folded into the old one.
+- **[@davidjirovec](https://github.com/davidjirovec)** — Traced a zone with no Window Type override always reading double-pane glazing regardless of the global setting under Smart Comfort, down to the exact fallback chain across four files with file:line references for each step ([#337](https://github.com/hiall-fyi/tado_ce/issues/337)). Also caught that no code path ever copies the global value into a zone lacking its own override, which is precisely the gap the fix closes.
+- **[@motoko-bv](https://github.com/motoko-bv)** — Multi-round investigation into a HomeKit-set temperature reverting to 5°C ([#335](https://github.com/hiall-fyi/tado_ce/issues/335)). Retracted his own first theory after checking the source himself, traced the "Unknown" Target sensor to its power-state check, and captured a debug log precise enough to pin the actual mechanism: `_handle_homekit_update` was reading the entity's own just-written attribute and logging it as a cloud confirmation that had never actually reached Tado. That mislabelled source now reads `local-write` instead of `cloud`, exactly because of where he pointed.
+- **[@Thilas](https://github.com/Thilas)** — Reopened a long-closed issue ([#266](https://github.com/hiall-fyi/tado_ce/issues/266)) with the question that undid a settled assumption: why should Offset Sync stop correcting the device offset just because a zone is off? There had been a reason at the time, but it was the wrong one — Offset Sync's job is keeping Tado's own display accurate, which has nothing to do with whether the zone is calling for heat.
+- **[@BirbByte](https://github.com/BirbByte)** — Reported "Pairing failed" on a device that was never going to pair the way he was trying ([#334](https://github.com/hiall-fyi/tado_ce/issues/334)): a Smart AC Control unit, which HomeKit sees as a standalone thermostat outside Tado CE's bridge-only pairing flow. His screenshots made the mismatch obvious, and exposed that the actual "could not find the bridge" message the code already had was being swallowed into a generic retry prompt instead of shown.
 
 ### v4.3.3
 

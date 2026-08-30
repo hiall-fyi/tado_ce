@@ -82,6 +82,8 @@ _ALL_STORES: dict[str, int] = {
     "timer_duration": 5,
     "homekit_savings": 10,
     "insight_runtime_state": 30,
+    "zone_identity": 10,
+    "zone_type_baseline": 10,
 }
 
 STORE_VERSION = 1

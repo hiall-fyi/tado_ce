@@ -59,11 +59,10 @@ def get_effective_temperature(
     zone_id: str,
     room_temp: float,
     config_manager: ConfigurationManager = None,  # type: ignore[assignment]
-    zone_config_manager: ZoneConfigManager = None,  # type: ignore[assignment]
+    *,
+    zone_config_manager: ZoneConfigManager,
 ) -> tuple[Any, ...]:
     """Pick the temperature mold-risk math should use for this zone."""
-    from .const import DEFAULT_WINDOW_TYPE, WINDOW_U_VALUES
-
     fallback = (room_temp, None, None, "room_average", 0.0)
 
     try:
@@ -82,13 +81,8 @@ def get_effective_temperature(
         if outdoor_temp is None:
             return fallback
 
-        if zone_config_manager:
-            u_value = zone_config_manager.get_window_u_value(zone_id)
-            surface_offset = zone_config_manager.get_surface_temp_offset(zone_id)
-        else:
-            window_type = config_manager.get_mold_risk_window_type()
-            u_value = WINDOW_U_VALUES.get(window_type, WINDOW_U_VALUES[DEFAULT_WINDOW_TYPE])
-            surface_offset = 0.0
+        u_value = zone_config_manager.get_window_u_value(zone_id, config_manager)
+        surface_offset = zone_config_manager.get_surface_temp_offset(zone_id)
 
         surface_temp = calculate_surface_temperature(room_temp, outdoor_temp, u_value)
 

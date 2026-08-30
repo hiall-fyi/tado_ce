@@ -16,7 +16,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .climate_helpers import ac_power_percentage
-from .const import SIGNAL_HOMEKIT_UPDATE
+from .const import OPEN_WINDOW_DEFAULT_TEMP, SIGNAL_HOMEKIT_UPDATE
 from .device_manager import get_hub_device_info, get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
 from .helpers import (
@@ -389,10 +389,13 @@ class TadoTargetTempSensor(TadoZoneSensor):
         setting = zone_data.get("setting") or {}
         if setting.get("power") == "ON":
             self._attr_native_value = (setting.get("temperature") or {}).get("celsius")
+        elif zone_data.get("overlayType") == "MANUAL":
+            # A manual OFF overlay is frost protection, same as the climate card.
+            self._attr_native_value = OPEN_WINDOW_DEFAULT_TEMP
         else:
-            # Power-off zones have no meaningful target; exposing
-            # the last value would mislead users into thinking the
-            # zone is still aiming for it.
+            # Schedule/Away OFF: no target to show. The climate entity's own
+            # target here can go stale when the schedule lookup fails, so
+            # mirroring it is a separate, undecided question.
             self._attr_native_value = None
 
 

@@ -6,13 +6,14 @@ from contextlib import suppress
 import logging
 from typing import TYPE_CHECKING, Any
 
-from .const import DEFAULT_ZONE_CONFIG, OVERLAY_MODE_DEFAULT, WINDOW_U_VALUES
+from .const import DEFAULT_WINDOW_TYPE, DEFAULT_ZONE_CONFIG, OVERLAY_MODE_DEFAULT, WINDOW_U_VALUES
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from homeassistant.core import HomeAssistant
 
+    from .config_manager import ConfigurationManager
     from .data_loader import DataLoader
 
 _LOGGER = logging.getLogger(__name__)
@@ -134,6 +135,21 @@ class ZoneConfigManager:
                         exc_info=True,
                     )
 
+    async def async_prune_reassigned_zones(self, zone_ids: set[str]) -> set[str]:
+        """Delete a reused zone's settings from the live config so a later unrelated save can't resurrect them."""
+        pruned = {zone_id for zone_id in zone_ids if zone_id in self._config}
+        if not pruned:
+            return set()
+        for zone_id in pruned:
+            del self._config[zone_id]
+        await self.async_save()
+        _LOGGER.info(
+            "Zone Config: cleared settings for reassigned zone(s) %s "
+            "(the id is now a different room)",
+            sorted(pruned),
+        )
+        return pruned
+
     async def async_get_or_fetch_overlay_default(self, zone_id: str, api_client: Any) -> str:
         """Return a zone's overlay_mode, fetching the Tado-app default if unset.
 
@@ -171,10 +187,38 @@ class ZoneConfigManager:
 
         return _remove_listener
 
-    def get_window_u_value(self, zone_id: str) -> float:
-        """Resolve the U-value (W/m²K) for the zone's configured window type."""
-        window_type = self.get_zone_value(zone_id, "window_type", "double_pane")
-        return WINDOW_U_VALUES.get(window_type, 2.7)
+    def get_effective_window_type(self, zone_id: str, config_manager: ConfigurationManager) -> str:
+        """Resolve the zone's window type: explicit per-zone override, else the live global setting.
+
+        Never caches config_manager's value: Global Window Type is a user-editable
+        Advanced Settings option, unlike overlay_mode's fetch-once cloud default.
+        """
+        if self.has_zone_override(zone_id, "window_type"):
+            window_type = str(self.get_zone_value(zone_id, "window_type", DEFAULT_WINDOW_TYPE))
+            if window_type not in WINDOW_U_VALUES:
+                _LOGGER.warning(
+                    "Zone Config: zone %s window_type override %r is not a "
+                    "recognised window type; numeric U-value lookups will use "
+                    "the default %s",
+                    zone_id, window_type, DEFAULT_WINDOW_TYPE,
+                )
+            return window_type
+        return config_manager.get_mold_risk_window_type()
+
+    def get_window_u_value(self, zone_id: str, config_manager: ConfigurationManager) -> float:
+        """Resolve the U-value (W/m²K) for the zone's effective window type."""
+        window_type = self.get_effective_window_type(zone_id, config_manager)
+        return WINDOW_U_VALUES.get(window_type, WINDOW_U_VALUES[DEFAULT_WINDOW_TYPE])
+
+    def get_passive_detector_window_u_value(self, zone_id: str) -> float:
+        """Resolve the per-zone U-value for the passive open-window detector's threshold scaling.
+
+        Deliberately does NOT consult the global Window Type setting: that would let a
+        house-wide setting silently change detection sensitivity, an axis already ruled
+        orthogonal to this detector's U-value/threshold relationship.
+        """
+        window_type = self.get_zone_value(zone_id, "window_type", DEFAULT_WINDOW_TYPE)
+        return WINDOW_U_VALUES.get(window_type, WINDOW_U_VALUES[DEFAULT_WINDOW_TYPE])
 
     def get_surface_temp_offset(self, zone_id: str) -> float:
         """Return the user-set surface offset (°C) for mold-risk calibration."""

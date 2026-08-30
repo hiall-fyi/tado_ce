@@ -6,7 +6,7 @@
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.11%2B-blue?style=for-the-badge&logo=home-assistant) ![Python](https://img.shields.io/badge/Python-3.13%2B-blue?style=for-the-badge&logo=python&logoColor=white) ![Tado](https://img.shields.io/badge/Tado-V2%2FV3%2FV3%2B-1E3A8A?style=for-the-badge) ![HACS](https://img.shields.io/badge/HACS-Default-41BDF5?style=for-the-badge)
 
 <!-- Status -->
-![Stable](https://img.shields.io/badge/Stable-4.3.3-brightgreen?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-lightgrey?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-93%25-green?style=for-the-badge)
+![Stable](https://img.shields.io/badge/Stable-4.4.0-brightgreen?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-lightgrey?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-94%25-green?style=for-the-badge)
 
 <!-- Community -->
 ![GitHub stars](https://img.shields.io/github/stars/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub issues](https://img.shields.io/github/issues/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub Release Date](https://img.shields.io/github/release-date/hiall-fyi/tado_ce?style=for-the-badge&logo=github)
@@ -149,7 +149,7 @@ For rooms where the TRV reading differs from the actual room temperature (common
 - **Offset Sync (recommended)** — writes a device temperature offset so Tado's own heating algorithm sees your external sensor's reading. Tado then modulates as normal.
 - **Valve Target (advanced)** — overrides the TRV setpoint directly. Use when Offset Sync's ±10 °C range isn't enough.
 
-Both modes yield to manual changes (Tado app, physical TRV dial), resume on the next schedule block, and prefer HomeKit for the write when available (zero API cost).
+Both modes yield to manual changes (Tado app, physical TRV dial), resume on the next schedule block, and prefer HomeKit for the write when available (zero API cost). Valve Target reads the zone's Tado schedule to know what target to hold; that schedule is fetched automatically as needed and refreshed on demand via the Refresh Schedule button, rather than polled continuously, keeping the cloud-call budget for state that actually changes.
 
 ### Weather Compensation
 
@@ -164,6 +164,8 @@ Tado's per-home quota varies (100 / 1,000 / 20,000 calls per day depending on ti
 Different kinds of data also refresh at their own pace rather than all riding the same cycle. Your zone temperatures update on the polling interval, but weather, presence, and mobile device locations refresh on their own slower schedule, because those barely change in between. The default floors are 30 minutes for weather and 5 minutes for presence and mobile, all configurable in **Configure → Advanced Settings → Polling & API**. So a fast polling interval no longer drags slow-moving data along with it and burns calls re-fetching values that haven't moved.
 
 With HomeKit connected, cloud polling drops further since temperatures arrive locally. Token refreshes also happen ~50% less often than in earlier versions, since the integration now reads the actual expiry from Tado's response instead of refreshing on a fixed 5-minute timer.
+
+That trade-off runs one way, worth knowing going in: a change you make from Home Assistant reaches Tado in seconds, but a change made in the Tado app doesn't come back the same way, it waits for the next cloud sync, so it can take up to the **Cloud Data Refresh** interval under **Configure → Advanced Settings → Polling & API** (30 minutes by default) to show up here, even with local HomeKit control active. A change made by hand at the thermostat is different: the bridge relays that locally, so it still arrives in real time.
 
 ### Actionable Insights
 
@@ -239,6 +241,26 @@ Automations that need to act on Tado CE entities right after Home Assistant star
 | Tado X series | Matter / Thread | Not supported | — |
 
 Tado X uses Matter over Thread. For those devices, use Home Assistant's [native Matter integration](https://community.home-assistant.io/t/using-tado-smart-thermostat-x-through-matter/736576).
+
+---
+
+## Known Limitations
+
+These are how the integration or the underlying protocol works today, not bugs. Check here before opening a report; each links to the fuller explanation.
+
+| Limitation | Detail |
+|---|---|
+| HomeKit humidity is fallback-only | Cloud data drives it by default (finer resolution, updates every poll). HomeKit's own humidity reading only takes over if cloud is unavailable. Temperature uses HomeKit first. See [HomeKit Local Control](FEATURES_GUIDE.md#homekit-local-control). |
+| Some data is cloud-only | Heating power, battery status, schedules, hot water, and geofencing don't have a HomeKit equivalent, so they always come from Tado's cloud regardless of local control. |
+| A change made outside Home Assistant can take a while to show up | Writes from Home Assistant reach Tado in seconds either way. A change made in the Tado app or on the thermostat itself is only picked up on the next Cloud Sync Interval (default 30 minutes, adjustable 5–120 under Advanced Settings → HomeKit), even with HomeKit connected, since Tado CE trusts HomeKit's own reading for temperature rather than polling the cloud that often. See [HomeKit Local Control](FEATURES_GUIDE.md#homekit-local-control). |
+| Single HomeKit pairing | The bridge pairs with one HomeKit controller at a time. Pairing with Tado CE means unpairing it from Apple Home or anywhere else first. |
+| A quiet TRV can hold a stale reading briefly | If a TRV drops off the bridge's radio while the bridge itself stays connected, its temperature can sit on the last reading for a few minutes before falling back to cloud. HomeKit has no "last heard from" signal that would let this integration catch it sooner. |
+| Wireless Temp Sensors (ST01) | Not exposed over HomeKit at all; their readings always come from the cloud. |
+| External sensors don't drive the valve | Binding an external sensor changes what the dashboard shows, not what the TRV heats to. Enable Smart Valve Control on that zone to have the TRV actually compensate. |
+| No TRV LED feedback on local writes | A HomeKit-routed temperature change updates the TRV silently, unlike a change made in the Tado app. Press the device's Identify button, or call `tado_ce.identify_device`, for a flash to confirm you're at the right one. |
+| Smart Valve Control is heating-only | AC zones aren't supported. Schedule resume through it is cloud-only, and it inherits HomeKit's 0.1°C rounding where the cloud API would accept 0.01°C. See [Smart Valve Control](FEATURES_GUIDE.md#smart-valve-control). |
+| Smart AC Control V3+ has no standalone local pairing | These units pair with HomeKit separately from the Internet Bridge, and this integration only handles the bridge's pairing today, so AC zones use the cloud path regardless. See [HomeKit Local Control](FEATURES_GUIDE.md#homekit-local-control). |
+| V2 Internet Bridges (`GW` serial) | Not supported by the Bridge API. See [Bridge API Integration](FEATURES_GUIDE.md#bridge-api-integration). |
 
 ---
 
@@ -332,7 +354,7 @@ For issues not covered here, check **Settings → System → Logs** (filter by `
 | --- | --- |
 | [FEATURES_GUIDE.md](FEATURES_GUIDE.md) | Full feature reference, configuration scenarios, service examples |
 | [ENTITIES.md](ENTITIES.md) | Complete entity type list with attributes |
-| [ROADMAP.md](ROADMAP.md) | Planned features and known limitations |
+| [ROADMAP.md](ROADMAP.md) | Planned features, no fixed release yet |
 | [CREDITS.md](CREDITS.md) | Contributor credits per release |
 | [CHANGELOG.md](CHANGELOG.md) | Version history |
 

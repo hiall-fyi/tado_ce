@@ -98,6 +98,7 @@ SERVICE_REFRESH = "refresh"
 FORCEABLE_FETCH_MOBILE = "mobile_devices"
 FORCEABLE_FETCH_HOME_STATE = "home_state"
 FORCEABLE_FETCH_WEATHER = "weather"
+FORCEABLE_FETCH_ZONE_STATES = "zone_states"
 
 # API Base URLs
 TADO_API_BASE = "https://my.tado.com/api/v2"
@@ -164,6 +165,25 @@ LOW_QUOTA_RESERVE_FLOOR = 100      # Floor (one full day's worth on a 100-call b
 
 # Backwards-compat alias, scheduled for removal in v5.0.0.
 LOW_QUOTA_THRESHOLD = LOW_QUOTA_RESERVE_FLOOR
+
+# Day-type mapping, shared by calendar.py's setup-time fetch and
+# api_client.py's SVC-driven full-sync fetch, so both read one definition.
+DAY_TYPES: Final[dict[str, list[str]]] = {
+    "ONE_DAY": ["MONDAY_TO_SUNDAY"],
+    "THREE_DAY": ["MONDAY_TO_FRIDAY", "SATURDAY", "SUNDAY"],
+    "SEVEN_DAY": ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"],
+}
+
+# Worst-case cost of fetching one zone's schedule: the activeTimetable call
+# plus one blocks/{day_type} call per day type in the largest timetable.
+MAX_SCHEDULE_FETCH_CALLS: Final[int] = 1 + max(len(days) for days in DAY_TYPES.values())
+
+# Schedule Calendar's cache fill. One zone costs 1 + len(day_types) calls (8
+# for SEVEN_DAY), so a 9-zone home is 72, most of a free-tier day. Zones the
+# budget doesn't reach fill on a later setup run.
+SCHEDULE_FILL_MAX_QUOTA_FRACTION = 0.25
+# Assumed daily limit before the first rate-limit header lands.
+ASSUMED_DAILY_LIMIT_UNKNOWN_TIER = 100
 
 # Per-data-type minimum refresh intervals (minutes). Slow-changing cloud data
 # gates on its own floor independent of the zone-state cycle, so a fast zone
@@ -322,6 +342,12 @@ DEVICE_OFFSET_MAX: float = 10.0
 
 # Insight runtime state (coordinator anomaly + humidity history persistence)
 INSIGHT_RUNTIME_STATE_KEY = "insight_runtime_state"
+
+# Zone identity baseline (per-zone dateCreated, for zone-reassignment detection)
+ZONE_IDENTITY_KEY = "zone_identity"
+
+# Zone type baseline (per-zone type, for HEATING-to-AC transition detection)
+ZONE_TYPE_BASELINE_KEY = "zone_type_baseline"
 
 
 def is_valid_device_offset(value: float | None) -> bool:

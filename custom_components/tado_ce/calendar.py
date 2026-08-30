@@ -19,9 +19,17 @@ from homeassistant.helpers.entity import DeviceInfo  # type: ignore[attr-defined
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN, MANUFACTURER
+from .const import (
+    ASSUMED_DAILY_LIMIT_UNKNOWN_TIER,
+    DAY_TYPES,
+    DOMAIN,
+    MANUFACTURER,
+    MAX_SCHEDULE_FETCH_CALLS,
+    SCHEDULE_FILL_MAX_QUOTA_FRACTION,
+)
+from .device_manager import hub_parent_kwargs
 from .entity_registry import ENTITY_REGISTRY
-from .helpers import low_quota_threshold
+from .helpers import hard_quota_reserve
 
 if TYPE_CHECKING:
     from homeassistant.core import Event
@@ -34,13 +42,6 @@ _LOGGER = logging.getLogger(__name__)
 
 PARALLEL_UPDATES = 0
 
-
-# Day type mappings
-DAY_TYPES = {
-    "ONE_DAY": ["MONDAY_TO_SUNDAY"],
-    "THREE_DAY": ["MONDAY_TO_FRIDAY", "SATURDAY", "SUNDAY"],
-    "SEVEN_DAY": ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"],
-}
 
 DAY_TYPE_TO_WEEKDAYS = {
     "MONDAY_TO_SUNDAY": [0, 1, 2, 3, 4, 5, 6],
@@ -55,10 +56,31 @@ DAY_TYPE_TO_WEEKDAYS = {
 }
 
 
+def schedule_fetch_budget(ratelimit_data: dict[str, Any]) -> int:
+    """Return how many API calls this setup run may spend filling the schedule cache.
+
+    Two terms: spend down to the reserve that pauses polling, and never more
+    than a fraction of a day's allowance in one run, since a large SEVEN_DAY
+    home would otherwise fetch 72 calls at once.
+    """
+    # Defaulted separately: an unknown tier budgets as the smallest, an
+    # unknown `remaining` assumes a full day. Defaulting both together would
+    # discard a known-low `remaining` when only the limit is missing.
+    limit = ratelimit_data.get("limit") or ASSUMED_DAILY_LIMIT_UNKNOWN_TIER
+    remaining = ratelimit_data.get("remaining")
+    if remaining is None:
+        remaining = limit
+
+    spendable = remaining - hard_quota_reserve(limit)
+    per_run_cap = int(limit * SCHEDULE_FILL_MAX_QUOTA_FRACTION)
+    return max(0, min(spendable, per_run_cap))
+
+
 def get_schedule_device_info(home_id: str) -> DeviceInfo:
     """Build the HA `DeviceInfo` for the per-home Heating Schedule device."""
     schedule_identifier = f"tado_ce_{home_id}_heating_schedule" if home_id != "unknown" else "tado_ce_heating_schedule"
-    hub_identifier = f"tado_ce_hub_{home_id}" if home_id != "unknown" else "tado_ce_hub"
+
+    parent = hub_parent_kwargs(home_id)
 
     return DeviceInfo(
         configuration_url="https://app.tado.com",
@@ -66,7 +88,7 @@ def get_schedule_device_info(home_id: str) -> DeviceInfo:
         name="Heating Schedule",
         manufacturer=MANUFACTURER,
         model="Zone Schedules",
-        via_device=(DOMAIN, hub_identifier),
+        **parent,
     )
 
 
@@ -92,10 +114,10 @@ async def async_setup_entry(
     # docstring for the quota / staleness trade-off.
     client = coordinator.api_client
     cached_schedules = data_loader.load_schedules_file() or {}
+
     ratelimit_data = data_loader.load_ratelimit_file() or {}
-    remaining = ratelimit_data.get("remaining", 100)
-    limit = ratelimit_data.get("limit")
-    low_quota = remaining <= low_quota_threshold(limit)
+    call_budget = schedule_fetch_budget(ratelimit_data)
+    starting_budget = call_budget
 
     schedules: dict[str, Any] = {}
     cached_hits = 0
@@ -105,7 +127,7 @@ async def async_setup_entry(
     for zone_data in zones_info:
         zone_id = str(zone_data.get("id", ""))
         zone_name = zone_data.get("name", f"Zone {zone_id}")
-        zone_type = zone_data.get("type", "HEATING")
+        zone_type = zone_data.get("type")
 
         if zone_type != "HEATING":
             continue
@@ -116,25 +138,25 @@ async def async_setup_entry(
             cached_hits += 1
             continue
 
-        if low_quota:
+        # Worst case up front: the real cost is only known once the call
+        # returns the timetable type.
+        if call_budget < MAX_SCHEDULE_FETCH_CALLS:
             skipped_low_quota += 1
-            _LOGGER.warning(
-                "Calendar: skipping schedule fetch for %s, only %s "
-                "API call(s) remaining. The schedule entity will be "
-                "created after the quota resets.",
-                zone_name, remaining,
-            )
             continue
 
+        call_budget -= 1  # the activeTimetable call
         try:
             schedule_data = await client.get_zone_schedule(zone_id)
             if schedule_data:
+                schedule_type = schedule_data.get("type", "ONE_DAY")
                 schedules[zone_id] = {
                     "name": zone_name,
-                    "type": schedule_data.get("type", "ONE_DAY"),
+                    "type": schedule_type,
                     "blocks": schedule_data.get("blocks") or {},
+                    "failed_days": schedule_data.get("failed_days") or [],
                 }
                 fetched += 1
+                call_budget -= len(DAY_TYPES.get(schedule_type, DAY_TYPES["ONE_DAY"]))
         except Exception:
             _LOGGER.warning(
                 "Calendar: schedule fetch for %s failed, zone "
@@ -143,17 +165,29 @@ async def async_setup_entry(
                 exc_info=True,
             )
 
-    # Only persist if we actually fetched something new: a
-    # partial result after a low-quota bail would overwrite a
-    # good cache with worse data.
+    # Merge this run's results onto the full on-disk cache, so a zone this
+    # run didn't touch (a different zone type, or one this run skipped)
+    # keeps whatever schedule it already had rather than being dropped.
     if fetched > 0:
-        await _async_save_schedules(hass, schedules, home_id, data_loader=data_loader)
+        merged = dict(cached_schedules)
+        merged.update(schedules)
+        await _async_save_schedules(hass, merged, home_id, data_loader=data_loader)
 
     _LOGGER.info(
         "Calendar: %d zone(s) loaded: %d from cache, %d fetched, "
         "%d skipped (quota low)",
         len(schedules), cached_hits, fetched, skipped_low_quota,
     )
+
+    # One line per run, not per zone: the recovery is the same for all of them.
+    if skipped_low_quota:
+        _LOGGER.warning(
+            "Calendar: %d zone(s) have no schedule yet, this setup run's "
+            "budget of %d API call(s) is spent. They fill on a later "
+            "restart, or press a zone's Refresh Schedule button to fetch "
+            "it now.",
+            skipped_low_quota, starting_budget,
+        )
 
     # Create calendar entity for each zone
     calendars = []
@@ -262,6 +296,9 @@ class TadoZoneScheduleCalendar(CoordinatorEntity["TadoDataUpdateCoordinator"], C
                 )
                 self.async_write_ha_state()
                 return
+            else:
+                self._schedule = {}
+                self.async_write_ha_state()
 
         except Exception:
             _LOGGER.warning(

@@ -1444,6 +1444,10 @@
     "homekit_pairing_invalid": {
       "title": "HomeKit-koppeling verbroken",
       "description": "De HomeKit-koppeling van je Tado-bridge is niet langer geldig; mogelijk is het apparaat teruggezet naar de fabrieksinstellingen. Tado CE werkt in de ‘alleen-cloud’-modus totdat je het apparaat opnieuw koppelt.\n\nOm opnieuw te koppelen: Instellingen → Tado CE → Configureren → Geavanceerde instellingen → HomeKit. Vink vervolgens ‘Opnieuw koppelen’ aan en voer de 8-cijferige installatiecode van je bridge in."
+    },
+    "zone_reassigned": {
+      "title": "De instellingen van een zone zijn teruggezet",
+      "description": "Tado heeft een zone-ID hergebruikt voor een andere kamer. De instellingen voor de slimme klepregeling, de koppeling van externe sensoren en de temperatuurgrenzen die voor de vorige kamer waren geconfigureerd, zijn gewist voor zone-{zone_id}e, aangezien ze niet langer van toepassing zijn op de nieuwe kamer. Voer ze opnieuw in onder **Zoneconfiguratie** als de nieuwe kamer deze nodig heeft."
     }
   },
   "config": {

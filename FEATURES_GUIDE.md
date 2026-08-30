@@ -41,8 +41,9 @@ New user-facing features and settings added across the 4.x line. Each links to i
 
 | Version | What you got | Where |
 |---------|-------------|-------|
+| v4.4.0 | `tado_ce.refresh` gains a third option, Zone states, to force an immediate temperature/target/mode fetch past the polling floor | [Force a Refresh](#11-force-a-refresh-v430-zone-states-added-in-v440) |
 | v4.3.3 | `tado_ce.set_climate_timer` shows the timer's temperature on the card with the write, rather than after Tado's next refresh | [Climate Timer Service](#3-climate-timer-service) |
-| v4.3.0 | `tado_ce.refresh` service — force an immediate presence fetch past the polling floor | [Force a Presence Refresh](#11-force-a-presence-refresh-v430) |
+| v4.3.0 | `tado_ce.refresh` service — force an immediate presence fetch past the polling floor | [Force a Refresh](#11-force-a-refresh-v430-zone-states-added-in-v440) |
 | v4.2.0 | Heating circuit control — per-zone boiler-circuit select, "No heating circuit" for residual-heat coasting | [Heating Circuit Control](#heating-circuit-control) |
 | v4.2.0 | Heat and cold alerts for vulnerable occupants (elderly / infant / unwell) | [Smart Comfort Analytics](#-smart-comfort-analytics) |
 | v4.1.0 | Per-zone Temperature source (Automatic / HomeKit / Cloud) | [HomeKit Local Control](#-homekit-local-control) |
@@ -1095,15 +1096,15 @@ data:
 
 The serial is the short serial visible on the back of the device (and in `binary_sensor.{zone}_connection`'s `device_serial` attribute). The service also flashes locally over HomeKit when the bridge is connected, falling back to the cloud, in which case it takes a few seconds to start. If nothing happens after about 30 seconds, the device is offline or the serial is wrong — check the log for `identify_device failed`.
 
-#### 11. Force a Presence Refresh (v4.3.0+)
+#### 11. Force a Refresh (v4.3.0+, Zone states added in v4.4.0)
 
-Presence data (mobile-device geofencing, home/away state) refreshes on its own minimum interval so it can't drain your daily API quota. That floor also limits how quickly an automation can pull fresh presence, even one that calls for an update every few seconds. The `tado_ce.refresh` service forces an immediate fetch of one presence type, bypassing the floor for that one call, for anyone who'd rather drive their own refresh cadence than rely on the automatic schedule.
+Presence data (mobile-device geofencing, home/away state) and zone data (temperature, target, mode) each refresh on their own minimum interval so nothing can drain your daily API quota. That floor also limits how quickly an automation can pull anything fresh, even one that calls for an update every few seconds. The `tado_ce.refresh` service forces an immediate fetch of one of the three, bypassing the floor for that one call, for anyone who'd rather drive their own refresh cadence than rely on the automatic schedule. Zone states is also the way to force a catch-up on a card lagging behind a change made outside Home Assistant (the Tado app, or the thermostat itself), when HomeKit's own reading is being trusted over the cloud poll to save API calls; before v4.4.0 the only way to force that was a full integration reload.
 
 ```yaml
 # Force a mobile-device presence fetch now
 service: tado_ce.refresh
 data:
-  data: mobile_devices   # or: home_state
+  data: mobile_devices   # or: home_state, or: zone_states
 ```
 
 **Automation example — pull presence every 30 seconds while someone's expected home:**
@@ -1120,7 +1121,7 @@ automation:
           data: mobile_devices
 ```
 
-The forced type is only fetched if that feature is turned on (mobile-device sync for `mobile_devices`, presence sync for `home_state`); if it's off, the call is ignored and logged. If the forced fetch lands on a cycle that was already due a full sync, mobile devices are fetched twice that cycle (once for the scheduled sync, once forced), so keep the trigger interval sensible rather than every second. It's a single-home service; on a multi-home setup it raises an error listing the homes so you can route explicitly.
+The forced type is only fetched if that feature is turned on (mobile-device sync for `mobile_devices`, presence sync for `home_state`); if it's off, the call is ignored and logged. `zone_states` has no such toggle, it's always available. If the forced fetch lands on a cycle that was already due a full sync, that data is fetched twice that cycle (once for the scheduled sync, once forced), so keep the trigger interval sensible rather than every second. It's a single-home service; on a multi-home setup it raises an error listing the homes so you can route explicitly.
 
 #### 12. Hub-level buttons
 
@@ -1129,8 +1130,8 @@ Three buttons live on the Tado CE Hub device (Settings → Devices & Services �
 | Button | What it does | When to press |
 |--------|--------------|---------------|
 | **Resume All Schedules** (`button.tado_ce_{home_id}_resume_all`) | Clears the manual overlay on every zone in one press, returning all rooms to their Tado schedule. Equivalent to calling `tado_ce.resume_schedule` per zone. | After a holiday-mode or wide automation override, when you want everything back on schedule at once. |
-| **Refresh AC Capabilities** (`button.tado_ce_{home_id}_refresh_ac`) | Re-fetches each AC zone's supported modes from Tado's cloud. The integration does this for you automatically: it picks up an added or removed AC zone, and it spots a controller re-pair or hardware swap by watching each zone's device serial and firmware version, refreshing the capabilities when either changes. The button is a manual override for the rare re-pair that keeps the same serial and firmware, so the change isn't visible to the integration. Costs one cloud call per AC zone (typically 1–3 calls). Only appears when the home has at least one AC zone. | After a re-pair that kept the same hardware, or whenever AC capabilities look wrong in HA (e.g. HVAC modes showing `[OFF]` only). |
-| **Refresh Schedule** (`button.tado_ce_{home_id}_zone_{zone_id}_refresh_schedule`, per heating zone) | Re-fetches a single zone's schedule from Tado and writes it through the cache. Only appears when Schedule Calendar is enabled (Settings → Tado CE → Configure → Schedule Calendar). Costs one cloud call per zone. | After editing a schedule in the Tado app. Nothing else re-fetches it: a zone's schedule is read once, when its calendar entity is first set up, and cached from then on. So the calendar entity, the `scheduled_target_temperature` attribute and the target shown for a zone that is off all keep showing the old schedule until you press this. |
+| **Refresh AC Capabilities** (`button.tado_ce_{home_id}_refresh_ac`) | Re-fetches each AC zone's supported modes from Tado's cloud. The integration watches for a re-pair or hardware swap on both AC and hot-water zones, by their device serial and firmware version, and refreshes the affected zone's capabilities on its own when either changes. The button itself stays AC-only for now: a manual override for the rare re-pair that keeps the same serial and firmware, so the change isn't visible to the integration. Costs one cloud call per AC zone (typically 1–3 calls). Only appears when the home has at least one AC zone. | After a re-pair that kept the same hardware, or whenever AC capabilities look wrong in HA (e.g. HVAC modes showing `[OFF]` only). |
+| **Refresh Schedule** (`button.tado_ce_{home_id}_zone_{zone_id}_refresh_schedule`, per heating and AC zone) | Re-fetches a single zone's schedule from Tado and writes it through the cache. Appears for every heating and AC zone, regardless of whether Schedule Calendar is enabled. Costs 2–8 cloud calls per zone, depending on your Tado schedule type. | After editing a schedule in the Tado app. A heating zone's schedule also fetches automatically once Schedule Calendar is enabled, or once that zone uses Smart Valve Control's Valve Target mode; an AC zone has no automatic fetch and relies on this button alone. Outside of those cases, nothing else re-fetches it: the calendar entity, the `scheduled_target_temperature` attribute and the target shown for a zone that is off can all keep showing an old schedule until you press this. |
 
 These buttons are visible in the device page's Controls section. Their entity_ids stay stable across reloads, so they can be wired into automations or dashboards if you want quick-access tiles.
 
@@ -1154,7 +1155,7 @@ Tado CE fires several HA events that automations can subscribe to. Most fire on 
 | `tado_ce_window_predicted` | Window-open prediction crosses the detection threshold | Smoothed by 3-reading window on Low sensitivity. Listener can act immediately |
 | `tado_ce_window_predicted_cleared` | Detection clears | Same smoothing. Safe to act immediately |
 | `tado_ce_state_restoration_available` | A saved pre-overlay state becomes restorable (overlay timer expired or cleared) | **Edge-triggered.** v4.0.1 onwards: the integration requires 2 consecutive polls confirming the overlay is gone before firing. v4.1.0 onwards: the saved state itself only persists when the original cloud write was confirmed, so a failed write can never feed this event later. A defensive listener pattern (delay + re-check) is still recommended for any automation that writes back to Tado |
-| `tado_ce_schedule_updated` | A zone's schedule re-fetched from Tado | Safe — user-initiated path. No defence needed |
+| `tado_ce_schedule_updated` | A zone's schedule re-fetched from Tado, or a zone's cached schedule cleared after Tado reuses its zone ID for a different room | Safe on the re-fetch case. The reassignment case has no fetch behind it, and the payload's `zone_name` is blank, so use `zone_id` if your automation needs to identify the zone |
 
 **Defensive listener pattern (recommended for `tado_ce_state_restoration_available` and any future edge-triggered event that writes back to Tado):**
 
@@ -1651,6 +1652,8 @@ External sensors in Tado CE fix what you *see* in HA, but the TRV still uses its
 
 Smart Valve Control offers two approaches to solve this problem. You choose one per zone:
 
+Valve Target needs to know the zone's Tado schedule to work out what target to hold. The integration fetches this for you automatically; you can also pull a fresh copy any time with that zone's Refresh Schedule button (see [Hub-level buttons](#12-hub-level-buttons)). Offset Sync doesn't read the schedule at all.
+
 | | Offset Sync (recommended) | Valve Target (advanced) |
 |---|---|---|
 | **What it does** | Corrects the TRV's temperature reading so Tado sees the right number | Overrides the TRV's target temperature to force the valve open/closed |
@@ -1770,6 +1773,14 @@ The controller uses a hysteresis band (±0.3°C) around the target to prevent os
 ### Setup (Valve Target)
 
 > **Important:** If your TRV has a non-zero temperature offset (from a previous automation or manual setting in the Tado app), reset it to 0 before enabling Valve Target. The controller reads the offset-adjusted temperature from the TRV, so a fixed offset would cause double compensation and overshoot. The controller warns you on startup if it detects a non-zero offset.
+
+> **The zone's schedule.** Valve Target reads the zone's Tado schedule to know
+> what target to hold. The integration fetches this automatically for any zone
+> using Valve Target, on the ordinary polling cycle, whether or not Schedule
+> Calendar is enabled. If you've just edited a schedule in the Tado app and want
+> the change reflected straight away rather than waiting for the next poll,
+> press that zone's Refresh Schedule button (see [Hub-level buttons](#12-hub-level-buttons)).
+> Offset Sync doesn't read the schedule and is unaffected.
 
 ### Write Path
 
@@ -2112,11 +2123,11 @@ Fires when a zone's previous state becomes available for restoration after an ov
 
 ### Schedule Updated Event
 
-Fires when a zone's schedule is refreshed from the Tado API (e.g. after pressing the Refresh Schedule button).
+Fires when a zone's schedule is refreshed from the Tado API (e.g. after pressing the Refresh Schedule button), or when Tado reuses a zone's ID for a different room and the integration clears that zone's stale cached schedule. The reassignment case has no API fetch behind it, and its payload's `zone_name` is blank.
 
 | Event | When | Payload |
 |-------|------|---------|
-| `tado_ce_schedule_updated` | Schedule data refreshed | `zone_id`, `zone_name` |
+| `tado_ce_schedule_updated` | Schedule data refreshed, or cleared after a zone ID reassignment | `zone_id`, `zone_name` |
 
 ---
 

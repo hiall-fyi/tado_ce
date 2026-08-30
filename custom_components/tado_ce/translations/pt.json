@@ -1444,6 +1444,10 @@
     "homekit_pairing_invalid": {
       "title": "Perda do emparelhamento do HomeKit",
       "description": "O emparelhamento do seu Tado Bridge com o HomeKit já não é válido; é possível que tenha sido reposto para as predefinições de fábrica. O Tado CE está a funcionar no modo «apenas na nuvem» até que volte a emparelhá-lo.\n\nPara voltar a emparelhar: Definições → Tado CE → Configurar → Definições avançadas → HomeKit; em seguida, assinale «Emparelhar novamente» e introduza o código de configuração de 8 dígitos da sua ponte."
+    },
+    "zone_reassigned": {
+      "title": "As definições de uma zona foram repostas",
+      "description": "O Tado reutilizou um ID de zona para uma divisão diferente. A configuração do Controlo Inteligente de Válvulas, a associação do sensor externo e os limites de temperatura que estavam definidos para a divisão anterior foram apagados para a zona {zone_id}, uma vez que já não se aplicam à nova divisão. Volte a introduzi-los em **Configuração da Zona**, caso a nova divisão necessite deles."
     }
   },
   "config": {

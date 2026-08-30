@@ -58,14 +58,27 @@ HOMEKIT_PAIRING_INVALID_ISSUE = RepairIssueSpec(
     is_persistent=True,
 )
 
+# WARNING + persistent: the prune that triggers this issue is one-time and
+# won't recreate it on a later poll, so it must survive a restart or the
+# notice is lost for good before the user ever sees it.
+ZONE_REASSIGNED_ISSUE = RepairIssueSpec(
+    translation_key="zone_reassigned",
+    severity=ir.IssueSeverity.WARNING,
+    is_persistent=True,
+)
+
 # Backwards-compat constant, scheduled for removal in v5.0.0.
 ISSUE_AUTH_EXPIRED = AUTH_ISSUE.effective_id_prefix
 
 
-def _issue_id(spec: RepairIssueSpec, home_id: str | None) -> str:
-    """Build the registry-key as <prefix>_<home_id> (or <prefix> for single-home)."""
-    prefix = spec.effective_id_prefix
-    return f"{prefix}_{home_id}" if home_id else prefix
+def _issue_id(spec: RepairIssueSpec, home_id: str | None, zone_id: str | None = None) -> str:
+    """Build the registry-key as <prefix>[_<home_id>][_<zone_id>]."""
+    parts = [spec.effective_id_prefix]
+    if home_id:
+        parts.append(home_id)
+    if zone_id:
+        parts.append(zone_id)
+    return "_".join(parts)
 
 
 def async_create_issue(
@@ -73,10 +86,11 @@ def async_create_issue(
     spec: RepairIssueSpec,
     *,
     home_id: str | None = None,
+    zone_id: str | None = None,
     placeholders: dict[str, str] | None = None,
 ) -> None:
     """Create an HA repair issue per spec."""
-    issue_id = _issue_id(spec, home_id)
+    issue_id = _issue_id(spec, home_id, zone_id)
     full_placeholders = {"home_id": home_id or "default"}
     if placeholders:
         full_placeholders.update(placeholders)
@@ -146,3 +160,14 @@ def async_dismiss_homekit_pairing_invalid_issue(
 ) -> None:
     """Clear the HomeKit pairing invalid repair after a successful re-pair."""
     async_dismiss_issue(hass, HOMEKIT_PAIRING_INVALID_ISSUE, home_id=home_id)
+
+
+def async_create_zone_reassigned_issue(hass: HomeAssistant, home_id: str | None, zone_id: str) -> None:
+    """Surface a repair issue after Tado reuses a zone id and its settings were cleared."""
+    async_create_issue(
+        hass,
+        ZONE_REASSIGNED_ISSUE,
+        home_id=home_id,
+        zone_id=zone_id,
+        placeholders={"zone_id": zone_id},
+    )

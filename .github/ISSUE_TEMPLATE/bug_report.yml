@@ -109,9 +109,14 @@ body:
       label: Which features are you using?
       description: Optional, helps rule things in or out.
       options:
-        - label: Offset Sync / Smart Valve Control
+        - label: Offset Sync (recommended)
+        - label: Valve Target (advanced)
         - label: Weather Compensation
         - label: Mobile device presence
         - label: Heating Circuit Control
         - label: Per-zone temperature source
         - label: Custom polling interval
+        - label: Smart Comfort
+        - label: Schedule Calendar
+        - label: Adaptive Preheat
+        - label: Thermal Analytics

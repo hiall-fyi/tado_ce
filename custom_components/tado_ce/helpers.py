@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
     from .coordinator import TadoDataUpdateCoordinator
+    from .zone_config_manager import ZoneConfigManager
 
     # PerEntityAvailabilityMixin is only ever mixed into a CoordinatorEntity, whose
     # `available` property it composes with `super()`. Declaring that host shape
@@ -256,6 +257,34 @@ def should_use_homekit_for_overlay(hass: HomeAssistant, zone_id: str, entry_id: 
         return OVERLAY_MODE_DEFAULT == OVERLAY_MODE_MANUAL
 
     return True
+
+
+def svc_schedule_zone_ids(
+    zone_config_manager: ZoneConfigManager,
+    hass: HomeAssistant,
+) -> frozenset[str]:
+    """Return zone_ids eligible for the SVC-driven schedule fetch.
+
+    Eligible: svc_mode == "valve_target" and external_temp_sensor resolves
+    to a real entity (a stale entity_id fails closed, same as
+    read_external_sensor). Built from config, not from
+    coordinator.valve_controllers - that registry only populates after
+    the first full sync, so a registry-based gate would never fetch on
+    the sync this fix exists to unblock.
+    """
+    eligible: set[str] = set()
+    for zone_id in zone_config_manager.zones:
+        config = zone_config_manager.get_zone_config(zone_id)
+        if config.get("svc_mode") != "valve_target":
+            continue
+        entity_id = config.get("external_temp_sensor", "")
+        if not entity_id:
+            continue
+        state = hass.states.get(entity_id)
+        if state is None:
+            continue
+        eligible.add(zone_id)
+    return frozenset(eligible)
 
 
 def retry_delay(attempt: int, base_delay: float = RETRY_BASE_DELAY) -> float:
@@ -544,3 +573,14 @@ def low_quota_threshold(daily_limit: int | None) -> int:
     if daily_limit is None or daily_limit <= 0:
         return LOW_QUOTA_RESERVE_FLOOR
     return max(LOW_QUOTA_RESERVE_FLOOR, int(daily_limit * LOW_QUOTA_RESERVE_PERCENT))
+
+
+def hard_quota_reserve(daily_limit: int | None) -> int:
+    """Return the reserve at which polling pauses, scaled to the daily-limit tier."""
+    # WHY: a hard floor kept for manual actions, unlike low_quota_threshold's
+    # "start conserving" signal. Nothing optional may spend into it.
+    from .const import QUOTA_RESERVE_CALLS, QUOTA_RESERVE_PERCENT
+
+    if daily_limit is None or daily_limit <= 0:
+        return QUOTA_RESERVE_CALLS
+    return max(QUOTA_RESERVE_CALLS, int(daily_limit * QUOTA_RESERVE_PERCENT))

@@ -1444,6 +1444,10 @@
     "homekit_pairing_invalid": {
       "title": "HomeKit pairing lost",
       "description": "Your Tado bridge's HomeKit pairing is no longer valid, it may have been factory-reset. Tado CE is running in cloud-only mode until you re-pair.\n\nTo re-pair: Settings → Tado CE → Configure → Advanced Settings → HomeKit, then tick \"Pair again\" and enter the 8-digit setup code from your bridge."
+    },
+    "zone_reassigned": {
+      "title": "A zone's settings were reset",
+      "description": "Tado reused a zone ID for a different room. The Smart Valve Control setup, external sensor binding and temperature limits that were configured for the previous room have been cleared for zone {zone_id}, since they no longer apply to the new one. Re-enter them in **Zone Configuration** if the new room needs them."
     }
   },
   "config": {

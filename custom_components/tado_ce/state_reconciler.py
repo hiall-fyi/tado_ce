@@ -178,17 +178,26 @@ class StateReconciler:
         """Return the merged target temperature and its source name.
 
         Priority: HomeKit (when fresh and outside the write-protection
-        window) > cloud. During write protection the cloud / optimistic
-        value is authoritative because the HomeKit bridge can still
-        report a pre-write target value.
+        window) > cloud. During write protection the caller's value is
+        authoritative because the HomeKit bridge can still report a
+        pre-write target value.
+
+        `cloud_value` is whatever the caller holds right now, which is only
+        cloud-derived once a poll has landed: both climate entities pass
+        their own `_attr_target_temperature`, so inside an optimistic
+        window it is the value the user just asked for and nothing has yet
+        confirmed. That is why the write-protection branch reports
+        "local-write" rather than "cloud": a source name is a diagnostic
+        claim, and calling an unconfirmed local value "cloud" reads as
+        confirmation from Tado that no code here has obtained.
 
         display_source="cloud" forces the cloud target (after the write-
         protection check), mirroring merge_zone_temperature's display path;
         "homekit"/"auto" keep HomeKit-fresh first.
         """
         if self.is_local_write_protected(zone_id):
-            self._log_source_transition(zone_id, "target_temp", "cloud", cloud_value)
-            return cloud_value, "cloud"
+            self._log_source_transition(zone_id, "target_temp", "local-write", cloud_value)
+            return cloud_value, "local-write"
 
         if display_source == "cloud":
             self._log_source_transition(zone_id, "target_temp", "cloud", cloud_value)

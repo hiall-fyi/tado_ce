@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -30,6 +31,7 @@ from .const import (
 )
 from .coordinator import TadoDataUpdateCoordinator
 from .data_loader import DataLoader
+from .device_manager import _hub_identifier, clear_cached_hub_device_id
 from .exceptions import TadoAuthError
 from .helpers import mask_home_id
 from .migration import (
@@ -186,6 +188,8 @@ async def _async_wire_and_start_coordinator(
     # Anomaly timers + humidity history are eager-loaded so the
     # Home Insights duration counters survive HA restarts.
     await coordinator.async_load_insight_runtime_state()
+    await coordinator.async_load_zone_identity()
+    await coordinator.async_load_zone_type_baseline()
 
     saved = await coordinator.data_loader.async_load_homekit_savings()
     if saved and isinstance(saved, dict):
@@ -231,6 +235,13 @@ async def _async_wire_and_start_coordinator(
         from .setup_entry_helpers import register_bridge_devices
 
         register_bridge_devices(hass, entry.entry_id, zones_info)
+
+    from .setup_entry_helpers import register_hub_device
+
+    register_hub_device(hass, entry.entry_id, coordinator.home_id)
+    entry.async_on_unload(
+        functools.partial(clear_cached_hub_device_id, coordinator.home_id),
+    )
 
     entry.runtime_data = coordinator
     _LOGGER.debug(
@@ -623,7 +634,7 @@ async def async_remove_config_entry_device(
     home_id = str(coordinator.home_id)
 
     # Hub device: never removable while entry exists
-    hub_identifier = f"tado_ce_hub_{home_id}" if home_id != "unknown" else "tado_ce_hub"
+    hub_identifier = _hub_identifier(home_id)
     if (DOMAIN, hub_identifier) in device_entry.identifiers:
         return False
 

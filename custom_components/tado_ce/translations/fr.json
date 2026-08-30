@@ -1444,6 +1444,10 @@
     "homekit_pairing_invalid": {
       "title": "Perte de l'appairage HomeKit",
       "description": "L'appairage HomeKit de votre pont Tado n'est plus valide ; il a peut-être été réinitialisé aux paramètres d'usine. Tado CE fonctionne en mode « cloud uniquement » jusqu'à ce que vous procédiez à un nouvel appairage.\n\nPour effectuer un nouvel appairage : Paramètres → Tado CE → Configurer → Paramètres avancés → HomeKit, puis cochez « Appairer à nouveau » et saisissez le code de configuration à 8 chiffres de votre pont."
+    },
+    "zone_reassigned": {
+      "title": "Les paramètres d'une zone ont été réinitialisés",
+      "description": "Tado a réutilisé un identifiant de zone pour une autre pièce. Les paramètres de la commande de vanne intelligente, l'association du capteur externe et les limites de température qui avaient été configurés pour la pièce précédente ont été effacés pour la zone «{zone_id} », car ils ne s'appliquent plus à la nouvelle pièce. Saisissez-les à nouveau dans **Configuration de la zone** si la nouvelle pièce en a besoin."
     }
   },
   "config": {

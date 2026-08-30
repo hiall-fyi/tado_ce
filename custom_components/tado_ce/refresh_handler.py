@@ -76,6 +76,10 @@ class RefreshHandler:
         """Queue a floored data type to bypass its floor on the next poll."""
         self._pending_forced_fetch.add(fetch_type)
 
+    def request_forced_zone_fetch(self) -> None:
+        """Force the next poll to fetch zone states even inside the HomeKit skip window."""
+        self._pending_force_zone_fetch = True
+
     def consume_pending_flags(self) -> tuple[bool, bool, set[str]]:
         """Atomically read and reset the pending zone-only / force-fetch / forced-type flags.
 

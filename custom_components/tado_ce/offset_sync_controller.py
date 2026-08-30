@@ -261,20 +261,9 @@ class OffsetSyncController:
             self._log_decision(trigger, outcome="skip_no_inside_temp")
             return
 
-        # Gate on the schedule / overlay having a heating target. A 17°C
-        # overnight block still counts as ON; only an explicit OFF block
-        # or overlay sets power to OFF. Offset writes trigger TRV motor
-        # recalibration (mechanical noise), so we skip when there's no
-        # heating decision for the offset to influence.
         zone_setting = zone_data.get("setting") or {}
         power = zone_setting.get("power", "OFF")
         target = (zone_setting.get("temperature") or {}).get("celsius")
-        if power != "ON":
-            self._log_decision(
-                trigger, outcome="skip_power_off",
-                power=power, target=target, trv=inside_temperature,
-            )
-            return
 
         external_temp = read_external_sensor(
             self._hass, self._zcm, self._zone_id, "external_temp_sensor",

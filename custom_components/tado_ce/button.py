@@ -51,10 +51,6 @@ async def async_setup_entry(
     home_id = coordinator.home_id
     zones_info = await hass.async_add_executor_job(data_loader.load_zones_info_file)
 
-    # Get config manager to check feature toggles
-    config_manager = coordinator.config_manager
-    schedule_calendar_enabled = config_manager.get_schedule_calendar_enabled() if config_manager else False
-
     buttons: list[ButtonEntity] = []
     # A physical device can appear under more than one zone in zones_info; one
     # identify button per serial, attached to the first zone it's seen in.
@@ -92,10 +88,10 @@ async def async_setup_entry(
                     TadoSmartBoostButton(coordinator, zone_id, zone_name, home_id),
                 )
 
-            # Create refresh schedule button for heating zones (only if calendar enabled)
-            if zone_type == "HEATING" and schedule_calendar_enabled:
+            # Create refresh schedule button for heating and AC zones
+            if zone_type in ("HEATING", "AIR_CONDITIONING"):
                 buttons.append(
-                    TadoRefreshScheduleButton(coordinator, zone_id, zone_name, home_id),
+                    TadoRefreshScheduleButton(coordinator, zone_id, zone_name, zone_type, home_id),
                 )
 
             # One identify button per physical device. Multi-TRV zones
@@ -393,8 +389,15 @@ class TadoRefreshScheduleButton(CoordinatorEntity[TadoDataUpdateCoordinator], Bu
 
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, home_id: str) -> None:
-        """Initialise one Refresh Schedule button for a heating zone."""
+    def __init__(
+        self,
+        coordinator: TadoDataUpdateCoordinator,
+        zone_id: str,
+        zone_name: str,
+        zone_type: str,
+        home_id: str,
+    ) -> None:
+        """Initialise one Refresh Schedule button for a heating or AC zone."""
         super().__init__(coordinator)
         _meta = ENTITY_REGISTRY["button_refresh_schedule"]
         self._entry_id = coordinator.config_entry.entry_id
@@ -403,12 +406,16 @@ class TadoRefreshScheduleButton(CoordinatorEntity[TadoDataUpdateCoordinator], Bu
 
         self._attr_translation_key = _meta.translation_key
         self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
-        self._attr_device_info = get_zone_device_info(zone_id, zone_name, "HEATING", home_id)
+        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, home_id)
         # No entity_category = Controls section (action button, not config)
         self._attr_icon = _meta.icon
 
     async def async_press(self) -> None:
         """Pull the latest schedule for this zone and write it through the cache."""
+        await _check_bootstrap_reserve_or_raise(
+            self.hass, f"Refresh Schedule {self._zone_name}", coordinator=self.coordinator,
+        )
+
         _LOGGER.debug(
             "Button: Refresh Schedule pressed for %s (zone %s)",
             self._zone_name, self._zone_id,
@@ -434,6 +441,7 @@ class TadoRefreshScheduleButton(CoordinatorEntity[TadoDataUpdateCoordinator], Bu
                 "name": self._zone_name,
                 "type": schedule_data.get("type", "ONE_DAY"),
                 "blocks": schedule_data.get("blocks") or {},
+                "failed_days": schedule_data.get("failed_days") or [],
             }
 
             await self.coordinator.data_loader.async_update_store("schedules", schedules)

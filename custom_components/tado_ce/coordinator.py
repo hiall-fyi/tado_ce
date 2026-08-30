@@ -41,11 +41,12 @@ from .const import (
     is_climate_zone,
 )
 from .exceptions import TadoAuthError, TadoBridgeApiError, TadoRateLimitError, TadoSyncError
-from .helpers import low_quota_threshold, mask_serial
+from .helpers import low_quota_threshold, mask_serial, svc_schedule_zone_ids
 from .homekit_mapping import async_rebuild_and_save_mapping
 from .insight_history import InsightHistoryTracker
 from .polling import get_polling_interval, should_pause_polling
 from .ratelimit import _sanitize_retry_after
+from .repair_helpers import async_create_zone_reassigned_issue
 from .weather_compensation import (
     WeatherCompensationState,
 )
@@ -174,6 +175,8 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._cached_ratelimit: dict[str, Any] | None = None
 
         self._zone_fingerprint = ZoneFingerprintTracker()
+        self._last_known_zone_types: dict[str, str] = {}
+        self._last_known_zone_dates: dict[str, str] = {}
         self._request_full_sync_next_cycle: bool = False
 
         # Polling pause state, set when should_pause_polling returns
@@ -281,14 +284,20 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Return True when HomeKit local provider is wired and currently connected."""
         return self.homekit_provider is not None and self.homekit_provider.is_connected
 
-    def _log_cloud_unavailable(self, exc: Exception) -> None:
-        """Log INFO on the first cloud→unreachable transition (idempotent)."""
+    @property
+    def _homekit_can_keep_entities_live(self) -> bool:
+        """True when a cloud failure/pause can serve cached data instead of raising.
+
+        Needs HomeKit connected AND a prior successful fetch: on cold start
+        self.data is still None, so returning it as a "success" would forward
+        the climate platform with zero entities and no way to add them later.
+        """
+        return self.is_homekit_active and bool(self.data)
+
+    def _log_cloud_unavailable(self, message: str) -> None:
+        """Log INFO on the first cloud-unavailable transition (idempotent)."""
         if not self._cloud_unavailable_logged:
-            _LOGGER.info(
-                "Coordinator: Tado cloud unreachable (%s), keeping "
-                "entities live on HomeKit local data",
-                exc,
-            )
+            _LOGGER.info(message)
             self._cloud_unavailable_logged = True
 
     def _log_cloud_available(self) -> None:
@@ -627,6 +636,10 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Force the next poll to bypass the floor for one slow-data type."""
         self.refresh_handler.request_forced_fetch(fetch_type)
 
+    def request_forced_zone_fetch(self) -> None:
+        """Force the next poll to fetch zone states even inside the HomeKit skip window."""
+        self.refresh_handler.request_forced_zone_fetch()
+
     def _requeue_forced_fetch(self, forced_fetch: set[str]) -> None:
         """Re-queue forced types that a poll consumed but did not fetch."""
         for fetch_type in forced_fetch:
@@ -647,6 +660,12 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 _LOGGER.warning("Coordinator: %s", reason)
                 self._was_paused = True
                 self.update_interval = timedelta(minutes=15)
+                if self._homekit_can_keep_entities_live:
+                    self._log_cloud_unavailable(
+                        "Coordinator: quota reserve pause, keeping entities "
+                        "live on HomeKit local data",
+                    )
+                    return self.data or {}
                 # retry_after lets HA defer the next refresh precisely.
                 reset_seconds = self._cached_ratelimit.get("reset_seconds")
                 retry_after = _sanitize_retry_after(reset_seconds)
@@ -657,10 +676,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 raise UpdateFailed(reason, retry_after=retry_after)
             self._was_paused = False
 
-        homekit_connected = (
-            self.homekit_provider is not None
-            and self.homekit_provider.is_connected
-        )
+        homekit_connected = self.is_homekit_active
         new_interval = get_polling_interval(
             self.config_manager, self._cached_ratelimit, homekit_connected=homekit_connected,
         )
@@ -720,6 +736,10 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             homekit_connected=homekit_connected,
         ) and FORCEABLE_FETCH_MOBILE not in forced_fetch
 
+        svc_schedule_zone_ids_current = svc_schedule_zone_ids(
+            self.zone_config_manager, self.hass,
+        )
+
         try:
             await self.api_client.async_sync(
                 quick=not do_full_sync,
@@ -732,13 +752,17 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 ),
                 offset_enabled=cm.get_offset_enabled(),
                 home_state_sync_enabled=cm.get_home_state_sync_enabled() and not skip_home_state,
+                svc_schedule_zone_ids=svc_schedule_zone_ids_current,
             )
         except TadoRateLimitError as e:
             self.record_cloud_backoff(e.retry_after)
             self._requeue_forced_fetch(forced_fetch)
 
-            if self.is_homekit_active:
-                self._log_cloud_unavailable(e)
+            if self._homekit_can_keep_entities_live:
+                self._log_cloud_unavailable(
+                    f"Coordinator: Tado cloud unreachable ({e}), keeping "
+                    "entities live on HomeKit local data",
+                )
                 return self.data or {}
 
             raise UpdateFailed(
@@ -755,8 +779,11 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ) from e
         except TadoSyncError as e:
             self._requeue_forced_fetch(forced_fetch)
-            if self.is_homekit_active:
-                self._log_cloud_unavailable(e)
+            if self._homekit_can_keep_entities_live:
+                self._log_cloud_unavailable(
+                    f"Coordinator: Tado cloud unreachable ({e}), keeping "
+                    "entities live on HomeKit local data",
+                )
                 return self.data or {}
             raise UpdateFailed(f"Tado CE sync failed: {e}") from e
 
@@ -859,6 +886,9 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 sorted(delta.added), sorted(delta.removed),
             )
             await self._handle_zone_delta(delta)
+
+        await self._prune_zone_type_change_schedules()
+        await self._prune_reassigned_zones()
 
         return await self._async_post_sync_processing(zone_data, weather_data)
 
@@ -980,14 +1010,14 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return climate_ids[(idx + 1) % len(climate_ids)]
 
     async def _reconcile_ac_capabilities_fingerprint(self) -> None:
-        """Detect AC re-pair / hardware swap and force a capabilities re-fetch.
+        """Detect AC or hot-water re-pair / hardware swap and force a capabilities re-fetch.
 
         Reads the persisted fingerprint sidecar as the baseline (so a re-pair
         that happened before a reboot is still caught on the first post-reboot
         poll, when the in-memory tracker has no baseline), diffs it against the
         fresh `zones_info` device fingerprints, and re-fetches only the changed
         zones. Writes the fresh fingerprints back to the sidecar. A no-op when
-        there are no AC zones or nothing changed.
+        there are no AC or hot-water zones or nothing changed.
         """
         from .zone_fingerprint import ac_device_fingerprints_changed
 
@@ -1541,6 +1571,74 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             len(self._insight_humidity_histories),
         )
 
+    # ------------------------------------------------------------------
+    # Zone identity persistence (dateCreated baseline for reassignment detection)
+    # ------------------------------------------------------------------
+
+    async def async_load_zone_identity(self) -> None:
+        """Restore the persisted zone-identity baseline before the first poll."""
+        from .const import ZONE_IDENTITY_KEY
+
+        try:
+            data = await self.data_loader.async_load_auxiliary(ZONE_IDENTITY_KEY)
+        except (OSError, ValueError) as e:
+            _LOGGER.debug(
+                "Coordinator: no zone identity baseline to restore (%s), "
+                "starting fresh",
+                e,
+            )
+            return
+        if isinstance(data, dict):
+            self._last_known_zone_dates = {str(k): str(v) for k, v in data.items() if v is not None}
+
+    def _save_zone_identity(self) -> None:
+        """Schedule a debounced save of the zone-identity baseline."""
+        from .const import ZONE_IDENTITY_KEY
+
+        try:
+            self.data_loader.save_auxiliary(ZONE_IDENTITY_KEY, dict(self._last_known_zone_dates))
+        except (OSError, ValueError, TypeError) as e:
+            _LOGGER.warning(
+                "Coordinator: could not schedule zone identity save (%s), "
+                "a reassignment detected this cycle may need to be "
+                "re-detected after a restart",
+                e,
+            )
+
+    # ------------------------------------------------------------------
+    # Zone type persistence (HEATING baseline for stale-schedule detection)
+    # ------------------------------------------------------------------
+
+    async def async_load_zone_type_baseline(self) -> None:
+        """Restore the persisted zone-type baseline before the first poll."""
+        from .const import ZONE_TYPE_BASELINE_KEY
+
+        try:
+            data = await self.data_loader.async_load_auxiliary(ZONE_TYPE_BASELINE_KEY)
+        except (OSError, ValueError) as e:
+            _LOGGER.debug(
+                "Coordinator: no zone type baseline to restore (%s), "
+                "starting fresh",
+                e,
+            )
+            return
+        if isinstance(data, dict):
+            self._last_known_zone_types = {str(k): str(v) for k, v in data.items() if v is not None}
+
+    def _save_zone_type_baseline(self) -> None:
+        """Schedule a debounced save of the zone-type baseline."""
+        from .const import ZONE_TYPE_BASELINE_KEY
+
+        try:
+            self.data_loader.save_auxiliary(ZONE_TYPE_BASELINE_KEY, dict(self._last_known_zone_types))
+        except (OSError, ValueError, TypeError) as e:
+            _LOGGER.warning(
+                "Coordinator: could not schedule zone type baseline save (%s), "
+                "a type change detected this cycle may need to be "
+                "re-detected after a restart",
+                e,
+            )
+
     async def async_shutdown_insight_state(self) -> None:
         """Persist insight runtime state synchronously during integration unload.
 
@@ -1586,8 +1684,10 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         current_zones = self._zone_fingerprint._previous or frozenset()
 
+        # Flat zone-keyed caches only. `zone_config` must NOT be added: it
+        # persists wrapped, so pruning it here empties the whole store.
         for store_name in (
-            "schedules", "zone_config", "smart_comfort_cache",
+            "schedules", "smart_comfort_cache",
             "ac_capabilities", "ac_capabilities_fp", "offsets",
             "heating_circuit_control",
         ):
@@ -1640,6 +1740,223 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "Persistence: prune of state_restore failed",
                     exc_info=True,
                 )
+
+    async def _prune_zone_type_change_schedules(self) -> None:
+        """Drop a zone's cached schedule when its type just changed away from HEATING.
+
+        Compares this cycle's zone types against the last cycle's, the same
+        pattern ZoneFingerprintTracker uses for presence. Runs every cycle,
+        since a same-id type change never touches zoneStates. A zone with no
+        prior HEATING recording is never pruned, so an AC zone's own
+        button-fetched schedule is untouched.
+        """
+        zones_info = self.data_loader.get_cached("zones_info")
+        if not isinstance(zones_info, list):
+            return
+
+        before = dict(self._last_known_zone_types)
+        try:
+            current_types = {str(z.get("id")): z.get("type") for z in zones_info}
+            transitioned = {
+                zone_id for zone_id, prev_type in self._last_known_zone_types.items()
+                if prev_type == "HEATING" and current_types.get(zone_id) not in (None, "HEATING")
+            }
+            # Seed every non-transitioned zone's baseline unconditionally, so a
+            # zone with no prior recording still gets one even when nothing below runs.
+            for zone_id, new_type in current_types.items():
+                if zone_id not in transitioned:
+                    self._last_known_zone_types[zone_id] = new_type
+            if not transitioned:
+                return
+
+            try:
+                # Broad on purpose: a store I/O failure here must not block the
+                # poll cycle, matching _handle_zone_delta's own prune.
+                schedules = await self.data_loader.async_load_auxiliary("schedules")
+                if isinstance(schedules, dict):
+                    pruned = [zid for zid in transitioned if zid in schedules]
+                    for zone_id in pruned:
+                        del schedules[zone_id]
+                    if pruned:
+                        await self.data_loader.async_update_store("schedules", schedules)
+                        _LOGGER.debug(
+                            "Coordinator: dropped %d stale schedule entr(ies) for "
+                            "zone(s) that changed away from HEATING: %s",
+                            len(pruned), sorted(pruned),
+                        )
+            except Exception:
+                _LOGGER.warning(
+                    "Coordinator: could not check for stale schedules after a "
+                    "zone-type change",
+                    exc_info=True,
+                )
+                return  # retry next cycle: don't advance the transitioned baseline
+
+            # Only after a successful attempt above does the transitioned zones'
+            # baseline advance, so a failure above retries next cycle.
+            for zone_id in transitioned:
+                self._last_known_zone_types[zone_id] = current_types[zone_id]
+        finally:
+            # Seeding can mutate the baseline on any exit path, so save
+            # whenever it changed, not just at the end.
+            if self._last_known_zone_types != before:
+                self._save_zone_type_baseline()
+
+    async def _prune_reassigned_schedules(self, zone_ids: set[str]) -> None:
+        """Drop a reassigned zone's cached schedule and tell its calendar entity to reload.
+
+        Any failure propagates to the caller's per-zone handler, which
+        withholds that zone_id's baseline advance so this is retried next cycle.
+        """
+        schedules = await self.data_loader.async_load_auxiliary("schedules")
+        if not isinstance(schedules, dict):
+            return
+        pruned = [zid for zid in zone_ids if zid in schedules]
+        for zone_id in pruned:
+            del schedules[zone_id]
+        if pruned:
+            await self.data_loader.async_update_store("schedules", schedules)
+            for zone_id in pruned:
+                self.hass.bus.async_fire(
+                    f"{DOMAIN}_schedule_updated",
+                    {"zone_id": zone_id, "zone_name": ""},
+                )
+            _LOGGER.debug(
+                "Coordinator: pruned reassigned zone(s) %s from the "
+                "schedules cache", pruned,
+            )
+
+    async def _prune_reassigned_homekit_mapping(self, zone_ids: set[str]) -> None:
+        """Remove reassigned zone_ids from the live HomeKit mapping (never the Store directly) and re-arm the rebuild retry."""
+        client = self.homekit_client
+        if client is None:
+            return
+        if not zone_ids:
+            return
+        from .homekit_mapping import save_device_mapping
+
+        serial_to_zone: dict[str, str] = {}
+        zone_to_aids: dict[str, list[int]] = {}
+        for zone_id in zone_ids:
+            serial_to_zone, zone_to_aids = client.remove_zone_mapping(zone_id)
+        try:
+            await save_device_mapping(
+                self.hass, self.home_id,
+                {"serial_to_zone": serial_to_zone, "zone_to_aids": zone_to_aids},
+            )
+        except Exception:
+            # Broad on purpose: a Store write failure here must not crash
+            # the prune; only the on-disk copy stays stale until the next save.
+            _LOGGER.warning(
+                "Coordinator: could not persist the HomeKit mapping after "
+                "pruning reassigned zone(s), the in-memory mapping is "
+                "correct but a restart before the next successful save "
+                "would revert it",
+                exc_info=True,
+            )
+        self.reset_mapping_retry_budget()
+
+    async def _prune_reassigned_zones(self) -> None:
+        """Detect a zone-id reassignment; only zone_config/schedules failures block the baseline advance (HomeKit-mapping and teardown self-protect)."""
+        zones_info = self.data_loader.get_cached("zones_info")
+        if not isinstance(zones_info, list):
+            return
+        before = dict(self._last_known_zone_dates)
+        reassigned = self._compute_reassigned_zones(zones_info)
+        if not reassigned:
+            # This can mutate the baseline even with no reassignment, so
+            # save regardless.
+            if self._last_known_zone_dates != before:
+                self._save_zone_identity()
+            return
+
+        new_dates = {str(z.get("id")): z.get("dateCreated") for z in zones_info}
+
+        for zone_id in reassigned:
+            try:
+                pruned_config = await self.zone_config_manager.async_prune_reassigned_zones({zone_id})
+                if pruned_config:
+                    await self._teardown_reassigned_controllers(pruned_config)
+                    try:
+                        async_create_zone_reassigned_issue(self.hass, self.home_id, zone_id)
+                    except Exception:
+                        # Broad on purpose: a repair-issue failure must not
+                        # block this zone's remaining prunes or baseline advance.
+                        _LOGGER.warning(
+                            "Coordinator: could not raise the zone-reassigned "
+                            "repair issue for zone %s",
+                            zone_id, exc_info=True,
+                        )
+                await self._prune_reassigned_schedules({zone_id})
+                await self._prune_reassigned_homekit_mapping({zone_id})
+            except Exception:
+                # Broad on purpose: a single zone's prune failure must not
+                # block the poll cycle or the other zone_ids in this batch.
+                _LOGGER.warning(
+                    "Coordinator: prune of reassigned zone %s failed, "
+                    "will retry next cycle",
+                    zone_id, exc_info=True,
+                )
+                continue
+            self._last_known_zone_dates[zone_id] = new_dates[zone_id]
+
+        self._save_zone_identity()
+
+    def _compute_reassigned_zones(self, zones_info: list[Any]) -> set[str]:
+        """Diff zones_info[].dateCreated against the persisted identity baseline.
+
+        Returns the zone_ids whose date changed (a reassignment). The
+        baseline is updated additively: present-and-unchanged or
+        newly-seen zone_ids are recorded immediately; a zone_id in the
+        returned set keeps its OLD baseline value here, so the caller
+        (which runs the prunes) can advance it only after those prunes
+        succeed. Absent zone_ids are never touched, so a zone_id that
+        vanishes for one or more cycles is still diffed correctly when
+        it reappears.
+        """
+        from .helpers import parse_iso_datetime
+
+        if not isinstance(zones_info, list):
+            return set()
+
+        current_raw = {str(z.get("id")): z.get("dateCreated") for z in zones_info}
+        reassigned: set[str] = set()
+
+        for zone_id, new_raw in current_raw.items():
+            if new_raw is None:
+                continue  # this cycle's fetch didn't carry a date; don't touch the baseline
+            prev_raw = self._last_known_zone_dates.get(zone_id)
+            if prev_raw is None:
+                self._last_known_zone_dates[zone_id] = new_raw  # first-ever recording
+                continue
+            if prev_raw == new_raw:
+                continue
+            try:
+                changed = parse_iso_datetime(prev_raw) != parse_iso_datetime(new_raw)
+            except ValueError:
+                _LOGGER.debug(
+                    "Coordinator: could not parse dateCreated for zone %s "
+                    "(prev=%s, new=%s), treating as unchanged this cycle",
+                    zone_id, prev_raw, new_raw,
+                )
+                continue
+            if changed:
+                reassigned.add(zone_id)
+            else:
+                self._last_known_zone_dates[zone_id] = new_raw  # same instant, different rendering
+
+        if reassigned and len(reassigned) == len(self._last_known_zone_dates) and len(reassigned) > 1:
+            _LOGGER.warning(
+                "Coordinator: every known zone's dateCreated changed in "
+                "one cycle (%d zones), treating as a data anomaly, not "
+                "pruning any zone this cycle",
+                len(reassigned),
+            )
+            for zone_id in reassigned:
+                self._last_known_zone_dates[zone_id] = current_raw[zone_id]
+            return set()
+
+        return reassigned
 
     # ------------------------------------------------------------------
     # Smart Valve Control lifecycle
@@ -1741,6 +2058,32 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
         self.offset_sync_controllers.clear()
 
+    async def _teardown_reassigned_controllers(self, zone_ids: set[str]) -> None:
+        """Pop and deactivate each reassigned zone's controller, bypassing the config-change listener."""
+        for zone_id in zone_ids:
+            valve = self.valve_controllers.pop(zone_id, None)
+            if valve is not None:
+                # Broad catch: one controller's failed teardown must not stop
+                # the rest of this batch from being torn down.
+                try:
+                    await valve.async_deactivate()
+                except Exception:
+                    _LOGGER.warning(
+                        "Smart Valve: error deactivating controller for "
+                        "reassigned zone %s",
+                        zone_id, exc_info=True,
+                    )
+            offset = self.offset_sync_controllers.pop(zone_id, None)
+            if offset is not None:
+                try:
+                    await offset.async_deactivate()
+                except Exception:
+                    _LOGGER.warning(
+                        "Offset Sync: error deactivating controller for "
+                        "reassigned zone %s",
+                        zone_id, exc_info=True,
+                    )
+
     def _on_zone_config_change(self, zone_id: str, key: str, value: Any) -> None:
         """Activate / deactivate per-zone controllers when the user changes config.
 
@@ -1767,19 +2110,31 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
         zones_info = self.data_loader.get_cached("zones_info")
-        if zones_info and isinstance(zones_info, list):
-            zone_type = next(
-                (z.get("type") for z in zones_info if str(z.get("id")) == zone_id),
-                None,
+        if not (zones_info and isinstance(zones_info, list)):
+            _LOGGER.warning(
+                "Smart Valve: zone type for %s is not known yet (zone "
+                "info not loaded), refusing this config change rather "
+                "than risk activating a controller on a non-heating "
+                "zone. It will take effect once zone info is available",
+                zone_id,
             )
-            if zone_type != "HEATING":
-                _LOGGER.warning(
-                    "Smart Valve: zone %s is a %s zone. Smart Valve "
-                    "Control only works with heating zones (with TRVs), "
-                    "skipping config change",
-                    zone_id, zone_type,
-                )
-                return
+            return
+
+        zone_type = next(
+            (z.get("type") for z in zones_info if str(z.get("id")) == zone_id),
+            None,
+        )
+        if zone_type != "HEATING":
+            _LOGGER.warning(
+                "Smart Valve: zone %s is a %s zone. Smart Valve "
+                "Control only works with heating zones (with TRVs), "
+                "skipping config change",
+                zone_id, zone_type,
+            )
+            return
+
+        if current_mode == SVC_MODE_VALVE_TARGET and ext_sensor:
+            self._request_full_sync_next_cycle = True
 
         async def _transition() -> None:
             # Two-phase shutdown check: once before queueing for the

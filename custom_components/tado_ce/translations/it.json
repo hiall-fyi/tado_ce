@@ -1444,6 +1444,10 @@
     "homekit_pairing_invalid": {
       "title": "Perdita dell'accoppiamento HomeKit",
       "description": "L'accoppiamento HomeKit del tuo bridge Tado non è più valido; è possibile che sia stato ripristinato alle impostazioni di fabbrica. Tado CE funziona in modalità solo cloud fino a quando non effettuerai un nuovo accoppiamento.\n\nPer effettuare nuovamente l'accoppiamento: Impostazioni → Tado CE → Configura → Impostazioni avanzate → HomeKit, quindi seleziona \"Accoppia di nuovo\" e inserisci il codice di configurazione a 8 cifre riportato sul tuo bridge."
+    },
+    "zone_reassigned": {
+      "title": "Le impostazioni di una zona sono state ripristinate",
+      "description": "Tado ha riutilizzato l'ID di una zona per una stanza diversa. Le impostazioni di controllo della valvola intelligente, l'associazione del sensore esterno e i limiti di temperatura configurati per la stanza precedente sono stati azzerati per la zona {zone_id}, poiché non sono più applicabili alla nuova stanza. Reinserirli nella sezione **Configurazione zona** se la nuova stanza ne ha bisogno."
     }
   },
   "config": {

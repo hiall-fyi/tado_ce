@@ -26,16 +26,19 @@ from .api_call_tracker import (
 )
 from .const import (
     API_ENDPOINT_DEVICES,
+    DAY_TYPES,
     DEVICE_OFFSET_MAX,
     DEVICE_OFFSET_MIN,
+    DOMAIN,
     MAX_RETRY_ATTEMPTS,
+    MAX_SCHEDULE_FETCH_CALLS,
     QUOTA_WARNING_PERCENTAGE,
     TADO_API_BASE,
     is_climate_zone,
     is_valid_device_offset,
 )
 from .exceptions import TadoAuthError, TadoRateLimitError, TadoSyncError
-from .helpers import mask_serial, parse_iso_datetime, retry_delay
+from .helpers import hard_quota_reserve, mask_serial, parse_iso_datetime, retry_delay
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -492,8 +495,17 @@ class TadoApiClient(TadoAuthMixin):
             return True
         self._access_token = None
         self._token_expiry = None
+        if method not in _RETRYABLE_METHODS:
+            _LOGGER.warning(
+                "API: token expired on %s %s, not retried (non-idempotent), "
+                "token cleared for next attempt",
+                method, endpoint,
+            )
+            raise TadoSyncError(
+                f"Token expired on {method} {endpoint}, try again",
+            )
         _LOGGER.warning(
-            "API: token expired on %s %s, non-retryable, surfacing for reauth",
+            "API: token expired on %s %s, retry exhausted, surfacing for reauth",
             method, endpoint,
         )
         raise TadoAuthError(
@@ -903,27 +915,31 @@ class TadoApiClient(TadoAuthMixin):
         }
         day_types = day_types_map.get(timetable_type, ["MONDAY_TO_SUNDAY"])
 
-        # Per-day failures are tolerated: a single missing day's
-        # blocks shouldn't break the whole schedule fetch.
+        # A failed or non-list GET is recorded in the sibling `failed_days`
+        # list, not inside blocks_by_day: every consumer reads each day's
+        # value as a plain list of blocks.
         blocks_by_day: dict[str, Any] = {}
+        failed_days: list[str] = []
         for day_type in day_types:
             blocks = await self.api_call(
                 f"zones/{zone_id}/schedule/timetables/{timetable_id}/blocks/{day_type}",
             )
-            if blocks is not None:
+            if isinstance(blocks, list):
                 blocks_by_day[day_type] = blocks
             else:
                 _LOGGER.warning(
                     "API: zone %s schedule fetch missed blocks for %s, "
-                    "schedule will be incomplete until next poll",
+                    "will retry on the next full sync whose day-type matches",
                     zone_id, day_type,
                 )
                 blocks_by_day[day_type] = []
+                failed_days.append(day_type)
 
         return {
             "type": timetable_type,
             "timetable_id": timetable_id,
             "blocks": blocks_by_day,
+            "failed_days": failed_days,
         }
 
     async def set_presence_lock(self, state: str) -> bool:
@@ -1000,6 +1016,7 @@ class TadoApiClient(TadoAuthMixin):
         *,
         mobile_devices_enabled: bool,
         offset_enabled: bool,
+        svc_schedule_zone_ids: frozenset[str] = frozenset(),
     ) -> None:
         """Run the heavier fetches (zone info, mobile, offsets, AC caps) in a full sync."""
         zones_info = await self._sync_and_save("zones", "zones_info", "zone info")
@@ -1035,6 +1052,101 @@ class TadoApiClient(TadoAuthMixin):
         ):
             await self._sync_heating_circuits(zones_info)
 
+        if svc_schedule_zone_ids:
+            await self._sync_svc_schedules(zones_info, svc_schedule_zone_ids)
+
+    async def _sync_svc_schedules(
+        self,
+        zones_info: list[dict[str, Any]],
+        svc_schedule_zone_ids: frozenset[str],
+    ) -> None:
+        """Fetch a Smart Valve Control zone's schedule on the full-sync cadence.
+
+        Runs even when Schedule Calendar is off - SVC's valve_target mode
+        needs a current schedule to know what to hold, independent of the
+        display feature that historically was the only thing fetching one.
+        Gated on the LIVE remaining-quota value (updated by every response
+        this whole sync has made so far), re-checked before each zone, so
+        the gate tightens as this cycle spends calls rather than working
+        from a stale once-per-cycle snapshot.
+        """
+        if self._data_loader is None:
+            return
+
+        cached_schedules = self._data_loader.get_cached("schedules")
+        if not isinstance(cached_schedules, dict):
+            cached_schedules = {}
+
+        limit = self._rate_limit.get("limit")
+        reserve = hard_quota_reserve(limit)
+
+        merged = dict(cached_schedules)
+        any_fetched = False
+
+        for zone_data in zones_info:
+            zone_id = str(zone_data.get("id", ""))
+            if zone_id not in svc_schedule_zone_ids:
+                continue
+            if zone_data.get("type") != "HEATING":
+                continue
+
+            existing = cached_schedules.get(zone_id)
+            if isinstance(existing, dict) and existing.get("blocks"):
+                today_types = _today_day_types(existing.get("type", "ONE_DAY"))
+                if not any(schedule_day_failed(existing, dt) for dt in today_types):
+                    continue  # a cache hit that isn't failing for today
+
+            remaining = self._rate_limit.get("remaining")
+            if remaining is None:
+                _LOGGER.warning(
+                    "API: no rate-limit reading yet, deferring zone %s's "
+                    "schedule fetch to a later cycle",
+                    zone_id,
+                )
+                continue
+            if remaining <= reserve + MAX_SCHEDULE_FETCH_CALLS:
+                _LOGGER.debug(
+                    "API: zone %s schedule fetch deferred, quota too "
+                    "low (remaining=%s, reserve=%s)",
+                    zone_id, remaining, reserve,
+                )
+                continue
+
+            zone_name = zone_data.get("name", f"Zone {zone_id}")
+            try:
+                schedule_data = await self.get_zone_schedule(zone_id)
+            except Exception:
+                # Broad on purpose: one zone's failure (rate limit, network
+                # blip, auth hiccup) must not abort the loop for the other
+                # SVC zones or anything already fetched earlier this cycle.
+                _LOGGER.warning(
+                    "API: SVC schedule fetch for %s failed, will retry "
+                    "next full sync",
+                    zone_name,
+                    exc_info=True,
+                )
+                continue
+
+            if not schedule_data:
+                continue
+
+            merged[zone_id] = {
+                "name": zone_name,
+                "type": schedule_data.get("type", "ONE_DAY"),
+                "blocks": schedule_data.get("blocks") or {},
+                "failed_days": schedule_data.get("failed_days") or [],
+            }
+            any_fetched = True
+
+            if self._hass is not None:
+                self._hass.bus.async_fire(
+                    f"{DOMAIN}_schedule_updated",
+                    {"zone_id": zone_id, "zone_name": zone_name},
+                )
+
+        if any_fetched:
+            await self._data_loader.async_update_store("schedules", merged)
+
     async def _sync_heating_circuits(self, zones_info: list[dict[str, Any]]) -> None:
         """Fetch the home's circuit list + each zone's current circuit (full-sync only).
 
@@ -1069,6 +1181,7 @@ class TadoApiClient(TadoAuthMixin):
         mobile_devices_frequent_sync: bool = False,
         offset_enabled: bool = False,
         home_state_sync_enabled: bool = False,
+        svc_schedule_zone_ids: frozenset[str] = frozenset(),
     ) -> None:
         """Run one cycle of cloud data fetches, raising typed errors for the coordinator."""
         sync_type = "quick" if quick else "full"
@@ -1109,6 +1222,7 @@ class TadoApiClient(TadoAuthMixin):
                 await self._sync_full_extras(
                     mobile_devices_enabled=mobile_devices_enabled,
                     offset_enabled=offset_enabled,
+                    svc_schedule_zone_ids=svc_schedule_zone_ids,
                 )
 
             await self.save_ratelimit("ok")
@@ -1366,3 +1480,20 @@ class TadoApiClient(TadoAuthMixin):
         )
         return result is not None
 
+
+def _today_day_types(timetable_type: str) -> list[str]:
+    """Return the day_type keys whose blocks could cover today, for this timetable."""
+    weekday = dt_util.now().weekday()  # Monday=0 .. Sunday=6
+    if timetable_type == "SEVEN_DAY":
+        return [DAY_TYPES["SEVEN_DAY"][weekday]]
+    if timetable_type == "THREE_DAY":
+        if weekday < 5:
+            return [DAY_TYPES["THREE_DAY"][0]]
+        return [DAY_TYPES["THREE_DAY"][1]] if weekday == 5 else [DAY_TYPES["THREE_DAY"][2]]
+    return [DAY_TYPES["ONE_DAY"][0]]
+
+
+def schedule_day_failed(schedule_entry: dict[str, Any], day_type: str) -> bool:
+    """True when `day_type`'s GET failed on the schedule's last fetch (`get_zone_schedule`)."""
+    failed_days = schedule_entry.get("failed_days")
+    return isinstance(failed_days, list) and day_type in failed_days

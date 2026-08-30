@@ -240,3 +240,5 @@ refresh:
               value: "mobile_devices"
             - label: "Home presence (home/away)"
               value: "home_state"
+            - label: "Zone states (temperature, target, mode)"
+              value: "zone_states"

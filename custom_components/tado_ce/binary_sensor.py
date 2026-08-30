@@ -22,11 +22,13 @@ from .climate_helpers import (
     unsubscribe_external_sensors,
 )
 from .const import (
+    DEFAULT_WINDOW_TYPE,
     ENTITY_DATA_PREHEAT_ADVISOR,
     ENTITY_DATA_PREHEAT_NOW,
     ENTITY_DATA_WINDOW_PREDICTED,
     INSIGHT_READING_THROTTLE_SECONDS,
     SIGNAL_HOMEKIT_UPDATE,
+    WINDOW_U_VALUES,
     is_climate_zone,
 )
 from .device_manager import get_device_name_suffix, get_hub_device_info, get_zone_device_info
@@ -948,7 +950,11 @@ class TadoWindowPredictedSensor(PerEntityAvailabilityMixin, CoordinatorEntity["T
 
             if use_passive:
                 outdoor_temp = self._get_outdoor_temp()
-                window_u_value = zcm.get_window_u_value(self._zone_id) if zcm else 2.7
+                window_u_value = (
+                    zcm.get_passive_detector_window_u_value(self._zone_id)
+                    if zcm
+                    else WINDOW_U_VALUES[DEFAULT_WINDOW_TYPE]
+                )
                 seasonal_baseline = self._get_seasonal_baseline()
 
                 result = detect_window_passive(

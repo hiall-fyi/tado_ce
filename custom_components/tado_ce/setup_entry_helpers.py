@@ -343,3 +343,23 @@ def register_bridge_devices(
                     "Setup: pre-registered Tado bridge %s (%s)",
                     mask_serial(serial), device_type,
                 )
+
+
+def register_hub_device(hass: HomeAssistant, entry_id: str, home_id: str) -> None:
+    """Pre-register the Tado CE hub device and cache its registry id for via_device_id lookups."""
+    from homeassistant.exceptions import HomeAssistantError
+    from homeassistant.helpers import device_registry as dr
+
+    from .device_manager import get_hub_device_info, set_cached_hub_device_id
+
+    try:
+        device_registry = dr.async_get(hass)
+        hub_info = get_hub_device_info(home_id)
+        entry = device_registry.async_get_or_create(config_entry_id=entry_id, **hub_info)
+        set_cached_hub_device_id(home_id, entry.id)
+    except HomeAssistantError:
+        _LOGGER.warning(
+            "Setup: could not pre-register the hub device, zone devices will "
+            "register unparented this session",
+            exc_info=True,
+        )

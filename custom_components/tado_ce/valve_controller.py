@@ -93,6 +93,9 @@ class SmartValveController:
         self._action_debouncer = coordinator.action_debouncer
 
         self._runtime = ValveControllerRuntime()
+        # The no-target bail runs on every evaluation, so its warning is
+        # latched and cleared once a target is readable again.
+        self._no_target_warned = False
 
     # ------------------------------------------------------------------
     # Properties
@@ -556,7 +559,18 @@ class SmartValveController:
             desired_target = self._read_desired_target(zone_data)
 
         if desired_target is None:
+            if not self._no_target_warned:
+                _LOGGER.warning(
+                    "Smart Valve: zone %s has no target to work from, so it "
+                    "stays idle: no manual override is active and no schedule "
+                    "has been fetched for this zone. Turn on Schedule Calendar "
+                    "(Settings → Tado CE → Configure → Schedule Calendar) and "
+                    "restart HA to give it the zone's schedule.",
+                    self._zone_id,
+                )
+                self._no_target_warned = True
             return
+        self._no_target_warned = False
 
         new_state = self.should_transition(external_temp, desired_target)
         # should_transition only ever returns IDLE→ACTIVE or ACTIVE→IDLE; both

@@ -477,18 +477,10 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
                 return
 
             # Get window type from per-zone config or global config
-            if zone_config_manager:
-                self._window_type = zone_config_manager.get_zone_value(
-                    self._zone_id,
-                    "window_type",
-                    "double_pane",
-                )
-                self._u_value = zone_config_manager.get_window_u_value(self._zone_id)
-            else:
-                self._window_type = config_manager.get_mold_risk_window_type()
-                from .const import DEFAULT_WINDOW_TYPE, WINDOW_U_VALUES
-
-                self._u_value = WINDOW_U_VALUES.get(self._window_type, WINDOW_U_VALUES[DEFAULT_WINDOW_TYPE])
+            self._window_type = zone_config_manager.get_effective_window_type(
+                self._zone_id, config_manager,
+            )
+            self._u_value = zone_config_manager.get_window_u_value(self._zone_id, config_manager)
 
             if self._zone_type == "HEATING":
                 self._update_heating(sensor_data, config_manager)
@@ -763,24 +755,11 @@ class TadoSurfaceTemperatureSensor(TadoZoneSensor):
                 )
 
                 if self._outdoor_temp is not None:
-                    # Get window type and U-value from per-zone config or global config
-                    from .const import DEFAULT_WINDOW_TYPE, WINDOW_U_VALUES
-
-                    if zone_config_manager:
-                        self._window_type = zone_config_manager.get_zone_value(
-                            self._zone_id,
-                            "window_type",
-                            "double_pane",
-                        )
-                        self._u_value = zone_config_manager.get_window_u_value(self._zone_id)
-                        self._offset_applied = zone_config_manager.get_surface_temp_offset(self._zone_id)
-                    else:
-                        self._window_type = config_manager.get_mold_risk_window_type()
-                        self._u_value = WINDOW_U_VALUES.get(
-                            self._window_type,
-                            WINDOW_U_VALUES[DEFAULT_WINDOW_TYPE],
-                        )
-                        self._offset_applied = 0.0
+                    self._window_type = zone_config_manager.get_effective_window_type(
+                        self._zone_id, config_manager,
+                    )
+                    self._u_value = zone_config_manager.get_window_u_value(self._zone_id, config_manager)
+                    self._offset_applied = zone_config_manager.get_surface_temp_offset(self._zone_id)
 
                     # Calculate surface temperature
                     surface_temp = _calculate_surface_temperature(

@@ -880,6 +880,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         if "external_sensors" not in user_input:
             return
         section = user_input["external_sensors"]
+        _LOGGER.debug("external_sensors section submitted: %s", section)
         existing = self.config_entry.options
         for toggle_key, entity_key in (
             ("use_outdoor_temp_entity", "outdoor_temp_entity"),
@@ -1188,7 +1189,19 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                 errors["sensor_section"] = "svc_active_sensor_clear"
 
             if not errors:
+                # Skip stamping a key as an explicit override unless the
+                # submitted value actually differs from current. window_type's
+                # live default can be the global setting, not the raw merged
+                # dict, so it needs its own resolved value here.
+                existing_display = {
+                    **existing,
+                    "window_type": zone_config_manager.get_effective_window_type(
+                        zone_id, coordinator.config_manager,
+                    ),
+                }
                 for key, value in all_values.items():
+                    if value == existing_display.get(key):
+                        continue
                     await zone_config_manager.async_set_zone_value(zone_id, key, value)
 
                 # Return to menu (no config entry change, zone_config.json is separate)
@@ -1221,7 +1234,9 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         cur_comfort = config.get("smart_comfort_mode", "none").capitalize()
         if cur_comfort == "None":
             cur_comfort = "None"
-        cur_window_type = config.get("window_type", "double_pane")
+        cur_window_type = zone_config_manager.get_effective_window_type(
+            zone_id, coordinator.config_manager,
+        )
         cur_sensitivity = WINDOW_SENSITIVITY_REVERSE_MAP.get(
             config.get("window_predicted_sensitivity", WINDOW_SENSITIVITY_DEFAULT), "Medium",
         )

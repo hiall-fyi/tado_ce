@@ -1444,6 +1444,10 @@
     "homekit_pairing_invalid": {
       "title": "HomeKit-Kopplung unterbrochen",
       "description": "Die HomeKit-Kopplung Ihrer Tado-Bridge ist nicht mehr gültig; möglicherweise wurde das Gerät auf die Werkseinstellungen zurückgesetzt. Tado CE läuft bis zur erneuten Kopplung im reinen Cloud-Modus.\n\nSo führen Sie die erneute Kopplung durch: „Einstellungen“ → „Tado CE“ → „Konfigurieren“ → „Erweiterte Einstellungen“ → „HomeKit“, dann aktivieren Sie „Erneut koppeln“ und geben Sie den 8-stelligen Einrichtungscode Ihrer Bridge ein."
+    },
+    "zone_reassigned": {
+      "title": "Die Einstellungen einer Zone wurden zurückgesetzt",
+      "description": "Tado hat eine Zonen-ID für einen anderen Raum wiederverwendet. Die für den vorherigen Raum konfigurierten Einstellungen für die intelligente Ventilsteuerung, die Zuordnung externer Sensoren und die Temperaturgrenzwerte wurden in der Zonen{zone_id} gelöscht, da sie für den neuen Raum nicht mehr gelten. Geben Sie diese Werte unter **Zonenkonfiguration** erneut ein, falls der neue Raum sie benötigt."
     }
   },
   "config": {

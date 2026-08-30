@@ -456,7 +456,6 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         unique_id_suffix="zone_{zone_id}_refresh_schedule",
         entity_category=None,
         icon="mdi:calendar-refresh",
-        feature_group="schedule_calendar",
     ),
     "button_boost": EntityMeta(
         translation_key="boost",

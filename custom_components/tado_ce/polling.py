@@ -22,9 +22,8 @@ from .const import (
     MIN_POLLING_INTERVAL,
     POLLING_SAFETY_BUFFER,
     QUOTA_RESERVE_CALLS,
-    QUOTA_RESERVE_PERCENT,
 )
-from .helpers import low_quota_threshold, parse_iso_datetime
+from .helpers import hard_quota_reserve, low_quota_threshold, parse_iso_datetime
 
 if TYPE_CHECKING:
     from .config_manager import ConfigurationManager
@@ -322,7 +321,7 @@ def should_pause_polling(
     _limit = ratelimit_data.get("limit")
     daily_limit = _limit if _limit is not None else 100
 
-    reserve_threshold = max(QUOTA_RESERVE_CALLS, int(daily_limit * QUOTA_RESERVE_PERCENT))
+    reserve_threshold = hard_quota_reserve(daily_limit)
 
     if remaining <= reserve_threshold:
         _rs = ratelimit_data.get("reset_seconds")

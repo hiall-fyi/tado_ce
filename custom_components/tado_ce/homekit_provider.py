@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 import contextlib
 from datetime import datetime
 import logging
+import time
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.helpers.dispatcher import async_dispatcher_send
@@ -37,6 +39,11 @@ _LOGGER = logging.getLogger(__name__)
 # HAP RESOURCE_NOT_EXIST: a subscribed characteristic iid no longer resolves,
 # the signature of a stale iid cache after a bridge config-number bump.
 _HAP_RESOURCE_NOT_EXIST = -70409
+
+# aiohomekit fires an EMPTY event dict on every (re)connect. 5 of those
+# inside 60s means it is spinning reconnects, not settling after one.
+_SPIN_PULSE_THRESHOLD = 5
+_SPIN_PULSE_WINDOW_SECONDS = 60
 
 
 def _find_char_iid(
@@ -91,6 +98,7 @@ class HomeKitLocalProvider:
         self._event_map: dict[tuple[int, int], tuple[str, str]] = {}
         self._cache_refresh_task: asyncio.Task[None] | None = None
         self._subscribe_lock = asyncio.Lock()
+        self._reconnect_pulse_times: deque[float] = deque(maxlen=_SPIN_PULSE_THRESHOLD)
 
     @property
     def is_connected(self) -> bool:
@@ -371,7 +379,7 @@ class HomeKitLocalProvider:
             if not self._accessories:
                 # `async_list_accessories` swallows every bridge error and
                 # returns [], so an empty list here means the bridge did not
-                # answer — a transient condition, and exactly the one a
+                # answer, a transient condition and exactly the one a
                 # config-number bump creates (the bridge is reconfiguring).
                 # Keep the live event map and poll loop so the stale-iid
                 # counter can still drive recovery, and escalate the way the
@@ -463,6 +471,9 @@ class HomeKitLocalProvider:
 
     def _on_event_callback(self, event_data: dict[tuple[int, int], dict[str, Any]]) -> None:
         """Apply pushed event values to the cache and fan out one signal per zone."""
+        if not event_data:
+            self._record_reconnect_pulse()
+            return
         updated_zones: set[str] = set()
         for key, data in event_data.items():
             mapping = self._event_map.get(key)
@@ -483,6 +494,25 @@ class HomeKitLocalProvider:
         signal = SIGNAL_HOMEKIT_UPDATE.format(home_id=self._home_id)
         for zone_id in updated_zones:
             async_dispatcher_send(self._hass, signal, zone_id)
+
+    def _record_reconnect_pulse(self) -> None:
+        """Record a connect pulse and trigger spin recovery once the threshold trips.
+
+        An EMPTY_EVENT pulse means the connection just (re)established. Several in a
+        short window means aiohomekit is spinning, not reconnecting once.
+        """
+        now = time.monotonic()
+        self._reconnect_pulse_times.append(now)
+        _LOGGER.debug(
+            "HomeKit: reconnect pulse for home %s (%d in window)",
+            mask_home_id(self._home_id), len(self._reconnect_pulse_times),
+        )
+        if (
+            len(self._reconnect_pulse_times) == self._reconnect_pulse_times.maxlen
+            and now - self._reconnect_pulse_times[0] < _SPIN_PULSE_WINDOW_SECONDS
+        ):
+            self._reconnect_pulse_times.clear()
+            self._client.async_schedule_spin_recovery()
 
     async def _periodic_cache_refresh(self) -> None:
         """Periodically poll subscribed characteristics so stable values still age fresh.
