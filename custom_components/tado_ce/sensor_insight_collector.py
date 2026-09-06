@@ -968,7 +968,7 @@ def _scan_zone_presence_data(
             pct = hp.get("percentage", 0)
             if pct > 0:
                 active_zones.append(
-                    {"zone_name": z_name, "power_pct": pct, "zone_type": s.get("type", "HEATING")},
+                    {"zone_name": z_name, "power_pct": pct, "zone_type": s.get("type") or ""},
                 )
         sd = zd.get("sensorDataPoints") or {}
         t = (sd.get("insideTemperature") or {}).get("celsius")

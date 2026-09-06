@@ -55,7 +55,6 @@ SEASONAL_LAT_OFFSETS: tuple[tuple[float, float], ...] = (
 SEASONAL_BASE_TARGETS: dict[str, float] = {
     "summer": 24.0,
     "winter": 20.0,
-    "transition": 22.0,
 }
 
 # ============ Comfort Level Thresholds ============
@@ -393,37 +392,32 @@ def calculate_ashrae_comfort_temp(outdoor_temp: float) -> float:
 # ============ Seasonal Comfort Target ============
 
 
-def calculate_seasonal_comfort_target(latitude: float, month: int) -> float:
-    """Calculate comfort target based on season and latitude.
+SEASONAL_PEAK_DAY: float = 197.0  # mid-July: Northern Hemisphere summer peak
 
-    Pure function: no HA dependencies. Caller provides latitude and month.
+
+def calculate_seasonal_comfort_target(latitude: float, day_of_year: int) -> float:
+    """Calculate comfort target from a smooth day-of-year seasonal blend.
+
+    Pure function: no HA dependencies. Caller provides latitude and day_of_year
+    (from e.g. `datetime.timetuple().tm_yday`).
+
+    Interpolates continuously between the summer and winter base targets on a
+    cosine curve, rather than switching between discrete month buckets: a
+    discrete switch put a real step in the target right at each month
+    boundary with nothing about the weather having changed.
 
     Args:
         latitude: Geographic latitude in degrees (negative = Southern Hemisphere).
-        month: Calendar month (1-12).
+        day_of_year: Day of the year (1-366).
 
     Returns:
         Comfort target temperature in °C.
     """
-    is_southern = latitude < 0
+    half_year = 365.25 / 2
+    peak_day = SEASONAL_PEAK_DAY - half_year if latitude < 0 else SEASONAL_PEAK_DAY
+    phase = 2 * math.pi * (day_of_year - peak_day) / 365.25
+    seasonal_factor = (math.cos(phase) + 1) / 2  # 1.0 at peak_day, 0.0 half a year later
 
-    # Determine season (reverse for Southern Hemisphere)
-    effective_month = month
-    if is_southern:
-        if month in (12, 1, 2):
-            season = "summer"
-        elif month in (6, 7, 8):
-            season = "winter"
-        else:
-            season = "transition"
-    elif effective_month in (6, 7, 8):
-        season = "summer"
-    elif effective_month in (11, 12, 1, 2):
-        season = "winter"
-    else:
-        season = "transition"
-
-    # Latitude offset
     abs_lat = abs(latitude)
     lat_offset = 0.0
     for threshold, offset in SEASONAL_LAT_OFFSETS:
@@ -431,7 +425,10 @@ def calculate_seasonal_comfort_target(latitude: float, month: int) -> float:
             lat_offset = offset
             break
 
-    return SEASONAL_BASE_TARGETS[season] + lat_offset
+    base = SEASONAL_BASE_TARGETS["winter"] + seasonal_factor * (
+        SEASONAL_BASE_TARGETS["summer"] - SEASONAL_BASE_TARGETS["winter"]
+    )
+    return base + lat_offset
 
 # ============ Cooling Rate Crossover Estimation ============
 

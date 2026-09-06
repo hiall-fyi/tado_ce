@@ -6,7 +6,7 @@
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.11%2B-blue?style=for-the-badge&logo=home-assistant) ![Python](https://img.shields.io/badge/Python-3.13%2B-blue?style=for-the-badge&logo=python&logoColor=white) ![Tado](https://img.shields.io/badge/Tado-V2%2FV3%2FV3%2B-1E3A8A?style=for-the-badge) ![HACS](https://img.shields.io/badge/HACS-Default-41BDF5?style=for-the-badge)
 
 <!-- Status -->
-![Stable](https://img.shields.io/badge/Stable-4.4.0-brightgreen?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-lightgrey?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-94%25-green?style=for-the-badge)
+![Stable](https://img.shields.io/badge/Stable-4.4.1-brightgreen?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-lightgrey?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-94%25-green?style=for-the-badge)
 
 <!-- Community -->
 ![GitHub stars](https://img.shields.io/github/stars/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub issues](https://img.shields.io/github/issues/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub Release Date](https://img.shields.io/github/release-date/hiall-fyi/tado_ce?style=for-the-badge&logo=github)

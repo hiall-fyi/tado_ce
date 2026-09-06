@@ -310,6 +310,23 @@ class StateRestoreManager:
         """Drop captures whose zone_id is no longer in current_zones; return removed count."""
         return prune_zone_keyed_dict(self._captured, current_zones)
 
+    async def prune_reassigned_zones(self, zone_ids: set[str]) -> set[str]:
+        """Drop captures for reassigned zone_ids, so a later restore can't apply the old room's snapshot."""
+        async with self._lock:
+            to_drop = {k for k in self._captured if k.split(":", 1)[0] in zone_ids}
+            if not to_drop:
+                return set()
+            pruned = {k.split(":", 1)[0] for k in to_drop}
+            for k in to_drop:
+                del self._captured[k]
+            self._schedule_persist()
+        _LOGGER.info(
+            "State Restore: cleared captured state for reassigned zone(s) %s "
+            "(the id is now a different room)",
+            sorted(pruned),
+        )
+        return pruned
+
     async def peek(
         self,
         zone_id: str,

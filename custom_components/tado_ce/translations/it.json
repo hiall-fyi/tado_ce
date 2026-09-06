@@ -1905,7 +1905,8 @@
       "homekit_max_tries": "Troppi tentativi falliti: il bridge è temporaneamente bloccato. Attendere qualche minuto oppure resettare il bridge e riprovare.",
       "homekit_busy": "Il ponte è occupato: forse è in corso un altro accoppiamento. Riprova tra un attimo.",
       "homekit_no_zeroconf": "L'accoppiamento HomeKit richiede il servizio zeroconf di Home Assistant, che non è in esecuzione su questo host. Aggiungi `default_config:` (o `zeroconf:`) al tuo file configuration.yaml e riavvia, quindi riprova.",
-      "homekit_pin_format": "Questo non sembra un codice di configurazione HomeKit. Inserisci il codice a 8 cifre nel formato 123-45-678 (non il codice di autenticazione a 4 cifre), visualizzato sul tuo bridge o nell'app Tado."
+      "homekit_pin_format": "Questo non sembra un codice di configurazione HomeKit. Inserisci il codice a 8 cifre nel formato 123-45-678 (non il codice di autenticazione a 4 cifre), visualizzato sul tuo bridge o nell'app Tado.",
+      "homekit_no_bridge_detected": "In nessuna delle tue zone è presente un Internet Bridge v3 o v3+, l'unico hardware che questo flusso di accoppiamento è in grado di rilevare. Un Internet Bridge v2 (GW seriale) non supporta HomeKit, mentre le unità Smart AC Control si accoppiano separatamente utilizzando il proprio codice HomeKit: questo flusso non gestisce nessuna delle due. Premi “Invia” per tornare indietro senza effettuare l’accoppiamento."
     }
   }
 }

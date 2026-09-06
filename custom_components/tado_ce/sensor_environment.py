@@ -1032,26 +1032,26 @@ class TadoComfortLevelSensor(TadoZoneSensor):
     def _calculate_adaptive_comfort(self) -> str:
         """Calculate comfort using ASHRAE 55 Adaptive Comfort model (0.31*outdoor + 17.8°C, ±3°C band)."""
         latitude = 51.5 if not self.hass else (self.hass.config.latitude or 51.5)
-        month = dt_util.now().month
+        day_of_year = dt_util.now().timetuple().tm_yday
         self._comfort_temp, deviation = compute_comfort_target(
             self._temperature,  # type: ignore[arg-type]
             self._humidity,
             self._outdoor_temp,
             latitude,
-            month,
+            day_of_year,
         )
         return _classify_comfort_deviation(deviation)
 
     def _calculate_seasonal_comfort(self) -> str:
         """Calculate comfort using latitude-based seasonal thresholds."""
         latitude = 51.5 if not self.hass else (self.hass.config.latitude or 51.5)
-        month = dt_util.now().month
+        day_of_year = dt_util.now().timetuple().tm_yday
         self._comfort_temp, deviation = compute_comfort_target(
             self._temperature,  # type: ignore[arg-type]
             self._humidity,
             None,  # outdoor_temp=None triggers seasonal path in helper
             latitude,
-            month,
+            day_of_year,
         )
         return _classify_comfort_deviation(deviation)
 

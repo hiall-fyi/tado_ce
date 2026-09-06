@@ -524,7 +524,7 @@ async def _execute_timer_on_entity(
     duration_minutes: int | None,
     overlay: str | None,
 ) -> bool:
-    """Run `async_set_timer` for one entity, capturing state first.
+    """Run `async_set_timer` for one entity; the entity captures state itself on success.
 
     Returns False when the entity lookup fails or when the API
     write failed (the entity swallowed a timeout / HTTP error).
@@ -534,10 +534,6 @@ async def _execute_timer_on_entity(
     ent = _find_entity_by_id(hass, domain, entity_id)
     if not ent or not hasattr(ent, "async_set_timer"):
         return False
-    zone_id = ent.zone_id  # type: ignore[attr-defined]
-    entity_type = ent.entity_type  # type: ignore[attr-defined]
-    if zone_id and coord:
-        await coord.async_capture_state(zone_id, entity_type, "set_timer")
     success = await ent.async_set_timer(temperature, duration_minutes, overlay)
     if success:
         if duration_minutes:
@@ -747,17 +743,6 @@ async def handle_set_water_heater_timer(hass: HomeAssistant, call: ServiceCall) 
             continue
         total += 1
         try:
-            zone_id = ent.zone_id  # type: ignore[attr-defined]
-            if zone_id:
-                try:
-                    wh_coord = _resolve_coordinator(hass, entity_id)
-                    await wh_coord.async_capture_state(zone_id, "water_heater", "set_timer")
-                except HomeAssistantError:
-                    _LOGGER.debug(
-                        "Services: state capture skipped for %s "
-                        "(coordinator could not be resolved)",
-                        entity_id,
-                    )
             success = await ent.async_set_timer(duration_minutes, temperature)
             if success:
                 _LOGGER.debug(

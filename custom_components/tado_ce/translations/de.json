@@ -1905,7 +1905,8 @@
       "homekit_max_tries": "Zu viele fehlgeschlagene Versuche – die Brücke ist vorübergehend gesperrt. Warten Sie einige Minuten oder setzen Sie die Brücke zurück und versuchen Sie es erneut.",
       "homekit_busy": "Die Verbindung ist gerade ausgelastet – möglicherweise findet gerade eine weitere Paarung statt. Versuchen Sie es in einem Moment erneut.",
       "homekit_no_zeroconf": "Für die HomeKit-Kopplung wird der Zeroconf-Dienst von Home Assistant benötigt, der auf diesem Host jedoch nicht läuft. Fügen Sie `default_config:` (oder `zeroconf:`) zu Ihrer configuration.yaml hinzu, starten Sie das System neu und versuchen Sie es dann erneut.",
-      "homekit_pin_format": "Das sieht nicht nach einem HomeKit-Einrichtungscode aus. Geben Sie den 8-stelligen Code im Format 123-45-678 ein (nicht den 4-stelligen Authentifizierungscode), der auf Ihrer Bridge oder in der Tado-App angezeigt wird."
+      "homekit_pin_format": "Das sieht nicht nach einem HomeKit-Einrichtungscode aus. Geben Sie den 8-stelligen Code im Format 123-45-678 ein (nicht den 4-stelligen Authentifizierungscode), der auf Ihrer Bridge oder in der Tado-App angezeigt wird.",
+      "homekit_no_bridge_detected": "In keiner Ihrer Zonen ist eine Internet-Bridge der Version v3 oder v3+ aufgeführt – die einzige Hardware, die dieser Kopplungsablauf erkennen kann. Eine Internet-Bridge der Version v2 (seriell, GW) unterstützt HomeKit nicht, und Smart-AC-Steuergeräte werden separat mit ihrem eigenen HomeKit-Code gekoppelt – beides wird von diesem Ablauf nicht unterstützt. Klicken Sie auf „Absenden“, um ohne Kopplung zurückzukehren."
     }
   }
 }

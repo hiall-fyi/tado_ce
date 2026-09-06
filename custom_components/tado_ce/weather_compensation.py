@@ -15,17 +15,6 @@ if TYPE_CHECKING:
     from .bridge_api import TadoBridgeApiClient
     from .config_manager import ConfigurationManager
 
-# ---------------------------------------------------------------------------
-# Heating system presets
-# ---------------------------------------------------------------------------
-
-HEATING_PRESETS: dict[str, tuple[float, float, float]] = {
-    "radiators_standard": (1.5, 65.0, 25.0),
-    "radiators_low_temp": (1.2, 55.0, 25.0),
-    "underfloor": (0.8, 45.0, 25.0),
-    "custom": (1.5, 65.0, 25.0),
-}
-
 # Bridge API hard limits
 _API_MIN_FLOW: float = 25.0
 _API_MAX_FLOW: float = 80.0

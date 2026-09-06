@@ -30,13 +30,13 @@ def compute_comfort_target(
     humidity: float | None,
     outdoor_temp: float | None,
     latitude: float,
-    month: int,
+    day_of_year: int,
 ) -> tuple[float, float]:
     """Return (comfort_target, deviation) mirroring the comfort_level model."""
     if outdoor_temp is not None:
         target = round(calculate_ashrae_comfort_temp(outdoor_temp), 1)
     else:
-        target = calculate_seasonal_comfort_target(latitude, month)
+        target = calculate_seasonal_comfort_target(latitude, day_of_year)
 
     effective_temp = temperature
     if humidity is not None and temperature >= HEAT_INDEX_ACTIVATION_TEMP:

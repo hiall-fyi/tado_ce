@@ -273,6 +273,7 @@ def should_pause_polling(
     config_manager: ConfigurationManager,
     *,
     was_paused: bool = False,
+    can_keep_entities_live: bool = False,
 ) -> tuple[bool, str]:
     """Return (should_pause, user_facing_reason) when quota is too low to keep polling.
 
@@ -286,6 +287,10 @@ def should_pause_polling(
     with plenty of quota). Without it, the INFO line would fire every
     cycle once the expected reset window had passed but the API
     response hadn't yet refreshed `last_reset_utc`.
+
+    `can_keep_entities_live` picks the reason text: the manual-actions
+    claim is only true when the caller's own decision keeps entities live
+    through the pause.
     """
     if not config_manager.get_quota_reserve_enabled():
         return False, ""
@@ -339,10 +344,13 @@ def should_pause_polling(
         else:
             reset_info = "reset time unknown, will resume after the next successful API response"
 
+        if can_keep_entities_live:
+            tail = "Manual actions (set temperature, change mode, etc.) still work."
+        else:
+            tail = "Entities are unavailable until quota resets or the next successful update."
         reason = (
             f"Quota critically low ({remaining} remaining, reserve threshold={reserve_threshold}). "
-            f"Polling paused until {reset_info}. "
-            f"Manual actions (set temperature, change mode, etc.) still work."
+            f"Polling paused until {reset_info}. {tail}"
         )
         return True, reason
 

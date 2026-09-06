@@ -1905,7 +1905,8 @@
       "homekit_max_tries": "Demasiados intentos fallidos: el puente está bloqueado temporalmente. Espera unos minutos o reinicia el puente y vuelve a intentarlo.",
       "homekit_busy": "El puente está ocupado; es posible que se esté realizando otra conexión. Inténtalo de nuevo dentro de un momento.",
       "homekit_no_zeroconf": "El emparejamiento con HomeKit requiere el servicio zeroconf de Home Assistant, que no se está ejecutando en este servidor. Añade `default_config:` (o `zeroconf:`) a tu archivo configuration.yaml y reinicia el sistema; a continuación, vuelve a intentarlo.",
-      "homekit_pin_format": "Eso no parece un código de configuración de HomeKit. Introduce el código de 8 dígitos con el formato 123-45-678 (no el código de autorización de 4 dígitos) que aparece en tu puente o en la aplicación de Tado."
+      "homekit_pin_format": "Eso no parece un código de configuración de HomeKit. Introduce el código de 8 dígitos con el formato 123-45-678 (no el código de autorización de 4 dígitos) que aparece en tu puente o en la aplicación de Tado.",
+      "homekit_no_bridge_detected": "Ninguna de tus zonas incluye un Internet Bridge v3 o v3+, que es el único hardware que este flujo de emparejamiento puede detectar. Un Internet Bridge v2 (GW serie) no es compatible con HomeKit, y las unidades Smart AC Control se emparejan por separado con su propio código de HomeKit; este flujo no gestiona ninguno de los dos. Pulsa «Enviar» para volver atrás sin realizar el emparejamiento."
     }
   }
 }

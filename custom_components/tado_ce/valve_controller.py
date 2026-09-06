@@ -49,7 +49,6 @@ class ValveControllerRuntime:
     last_evaluation_ts: float | None = None
     last_schedule_target: float | None = None
     last_cloud_write_ts: float | None = None
-    pending_cloud_target: float | None = None
     overlay_set_by_controller: bool = False
     backed_off_overlay_target: float | None = None
     desired_target: float | None = None
@@ -327,20 +326,18 @@ class SmartValveController:
         last_cloud = self._runtime.last_cloud_write_ts
 
         if last_cloud is not None and (now - last_cloud) < self._cloud_rate_limit_seconds:
-            self._runtime.pending_cloud_target = valve_target
             _LOGGER.debug(
-                "Smart Valve: zone %s cloud write rate-limited, queued "
-                "target %.1f°C for next window",
-                self._zone_id, valve_target,
+                "Smart Valve: zone %s cloud write rate-limited, will "
+                "retry on next evaluation",
+                self._zone_id,
             )
             return False
 
         if self._coordinator.is_cloud_backoff_active():
-            self._runtime.pending_cloud_target = valve_target
             _LOGGER.debug(
                 "Smart Valve: zone %s cloud write held. Tado quota "
-                "backoff active, queued target %.1f°C",
-                self._zone_id, valve_target,
+                "backoff active, will retry on next evaluation",
+                self._zone_id,
             )
             return False
 
@@ -362,7 +359,6 @@ class SmartValveController:
                 self._runtime.last_valve_target = valve_target
                 self._runtime.last_cloud_write_ts = now
                 self._runtime.overlay_set_by_controller = True
-                self._runtime.pending_cloud_target = None
                 self._runtime.last_evaluation_ts = time.monotonic()
                 return True
             _LOGGER.warning(
@@ -372,7 +368,6 @@ class SmartValveController:
             )
             return False
         except (TadoAuthError, TadoRateLimitError) as e:
-            self._runtime.pending_cloud_target = valve_target
             handle_background_write_error(
                 e, self._coordinator.config_entry, self._hass, self._coordinator,
                 f"Smart Valve: zone {self._zone_id} cloud write failed, "
@@ -613,8 +608,6 @@ class SmartValveController:
             if self.should_write(valve_target):
                 await self._async_debounced_write(valve_target)
 
-        await self._async_flush_pending_cloud()
-
     async def _async_debounced_write(self, valve_target: float) -> None:
         """Write the valve target through the action debouncer."""
         async def _do_write() -> None:
@@ -626,20 +619,6 @@ class SmartValveController:
             _do_write,
             window=SMART_VALVE_DEBOUNCE_WINDOW,
         )
-
-    async def _async_flush_pending_cloud(self) -> None:
-        """Write the queued cloud target once the rate-limit window has expired."""
-        pending = self._runtime.pending_cloud_target
-        if pending is None:
-            return
-
-        now = time.monotonic()
-        last_cloud = self._runtime.last_cloud_write_ts
-        if last_cloud is not None and (now - last_cloud) < self._cloud_rate_limit_seconds:
-            return
-
-        self._runtime.pending_cloud_target = None
-        await self._async_write_cloud(pending)
 
     # ------------------------------------------------------------------
     # Input readers

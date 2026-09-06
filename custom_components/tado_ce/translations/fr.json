@@ -1905,7 +1905,8 @@
       "homekit_max_tries": "Trop de tentatives infructueuses : le pont est temporairement verrouillé. Veuillez patienter quelques minutes ou réinitialiser le pont, puis réessayer.",
       "homekit_busy": "Le pont est très fréquenté — un autre appariement est peut-être en cours. Veuillez réessayer dans quelques instants.",
       "homekit_no_zeroconf": "L'appairage HomeKit nécessite le service zeroconf de Home Assistant, qui n'est pas en cours d'exécution sur cet hôte. Ajoutez `default_config:` (ou `zeroconf:`) à votre fichier configuration.yaml, redémarrez, puis réessayez.",
-      "homekit_pin_format": "Cela ne ressemble pas à un code de configuration HomeKit. Saisissez le code à 8 chiffres au format 123-45-678 (et non le code d'authentification à 4 chiffres) qui s'affiche sur votre pont ou dans l'application Tado."
+      "homekit_pin_format": "Cela ne ressemble pas à un code de configuration HomeKit. Saisissez le code à 8 chiffres au format 123-45-678 (et non le code d'authentification à 4 chiffres) qui s'affiche sur votre pont ou dans l'application Tado.",
+      "homekit_no_bridge_detected": "Aucune de vos zones ne répertorie de passerelle Internet v3 ou v3+, qui sont les seuls périphériques que ce flux d’appairage peut détecter. Une passerelle Internet v2 (GW série) ne prend pas en charge HomeKit, et les thermostats intelligents s’appairent séparément à l’aide de leur propre code HomeKit — ce flux ne gère ni l’un ni l’autre. Cliquez sur « Soumettre » pour revenir en arrière sans effectuer d’appairage."
     }
   }
 }

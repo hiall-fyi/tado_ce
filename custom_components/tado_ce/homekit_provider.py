@@ -21,7 +21,6 @@ from .const import (
 )
 from .helpers import mask_home_id
 from .homekit_client import (
-    CHAR_CURRENT_HEATING_STATE,
     CHAR_CURRENT_HUMIDITY,
     CHAR_CURRENT_TEMPERATURE,
     CHAR_IDENTIFY,
@@ -168,24 +167,6 @@ class HomeKitLocalProvider:
             return None, None, None
         return entry
 
-    def get_hvac_state(
-        self, zone_id: str,
-    ) -> tuple[int | None, datetime | None, datetime | None]:
-        """Return current HVAC state (0=Off, 1=Heat, 2=Cool) and timestamps."""
-        entry = self._cache.get(zone_id, {}).get(CHAR_CURRENT_HEATING_STATE)
-        if entry is None:
-            return None, None, None
-        return entry
-
-    def get_target_heating_state(
-        self, zone_id: str,
-    ) -> tuple[int | None, datetime | None, datetime | None]:
-        """Return target HVAC state (0=Off, 1=Heat, 2=Cool, 3=Auto) and timestamps."""
-        entry = self._cache.get(zone_id, {}).get(CHAR_TARGET_HEATING_STATE)
-        if entry is None:
-            return None, None, None
-        return entry
-
     async def set_temperature(self, zone_id: str, temperature: float) -> bool:
         """Write `temperature` to the zone's TRV via HomeKit, returning success."""
         if not self._client.is_connected or not self._client.pairing:
@@ -271,7 +252,6 @@ class HomeKitLocalProvider:
             async with asyncio.timeout(HOMEKIT_WRITE_TIMEOUT_SECONDS):
                 result = await self._client.pairing.put_characteristics([(aid, iid, mode)])
             if not result:
-                self.update_cache(zone_id, CHAR_TARGET_HEATING_STATE, mode)
                 _LOGGER.debug(
                     "HomeKit: zone %s HVAC mode set to %d via local bridge",
                     zone_id, mode,
@@ -401,8 +381,6 @@ class HomeKitLocalProvider:
                 CHAR_CURRENT_TEMPERATURE,
                 CHAR_CURRENT_HUMIDITY,
                 CHAR_TARGET_TEMPERATURE,
-                CHAR_CURRENT_HEATING_STATE,
-                CHAR_TARGET_HEATING_STATE,
             )
 
             for zone_id, aids in self._client.zone_aid_map.items():

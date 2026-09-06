@@ -1905,6 +1905,7 @@
       "homekit_max_tries": "Too many failed attempts — the bridge is temporarily locked. Wait a few minutes or reset the bridge and try again.",
       "homekit_busy": "The bridge is busy — another pairing may be in progress. Try again in a moment.",
       "homekit_no_zeroconf": "HomeKit pairing needs Home Assistant's zeroconf service, which isn't running on this host. Add `default_config:` (or `zeroconf:`) to your configuration.yaml and restart, then try again.",
+      "homekit_no_bridge_detected": "None of your zones list a v3 or v3+ Internet Bridge, the only hardware this pairing flow can find. A v2 Internet Bridge (GW serial) doesn't support HomeKit, and Smart AC Control units pair separately with their own HomeKit code — this flow doesn't handle either. Submit to go back without pairing.",
       "homekit_pin_format": "That does not look like a HomeKit setup code. Enter the 8-digit code in the format 123-45-678 (not the 4-digit auth code), shown on your bridge or in the Tado app."
     }
   }

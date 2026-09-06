@@ -54,6 +54,7 @@ from .helpers import (
     build_timer_termination,
     get_zone_overlay_termination,
     get_zone_state,
+    zone_confirmed_on,
 )
 from .optimistic_helpers import (
     OptimisticUpdateResult,
@@ -969,7 +970,6 @@ class TadoACClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdat
             return
 
         await _check_bootstrap_reserve_or_raise(self.hass, f"AC {self._zone_name}", coordinator=self.coordinator)
-        await self.coordinator.async_capture_state(self._zone_id, self._entity_type, "set_temperature")
 
         tado_mode = HA_TO_TADO_HVAC_MODE.get(hvac_mode) if hvac_mode else None
 
@@ -1029,7 +1029,8 @@ class TadoACClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdat
         local_success = False
         is_simple_temp_write = (
             tado_mode is None
-            and self._attr_hvac_mode not in (HVACMode.OFF, HVACMode.AUTO)
+            and self._attr_hvac_mode != HVACMode.AUTO
+            and zone_confirmed_on(self.coordinator, self._zone_id)
         )
         write_tracker = self.coordinator.write_health_tracker
         if (
@@ -1099,6 +1100,7 @@ class TadoACClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdat
 
         if api_success:
             self._last_write_source = "cloud"
+            await self.coordinator.async_capture_state(self._zone_id, self._entity_type, "set_temperature")
             # Tell the reconciler we just wrote, so a HomeKit bridge
             # update during the protection window can't push a stale
             # value back over the user's change.
@@ -1173,10 +1175,6 @@ class TadoACClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdat
             )
             self._last_write_source = "cloud"
         else:
-            await self.coordinator.async_capture_state(
-                self._zone_id, self._entity_type, "set_hvac_mode",
-            )
-
             old_mode = self._attr_hvac_mode
             old_temp = self._attr_target_temperature
             old_fan = self._attr_fan_mode
@@ -1236,6 +1234,9 @@ class TadoACClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdat
 
             if api_success:
                 self._last_write_source = "cloud"
+                await self.coordinator.async_capture_state(
+                    self._zone_id, self._entity_type, "set_hvac_mode",
+                )
                 if self.coordinator.state_reconciler:
                     self.coordinator.state_reconciler.record_local_write(self._zone_id)
                 _LOGGER.debug(
@@ -1272,10 +1273,6 @@ class TadoACClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdat
             return
 
         await _check_bootstrap_reserve_or_raise(self.hass, f"AC {self._zone_name}", coordinator=self.coordinator)
-
-        await self.coordinator.async_capture_state(
-            self._zone_id, self._entity_type, "set_fan_mode",
-        )
 
         old_fan = self._attr_fan_mode
         old_mode = self._attr_hvac_mode
@@ -1329,6 +1326,9 @@ class TadoACClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdat
             logged_failure = True
 
         if api_success:
+            await self.coordinator.async_capture_state(
+                self._zone_id, self._entity_type, "set_fan_mode",
+            )
             _LOGGER.debug(
                 "Climate AC: %s set fan mode to %s",
                 self._zone_name, fan_mode,
@@ -1415,10 +1415,6 @@ class TadoACClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdat
             self.hass, f"AC {self._zone_name}", coordinator=self.coordinator,
         )
 
-        await self.coordinator.async_capture_state(
-            self._zone_id, self._entity_type, "set_swing_mode",
-        )
-
         old_swing = self._attr_swing_mode
         old_h_swing = self._attr_swing_horizontal_mode
         old_mode = self._attr_hvac_mode
@@ -1472,6 +1468,9 @@ class TadoACClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdat
             logged_failure = True
 
         if api_success:
+            await self.coordinator.async_capture_state(
+                self._zone_id, self._entity_type, "set_swing_mode",
+            )
             _LOGGER.debug(
                 "Climate AC: %s set swing %s",
                 self._zone_name, source_label,

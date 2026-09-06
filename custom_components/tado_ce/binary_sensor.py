@@ -133,7 +133,7 @@ async def async_setup_entry(
     zones_data = await hass.async_add_executor_job(data_loader.load_zones_file)
     if zones_data:
         zone_states = zones_data.get("zoneStates") or {}
-        zone_types = {str(z.get("id")): z.get("type", "HEATING") for z in (zones_info or [])}
+        zone_types = {str(z.get("id")): z.get("type") or "" for z in (zones_info or [])}
         zone_names = {str(z.get("id")): z.get("name", f"Zone {z.get('id')}") for z in (zones_info or [])}
         for zone_id in zone_states:
             if zone_types.get(zone_id) == "HOT_WATER":
@@ -193,7 +193,7 @@ def _create_device_connection_sensors(
     for zone in zones_info:
         zone_id = str(zone.get("id"))
         zone_name = zone.get("name", f"Zone {zone_id}")
-        zone_type = zone.get("type", "HEATING")
+        zone_type = zone.get("type") or ""
         for device in zone.get("devices") or []:
             serial = device.get("shortSerialNo")
             if serial:

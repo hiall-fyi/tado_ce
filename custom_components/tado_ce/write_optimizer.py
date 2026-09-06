@@ -1,13 +1,14 @@
 """Tado CE API write optimisation: guard, debounce, queue, coalesce.
 
-Four primitives the climate / water_heater / switch entities use to
+Five primitives the climate / water_heater / switch entities use to
 keep redundant or rapid-fire calls off the cloud API: `ActionGuard`
 skips calls whose requested state already matches current state,
 `ActionDebouncer` collapses bursts within a per-zone window,
 `DeviceSyncQueue` serialises device-level writes with a configurable
 gap, `RefreshCoalescer` collapses post-write coordinator refreshes
-into one. All four are zone-/entity-scoped, none mutate state on
-their own.
+into one, `ResumeGuard` skips a schedule-resume call for a zone with
+no active overlay. All five are zone-/entity-scoped, none mutate
+state on their own.
 """
 
 from __future__ import annotations
@@ -205,7 +206,6 @@ class DeviceSyncQueue:
         self._delay: float = delay
         self._max_depth: int = max_depth
         self._processor_task: asyncio.Task[None] | None = None
-        self._is_processing: bool = False
         self._shutdown_event: asyncio.Event = asyncio.Event()
 
     async def enqueue(
@@ -254,40 +254,36 @@ class DeviceSyncQueue:
         Fail-forward: a single operation raising or returning False
         does not stop the queue: the next operation still runs.
         """
-        self._is_processing = True
         is_first = True
-        try:
-            while not self._queue.empty() and not self._shutdown_event.is_set():
-                operation = self._queue.get_nowait()
+        while not self._queue.empty() and not self._shutdown_event.is_set():
+            operation = self._queue.get_nowait()
 
-                if not is_first and self._delay > 0:
-                    await asyncio.sleep(self._delay)
-                is_first = False
+            if not is_first and self._delay > 0:
+                await asyncio.sleep(self._delay)
+            is_first = False
 
-                try:
-                    result = await operation.callback()
-                    _LOGGER.debug(
-                        "Write Optimiser: %s completed for %s (result=%s)",
-                        operation.operation_name,
-                        operation.entity_id,
-                        result,
-                    )
-                    if operation.done is not None and not operation.done.done():
-                        operation.done.set_result(bool(result))
-                except Exception:
-                    _LOGGER.warning(
-                        "Write Optimiser: %s failed for %s, operation "
-                        "will not be retried automatically",
-                        operation.operation_name,
-                        operation.entity_id,
-                        exc_info=True,
-                    )
-                    if operation.done is not None and not operation.done.done():
-                        operation.done.set_result(False)
-                finally:
-                    self._queue.task_done()
-        finally:
-            self._is_processing = False
+            try:
+                result = await operation.callback()
+                _LOGGER.debug(
+                    "Write Optimiser: %s completed for %s (result=%s)",
+                    operation.operation_name,
+                    operation.entity_id,
+                    result,
+                )
+                if operation.done is not None and not operation.done.done():
+                    operation.done.set_result(bool(result))
+            except Exception:
+                _LOGGER.warning(
+                    "Write Optimiser: %s failed for %s, operation "
+                    "will not be retried automatically",
+                    operation.operation_name,
+                    operation.entity_id,
+                    exc_info=True,
+                )
+                if operation.done is not None and not operation.done.done():
+                    operation.done.set_result(False)
+            finally:
+                self._queue.task_done()
 
     @property
     def queue_depth(self) -> int:
@@ -325,8 +321,6 @@ class DeviceSyncQueue:
                 "operation(s) in total",
                 dropped_count,
             )
-
-        self._is_processing = False
 
 
 class RefreshCoalescer:

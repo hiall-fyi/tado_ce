@@ -74,32 +74,6 @@ FEATURE_GROUP_CONTEXTS: tuple[FeatureGroupContext, ...] = (
         ),
     ),
     FeatureGroupContext(
-        cleanup_flag="_cleanup_zone_diagnostics",
-        feature_group="zone_diagnostics",
-        label="Zone Diagnostics",
-        legacy_suffixes=(),
-    ),
-    FeatureGroupContext(
-        cleanup_flag="_cleanup_device_controls",
-        feature_group="device_controls",
-        label="Device Controls",
-        legacy_suffixes=(),
-    ),
-    FeatureGroupContext(
-        cleanup_flag="_cleanup_boost_buttons",
-        feature_group="boost_buttons",
-        label="Boost Buttons",
-        legacy_suffixes=(),
-    ),
-    FeatureGroupContext(
-        cleanup_flag="_cleanup_environment_sensors",
-        feature_group="environment",
-        label="Environment Sensors",
-        legacy_suffixes=(
-            "_mold_risk_percentage", "_condensation_risk", "_surface_temperature",
-        ),
-    ),
-    FeatureGroupContext(
         cleanup_flag="_cleanup_thermal_analytics",
         toggle_option="thermal_analytics_enabled",
         feature_group="thermal",
@@ -279,7 +253,9 @@ def cleanup_orphan_device(
 
     identifier = f"tado_ce_{home_id}_{device_suffix}" if home_id else f"tado_ce_{device_suffix}"
 
-    device_entry = device_registry.async_get_device(identifiers={(DOMAIN, identifier)})
+    device_entry = device_registry.async_get_device_by_identifier(
+        (DOMAIN, identifier), entry.entry_id,
+    )
     if device_entry:
         _LOGGER.info(
             "Entity Cleanup: removing orphan device %s (identifier %s)",

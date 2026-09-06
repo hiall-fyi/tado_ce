@@ -943,6 +943,6 @@ class TadoSmartComfortTargetSensor(TadoZoneSensor):
         if self.hass and hasattr(self.hass.config, "latitude"):
             latitude = self.hass.config.latitude or 51.5
 
-        month = dt_util.now().month
+        day_of_year = dt_util.now().timetuple().tm_yday
 
-        return calculate_seasonal_comfort_target(latitude, month)
+        return calculate_seasonal_comfort_target(latitude, day_of_year)

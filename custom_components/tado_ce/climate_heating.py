@@ -56,6 +56,7 @@ from .helpers import (
     get_zone_overlay_termination,
     get_zone_state,
     should_use_homekit_for_overlay,
+    zone_confirmed_on,
 )
 from .optimistic_helpers import (
     OptimisticUpdateResult,
@@ -131,9 +132,6 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
         self._external_temp_sensor = ""
         self._external_humidity_sensor = ""
         self._last_write_source = ""
-
-        # Track last target temp from API for heating cycle detection
-        self._last_target_temp_from_api: float | None = None
 
         # Optimistic state tracking with sequence numbers
         self._optimistic_set_at: float | None = None
@@ -908,13 +906,8 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
 
         await _check_bootstrap_reserve_or_raise(self.hass, self._zone_name, coordinator=self.coordinator)
 
-        # Capture current state before overlay (state restoration)
-        await self.coordinator.async_capture_state(
-            self._zone_id, self._entity_type, "set_temperature",
-        )
-
         old_temp = self._attr_target_temperature
-        zone_was_off = self._attr_hvac_mode == HVACMode.OFF
+        zone_was_off = not zone_confirmed_on(self.coordinator, self._zone_id)
         self._attr_target_temperature = temperature
         self._attr_hvac_mode = HVACMode.HEAT
         self._overlay_type = "MANUAL"  # type: ignore[assignment]
@@ -1060,7 +1053,7 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
         client = self.coordinator.api_client
 
         if hvac_mode == HVACMode.HEAT:
-            zone_was_off = self._attr_hvac_mode == HVACMode.OFF
+            zone_was_off = not zone_confirmed_on(self.coordinator, self._zone_id)
             temp = self._resolve_heat_target()
             local_success = await self._try_homekit_hvac_mode_write(1, "HEAT", zone_was_off=zone_was_off)
             if local_success:

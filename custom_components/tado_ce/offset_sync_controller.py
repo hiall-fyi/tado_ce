@@ -16,6 +16,7 @@ from .const import (
     DEVICE_OFFSET_MIN,
     SMART_VALVE_CLOUD_RATE_LIMIT,
     SMART_VALVE_DEBOUNCE_WINDOW,
+    SVC_OFFSET_MAX_STEP,
     SVC_OFFSET_MIN_CHANGE,
 )
 
@@ -110,19 +111,27 @@ class OffsetSyncController:
         inside_temperature: float,
         current_device_offset: float,
         external_temp: float,
+        max_step: float,
     ) -> OffsetCalc:
         """Calculate the offset that would make Tado display external_temp.
 
         TRV raw reading = inside_temperature - current_device_offset.
-        desired_offset = external_temp - TRV raw, clamped to ±10°C.
+        desired_offset = external_temp - TRV raw, stepped to at most
+        max_step away from current_device_offset (inside_temperature can be
+        momentarily unreliable), then clamped to Tado's ±10°C device limit.
 
-        Returns OffsetCalc with the clamped value and a clamp tag so the
-        caller can surface to the user when the physical gap exceeds
-        Tado's storage limit.
+        Returns OffsetCalc with the stepped-and-clamped value and a clamp
+        tag reflecting only the device-limit clamp, so the caller can
+        surface to the user when the physical gap exceeds Tado's storage
+        limit.
         """
         trv_raw = inside_temperature - current_device_offset
         raw_desired = external_temp - trv_raw
-        clamped = round(max(DEVICE_OFFSET_MIN, min(raw_desired, DEVICE_OFFSET_MAX)), 1)
+        stepped = max(
+            current_device_offset - max_step,
+            min(raw_desired, current_device_offset + max_step),
+        )
+        clamped = round(max(DEVICE_OFFSET_MIN, min(stepped, DEVICE_OFFSET_MAX)), 1)
 
         if raw_desired > DEVICE_OFFSET_MAX:
             direction = "hit_max"
@@ -294,13 +303,16 @@ class OffsetSyncController:
             )
             return
 
-        calc = self.calculate_desired_offset(
-            inside_temperature, physics_offset, external_temp,
-        )
-        desired_offset = calc.value
-
         zone_config = self._zcm.get_zone_config(self._zone_id)
         min_change = float(zone_config.get("svc_offset_min_change", SVC_OFFSET_MIN_CHANGE))
+        # Never smaller than min_change, or should_write's threshold
+        # becomes permanently unreachable.
+        max_step = max(SVC_OFFSET_MAX_STEP, min_change)
+
+        calc = self.calculate_desired_offset(
+            inside_temperature, physics_offset, external_temp, max_step,
+        )
+        desired_offset = calc.value
         effective_current = physics_offset
 
         if not self.should_write(desired_offset, effective_current, min_change):

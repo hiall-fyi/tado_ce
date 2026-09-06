@@ -1905,7 +1905,8 @@
       "homekit_max_tries": "Te veel mislukte pogingen — de bridge is tijdelijk geblokkeerd. Wacht een paar minuten of reset de bridge en probeer het opnieuw.",
       "homekit_busy": "Het is druk op de brug — er is mogelijk weer een koppeling bezig. Probeer het straks nog eens.",
       "homekit_no_zeroconf": "Voor het koppelen van HomeKit is de zeroconf-service van Home Assistant nodig, die op deze host niet actief is. Voeg `default_config:` (of `zeroconf:`) toe aan je configuration.yaml, start het programma opnieuw op en probeer het dan nog eens.",
-      "homekit_pin_format": "Dat lijkt niet op een HomeKit-installatiecode. Voer de 8-cijferige code in de indeling 123-45-678 in (niet de 4-cijferige autorisatiecode), zoals weergegeven op je bridge of in de Tado-app."
+      "homekit_pin_format": "Dat lijkt niet op een HomeKit-installatiecode. Voer de 8-cijferige code in de indeling 123-45-678 in (niet de 4-cijferige autorisatiecode), zoals weergegeven op je bridge of in de Tado-app.",
+      "homekit_no_bridge_detected": "In geen van je zones staat een Internet Bridge v3 of v3+ vermeld; dit is de enige hardware die deze koppelingsstroom kan vinden. Een Internet Bridge v2 (GW serial) ondersteunt HomeKit niet, en Smart AC Control-units worden afzonderlijk gekoppeld met hun eigen HomeKit-code — deze stroom ondersteunt geen van beide. Klik op ‘Verzenden’ om terug te gaan zonder te koppelen."
     }
   }
 }

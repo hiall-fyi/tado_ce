@@ -190,7 +190,7 @@ def _create_zone_sensors(
 
     zone_types: dict[str, str] = {}
     if zones_info:
-        zone_types = {str(z.get("id")): z.get("type", "HEATING") for z in zones_info}
+        zone_types = {str(z.get("id")): z.get("type") or "" for z in zones_info}
 
     zones_with_heating_power: set[str] = set()
     if not zones_data:
@@ -209,7 +209,7 @@ def _create_zone_sensors(
         )
 
     for zone_id, zone_data in zone_states.items():
-        zone_type = zone_types.get(zone_id, "HEATING")
+        zone_type = zone_types.get(zone_id, "")
         zone_name = zone_names.get(zone_id, f"Zone {zone_id}")
 
         if zone_type == "HEATING":
@@ -246,7 +246,7 @@ def _build_device_zone_map(
     for zone in zones_info:
         zone_id = str(zone.get("id"))
         zone_name = zone.get("name", f"Zone {zone_id}")
-        zone_type = zone.get("type", "HEATING")
+        zone_type = zone.get("type") or ""
         for device in zone.get("devices") or []:
             serial = device.get("shortSerialNo")
             if serial:

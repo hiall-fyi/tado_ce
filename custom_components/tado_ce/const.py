@@ -386,6 +386,10 @@ SVC_OFFSET_MIN_CHANGE_MIN: Final[float] = 0.5  # °C, lower bound for config
 SVC_OFFSET_MIN_CHANGE_MAX: Final[float] = 3.0  # °C, upper bound for config
 SVC_OFFSET_MIN_CHANGE_STEP: Final[float] = 0.5  # °C, step size in UI
 
+# Offset Sync: maximum offset movement allowed in a single write, since
+# inside_temperature can be momentarily unreliable while a zone is off.
+SVC_OFFSET_MAX_STEP: Final[float] = 1.0  # °C
+
 # =============================================================================
 # API Write Optimization Constants
 # =============================================================================

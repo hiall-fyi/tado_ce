@@ -134,6 +134,17 @@ def get_zone_state(coord_data: dict[str, Any] | None, zone_id: str) -> dict[str,
     return get_zone_states(coord_data).get(zone_id)
 
 
+def zone_confirmed_on(coordinator: TadoDataUpdateCoordinator, zone_id: str) -> bool:
+    """Whether the last cloud poll has this zone's power ON.
+
+    Not the entity's own `_attr_hvac_mode`, which flips optimistically
+    before a write is confirmed.
+    """
+    zone_data = get_zone_state(coordinator.data, zone_id) or {}
+    setting = zone_data.get("setting") or {}
+    return setting.get("power") == "ON"
+
+
 def merge_homekit_into_zone_data(
     zone_data: dict[str, Any],
     zone_id: str,

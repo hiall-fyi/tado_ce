@@ -307,10 +307,6 @@ class TadoWaterHeaterTimerButton(CoordinatorEntity[TadoDataUpdateCoordinator], B
             self._zone_name, self._duration,
         )
 
-        await self.coordinator.async_capture_state(
-            self._zone_id, "water_heater", "set_timer",
-        )
-
         # Look the entity up by unique_id rather than constructing
         # `water_heater.<slug>`, HA adds `_2` / `_3` suffixes when
         # entity-id collisions occur, and the unique_id is stable.

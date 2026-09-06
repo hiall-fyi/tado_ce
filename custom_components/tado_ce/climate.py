@@ -37,7 +37,7 @@ async def async_setup_entry(
     # Build zone data from coordinator
     zones_info = coordinator.data.get("zones_info") or []
     zone_names = {str(z.get("id")): z.get("name", f"Zone {z.get('id')}") for z in zones_info}
-    zone_types = {str(z.get("id")): z.get("type", "HEATING") for z in zones_info}
+    zone_types = {str(z.get("id")): z.get("type") or "" for z in zones_info}
 
     # Build zone capabilities (AC zones need detailed caps)
     ac_caps = coordinator.data.get("ac_capabilities") or {}
@@ -54,7 +54,7 @@ async def async_setup_entry(
     try:
         zone_states = get_zone_states(coordinator.data)
         for zone_id in zone_states:
-            zone_type = zone_types.get(zone_id, "HEATING")
+            zone_type = zone_types.get(zone_id, "")
             zone_name = zone_names.get(zone_id, f"Zone {zone_id}")
             caps = zone_caps.get(zone_id, {})
 

@@ -358,12 +358,14 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self, zone_data: dict[str, Any] | list[Any] | None, weather_data: dict[str, Any] | list[Any] | None,
     ) -> dict[str, Any]:
         """Run post-sync processing: history detection, cache reads, bridge, WC."""
-        if self._cloud_unavailable_logged:
-            from .repair_helpers import async_dismiss_rate_limit_issue
+        # Dismiss unconditionally (idempotent): reaching here already means
+        # the fetch succeeded, which `_cloud_unavailable_logged` (an
+        # INFO-log dedup flag, not a fetch-succeeded flag) doesn't always reflect.
+        from .repair_helpers import async_dismiss_rate_limit_issue
 
-            self._log_cloud_available()
-            async_dismiss_rate_limit_issue(self.hass, self.home_id)
-            self._rate_limited_until = None
+        async_dismiss_rate_limit_issue(self.hass, self.home_id)
+        self._rate_limited_until = None
+        self._log_cloud_available()  # own internal `_cloud_unavailable_logged` dedup
 
         from .ratelimit import (
             async_detect_reset_from_history,
@@ -655,6 +657,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._cached_ratelimit,
                 self.config_manager,
                 was_paused=self._was_paused,
+                can_keep_entities_live=self._homekit_can_keep_entities_live,
             )
             if should_pause:
                 _LOGGER.warning("Coordinator: %s", reason)
@@ -1684,10 +1687,11 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         current_zones = self._zone_fingerprint._previous or frozenset()
 
-        # Flat zone-keyed caches only. `zone_config` must NOT be added: it
-        # persists wrapped, so pruning it here empties the whole store.
+        # Flat zone-keyed caches only. `zone_config` and `smart_comfort_cache`
+        # must NOT be added: both persist wrapped, so pruning either here
+        # empties the whole store.
         for store_name in (
-            "schedules", "smart_comfort_cache",
+            "schedules",
             "ac_capabilities", "ac_capabilities_fp", "offsets",
             "heating_circuit_control",
         ):
@@ -1889,6 +1893,8 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         )
                 await self._prune_reassigned_schedules({zone_id})
                 await self._prune_reassigned_homekit_mapping({zone_id})
+                if self._sr_manager is not None:
+                    await self._sr_manager.prune_reassigned_zones({zone_id})
             except Exception:
                 # Broad on purpose: a single zone's prune failure must not
                 # block the poll cycle or the other zone_ids in this batch.

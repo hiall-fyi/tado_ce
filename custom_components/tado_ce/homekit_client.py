@@ -75,6 +75,23 @@ def _is_tado_bridge(category: Any, name: str) -> bool:
     return category == Categories.BRIDGE and "tado" in (name or "").lower()
 
 
+def _bridgeless_home(zones_info: list[dict[str, Any]]) -> bool:
+    """Return True only when zones positively show devices and none is a Tado bridge.
+
+    Fails open on missing/stale `zones_info` so a heating home isn't
+    blocked by data that hasn't loaded yet.
+    """
+    from .const import TADO_BRIDGE_MODELS
+
+    saw_a_device = False
+    for zone in zones_info:
+        for device in zone.get("devices") or []:
+            saw_a_device = True
+            if device.get("deviceType") in TADO_BRIDGE_MODELS:
+                return False
+    return saw_a_device
+
+
 async def async_create_controller(hass: HomeAssistant) -> Any:
     """Build and start an aiohomekit Controller on the shared zeroconf instance.
 
@@ -241,6 +258,9 @@ class HomeKitClient:
             self._is_connected = True
             self._register_config_changed_listener()
             self._last_connected = dt_util.utcnow().isoformat()
+            # A successful probe is proof the pairing is valid again, so
+            # clear any stale "pairing invalid" issue too.
+            async_dismiss_homekit_pairing_invalid_issue(self._hass, self._home_id)
             _LOGGER.info(
                 "HomeKit: connected to bridge for home %s",
                 mask_home_id(self._home_id),
@@ -546,7 +566,9 @@ class HomeKitClient:
                 )
                 return result
             return []
-        except (AccessoryDisconnectedError, HKTimeoutError, HomeKitException):
+        except Exception:
+            # Broad on purpose, matching every other bridge-touching method
+            # here: must degrade, not crash the whole config entry.
             _LOGGER.debug(
                 "HomeKit: could not list accessories, connection may "
                 "be unhealthy, returning empty list",
@@ -749,6 +771,21 @@ async def async_step_homekit_pairing(
     import voluptuous as vol
 
     errors: dict[str, str] = {}
+
+    zones_info = flow.config_entry.runtime_data.data.get("zones_info") or []
+    if _bridgeless_home(zones_info):
+        if user_input is not None:
+            # Acknowledged: cancel pairing the same way an empty PIN does,
+            # since there's no bridge for this home to pair with.
+            if flow._pending_general_options:
+                flow._pending_general_options["homekit_enabled"] = False
+                return flow.async_create_entry(title="", data=flow._pending_general_options)
+            return await flow.async_step_init()
+        return flow.async_show_form(
+            step_id="homekit_pairing",
+            data_schema=vol.Schema({}),
+            errors={"base": "homekit_no_bridge_detected"},
+        )
 
     if user_input is not None:
         raw = user_input.get("homekit_pin", "").strip()

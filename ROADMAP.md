@@ -10,7 +10,7 @@ For completed features, see [CHANGELOG.md](CHANGELOG.md).
 
 **On API-call optimisation as a through-line.** A design principle that runs through the whole v4.x line: spend as few of your daily Tado API calls as possible without losing freshness. The pieces already shipped (the 5-minute polling floor, per-type refresh floors you can tune, deferring to HomeKit's dial when local control is connected, taking the offset refresh off its all-at-once burst, and the `tado_ce.refresh` service that lets you force a single presence fetch past the floor when you drive your own cadence) are in the changelog. The next step on this front is the API resilience pass under **Later** below, which hardens how the integration degrades when any one Tado endpoint is unavailable. The goal stays the same: your quota goes further and local control stays solid.
 
-All AC writes (target temperature, HVAC mode, swing, fan, timers) currently go through the cloud. See the AC entry below for why HomeKit local control on Smart AC Control V3+ isn't on the active roadmap.
+AC mode, swing, fan and timer changes all go through the cloud. A plain temperature change on a running AC zone can go over HomeKit when the bridge is connected, the same as a heating zone. See the AC entry below for why fuller HomeKit local control on Smart AC Control V3+ isn't on the active roadmap.
 
 ## Later — feature additions, no fixed release
 
@@ -25,7 +25,7 @@ A spring-clean release that drops backward-compat code accumulated through the v
 
 **You will need v4.1.0 or later installed before you upgrade to v5.0.0, and if you are older than that, go through v4.3.x.** Two different numbers, so worth separating. v4.1.0 is the line v5.0.0 refuses to load below, because that is where the saved-settings format it reads begins. v4.3.x is what to install if you are below that line: any 4.1.0+ release would update your settings, but there is no reason to pick an older one. Coming from v4.1.0 or later, there is nothing to do. v5.0.0 will not auto-migrate the v3.x option keys, entity unique_ids or storage layouts, because the code that handled those upgrades is removed in that release. The path through v4.3.x stays open, so there is no rush to do it in one jump.
 
-Note this is v5.0.0's rule, not this release's. v4.4.0 itself still accepts an entry from v3.0.0 onwards.
+Note this is v5.0.0's rule, not this release's. v4.4.1 itself still accepts an entry from v3.0.0 onwards.
 
 Planned removals:
 

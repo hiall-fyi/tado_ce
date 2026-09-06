@@ -211,11 +211,14 @@ class TadoWaterHeater(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpd
     def _resolve_api_operation(
         self, overlay: dict[str, Any] | None, api_overlay_type: str | None, power: str | None,
     ) -> str:
-        """Determine API operation mode from overlay state."""
+        """Determine API operation mode from overlay state.
+
+        Tado's `overlayType` only ever reports that an overlay exists
+        ("MANUAL"), not which termination it carries, so a power-ON overlay
+        of any termination (including a timer) reads STATE_HEAT here.
+        """
         if not overlay or api_overlay_type is None:
             return STATE_AUTO
-        if api_overlay_type == "TIMER":
-            return STATE_HEAT
         if api_overlay_type == "MANUAL":
             return STATE_OFF if power == "OFF" else STATE_HEAT
         return STATE_AUTO
@@ -365,12 +368,6 @@ class TadoWaterHeater(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpd
         """Set new operation mode with retry logic (async)."""
         await _check_bootstrap_reserve_or_raise(self.hass, f"hot water {self._zone_name}", coordinator=self.coordinator)
 
-        # Capture state before overlay (non-AUTO only; AUTO is a restoration point)
-        if operation_mode != STATE_AUTO:
-            await self.coordinator.async_capture_state(
-                self._zone_id, self._entity_type, "manual_override",
-            )
-
         previous_mode = self._attr_current_operation
         previous_overlay = self._overlay_type
 
@@ -460,10 +457,6 @@ class TadoWaterHeater(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpd
             )
             return False
 
-        await self.coordinator.async_capture_state(
-            self._zone_id, self._entity_type, "manual_override",
-        )
-
         client = self.coordinator.api_client
 
         setting = {"type": "HOT_WATER", "power": "OFF"}
@@ -471,6 +464,9 @@ class TadoWaterHeater(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpd
 
         success = await client.set_zone_overlay(self._zone_id, setting, termination)
         if success:
+            await self.coordinator.async_capture_state(
+                self._zone_id, self._entity_type, "manual_override",
+            )
             _LOGGER.debug(
                 "Water Heater: %s turned off", self._zone_name,
             )
@@ -487,10 +483,6 @@ class TadoWaterHeater(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpd
             )
             return False
 
-        await self.coordinator.async_capture_state(
-            self._zone_id, self._entity_type, "set_timer",
-        )
-
         client = self.coordinator.api_client
 
         setting: dict[str, Any] = {"type": "HOT_WATER", "power": "ON"}
@@ -505,6 +497,9 @@ class TadoWaterHeater(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpd
 
         success = await client.set_zone_overlay(self._zone_id, setting, termination)
         if success:
+            await self.coordinator.async_capture_state(
+                self._zone_id, self._entity_type, "set_timer",
+            )
             sent_temp = setting.get("temperature", {}).get("celsius")
             temp_str = f" at {sent_temp}°C" if sent_temp is not None else ""
             _LOGGER.debug(
