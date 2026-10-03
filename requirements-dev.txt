@@ -19,4 +19,4 @@ freezegun==1.5.5
 asyncssh==2.24.0
 
 # Mutation testing (pyproject.toml [tool.mutmut]).
-mutmut==3.5.0
+mutmut==3.8.0
