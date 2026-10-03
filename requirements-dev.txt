@@ -13,7 +13,7 @@ mypy==2.0.0
 # fresh clone can set up the same local environment.
 pytest==9.0.3
 pytest-asyncio==1.4.0
-pytest-homeassistant-custom-component==0.13.363
+pytest-homeassistant-custom-component==0.13.367
 hypothesis==6.152.4
 freezegun==1.5.5
 asyncssh==2.23.0
