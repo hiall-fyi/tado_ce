@@ -1,0 +1,22 @@
+# Development dependencies for a local checkout. Pinned so a failure means the
+# code changed, not a dependency. Runtime deps live in manifest.json.
+#
+# Lint and type checking run locally, not in CI: the ruff and mypy settings
+# live in pyproject.toml, which is not part of this repository, so a CI runner
+# would silently check against tool defaults instead. Home Assistant is here
+# because the mypy settings are tuned against its type stubs.
+homeassistant==2026.9.0
+ruff==0.15.12
+mypy==2.0.0
+
+# The test suite is not part of this repository either; these are here so a
+# fresh clone can set up the same local environment.
+pytest==9.0.3
+pytest-asyncio==1.4.0
+pytest-homeassistant-custom-component==0.13.363
+hypothesis==6.152.4
+freezegun==1.5.5
+asyncssh==2.23.0
+
+# Mutation testing (pyproject.toml [tool.mutmut]).
+mutmut==3.5.0

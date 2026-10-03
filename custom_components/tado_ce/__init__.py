@@ -45,6 +45,8 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
     from homeassistant.helpers import device_registry as dr
 
+    from .coordinator import TadoConfigEntry
+
 _LOGGER = logging.getLogger(__name__)
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -149,7 +151,7 @@ async def _async_init_optional_components(
 
 async def _async_wire_and_start_coordinator(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: TadoConfigEntry,
     coordinator: TadoDataUpdateCoordinator,
     optional: dict[str, Any],
     overlay_mode: str,
@@ -230,18 +232,21 @@ async def _async_wire_and_start_coordinator(
         if deferred_rebuild is not None:
             await deferred_rebuild(coordinator)
 
-    zones_info = coordinator.data.get("zones_info") or []
-    if zones_info:
-        from .setup_entry_helpers import register_bridge_devices
-
-        register_bridge_devices(hass, entry.entry_id, zones_info)
-
     from .setup_entry_helpers import register_hub_device
 
     register_hub_device(hass, entry.entry_id, coordinator.home_id)
     entry.async_on_unload(
         functools.partial(clear_cached_hub_device_id, coordinator.home_id),
     )
+
+    zones_info = coordinator.data.get("zones_info") or []
+    home_devices = coordinator.data.get("home_devices") or []
+    if zones_info or home_devices:
+        from .setup_entry_helpers import register_bridge_devices
+
+        register_bridge_devices(
+            hass, entry.entry_id, coordinator.home_id, zones_info, home_devices,
+        )
 
     entry.runtime_data = coordinator
     _LOGGER.debug(
@@ -275,7 +280,7 @@ async def _async_finalize_entry(
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: TadoConfigEntry) -> bool:
     """Set up one Tado CE config entry, full setup pipeline."""
     _LOGGER.info(
         "Setup: starting entry %s (schema version %s, home_id %s)",
@@ -376,7 +381,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Bring HomeKit online (refresh + subscribe when connected, else
         # start the background reconnect). Degrades on any failure so a
         # bridge dropping mid-setup can't crash the whole entry.
-        await async_activate_homekit(coordinator, provider, homekit_client)
+        try:
+            await async_activate_homekit(coordinator, provider, homekit_client)
+        except Exception as e:
+            _LOGGER.warning("HomeKit activation failed, degrading to cloud-only: %s", e)
 
         # On bridge reconnect we re-subscribe events and reset the
         # write-health circuit breaker so the integration recovers
@@ -567,7 +575,7 @@ def _unregister_all_services(hass: HomeAssistant) -> None:
     )
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: TadoConfigEntry) -> bool:
     """Tear down one Tado CE config entry: coordinator, components, platforms, services."""
     _LOGGER.info("Unload: starting for entry %s", entry.entry_id)
 
@@ -617,7 +625,7 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 async def async_remove_config_entry_device(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: TadoConfigEntry,
     device_entry: dr.DeviceEntry,
 ) -> bool:
     """Allow HA to remove a device only when it doesn't correspond to a live zone or hub.

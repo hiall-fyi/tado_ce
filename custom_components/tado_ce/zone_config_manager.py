@@ -19,6 +19,16 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
+def _resolve_capability_temp_limit(zone_capabilities: dict[str, Any], limit_type: str, default: float) -> float:
+    """Read `min` / `max` temperature for the first AC mode that exposes one."""
+    for mode in ("COOL", "HEAT", "AUTO", "DRY"):
+        if mode in zone_capabilities and "temperatures" in zone_capabilities[mode]:
+            temp_caps = zone_capabilities[mode]["temperatures"].get("celsius") or {}
+            if limit_type in temp_caps:
+                return temp_caps[limit_type]  # type: ignore[no-any-return]
+    return default
+
+
 class ZoneConfigManager:
     """Per-zone settings store + listener fan-out, backed by DataLoader's auxiliary store."""
 
@@ -110,6 +120,21 @@ class ZoneConfigManager:
             return config.get(key, DEFAULT_ZONE_CONFIG.get(key))
         return config.get(key, default)
 
+    def _notify_listeners(self, zone_id: str, key: str, value: Any) -> None:
+        """Fan out one config change to every listener, isolating exceptions per-listener."""
+        for listener in self._listeners:
+            try:
+                listener(zone_id, key, value)
+            except Exception:
+                _LOGGER.warning(
+                    "Zone Config: listener raised while handling "
+                    "zone %s key %s, continuing with the next "
+                    "listener so other consumers still get the "
+                    "update",
+                    zone_id, key,
+                    exc_info=True,
+                )
+
     async def async_set_zone_value(self, zone_id: str, key: str, value: Any) -> None:
         """Set one config key for a zone, persist, and notify listeners on change."""
         zone_id = str(zone_id)
@@ -122,18 +147,16 @@ class ZoneConfigManager:
         await self.async_save()
 
         if old_value != value:
-            for listener in self._listeners:
-                try:
-                    listener(zone_id, key, value)
-                except Exception:
-                    _LOGGER.warning(
-                        "Zone Config: listener raised while handling "
-                        "zone %s key %s, continuing with the next "
-                        "listener so other consumers still get the "
-                        "update",
-                        zone_id, key,
-                        exc_info=True,
-                    )
+            self._notify_listeners(zone_id, key, value)
+
+    async def async_delete_zone_value(self, zone_id: str, key: str) -> None:
+        """Remove a per-zone override so the key falls back to its default/global resolution; no-op if it was never set."""
+        zone_id = str(zone_id)
+        if zone_id not in self._config or key not in self._config[zone_id]:
+            return
+        del self._config[zone_id][key]
+        await self.async_save()
+        self._notify_listeners(zone_id, key, self.get_zone_value(zone_id, key))
 
     async def async_prune_reassigned_zones(self, zone_ids: set[str]) -> set[str]:
         """Delete a reused zone's settings from the live config so a later unrelated save can't resurrect them."""
@@ -209,6 +232,20 @@ class ZoneConfigManager:
         """Resolve the U-value (W/m²K) for the zone's effective window type."""
         window_type = self.get_effective_window_type(zone_id, config_manager)
         return WINDOW_U_VALUES.get(window_type, WINDOW_U_VALUES[DEFAULT_WINDOW_TYPE])
+
+    def get_effective_min_temp(self, zone_id: str, zone_capabilities: dict[str, Any]) -> float:
+        """Resolve an AC zone's min temperature: explicit override clamped to the hardware floor, else the floor itself."""
+        caps_min = _resolve_capability_temp_limit(zone_capabilities, "min", 16.0)
+        if self.has_zone_override(zone_id, "min_temp"):
+            return max(float(self.get_zone_value(zone_id, "min_temp", caps_min)), caps_min)
+        return caps_min
+
+    def get_effective_max_temp(self, zone_id: str, zone_capabilities: dict[str, Any]) -> float:
+        """Resolve an AC zone's max temperature: explicit override clamped to the hardware ceiling, else the ceiling itself."""
+        caps_max = _resolve_capability_temp_limit(zone_capabilities, "max", 30.0)
+        if self.has_zone_override(zone_id, "max_temp"):
+            return min(float(self.get_zone_value(zone_id, "max_temp", caps_max)), caps_max)
+        return caps_max
 
     def get_passive_detector_window_u_value(self, zone_id: str) -> float:
         """Resolve the per-zone U-value for the passive open-window detector's threshold scaling.

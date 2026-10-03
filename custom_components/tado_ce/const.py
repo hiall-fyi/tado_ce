@@ -102,6 +102,7 @@ FORCEABLE_FETCH_ZONE_STATES = "zone_states"
 
 # API Base URLs
 TADO_API_BASE = "https://my.tado.com/api/v2"
+TADO_GRAPHQL_API = "https://ext.api.tado.com/apps/graphql"
 TADO_AUTH_URL = "https://login.tado.com/oauth2"
 CLIENT_ID = "1bb50063-6b0c-4d11-bd99-387f4a91cc46"
 
@@ -334,9 +335,9 @@ WINDOW_DETECTION_MODE_REVERSE_MAP = {v: k for k, v in WINDOW_DETECTION_MODE_MAP.
 WINDOW_DETECTION_MODE_DEFAULT = "auto"
 
 # Device offset sanity bounds, reject values outside this range.
-# Tado devices support roughly -10 to +10°C offsets; anything beyond
-# that is almost certainly a bad API response or automation feedback loop.
-DEVICE_OFFSET_MIN: float = -10.0
+# Tado's API rejects exactly -10.0 (real floor is -9.99); -9.9 keeps clear of
+# it after this integration's 1-decimal rounding.
+DEVICE_OFFSET_MIN: float = -9.9
 DEVICE_OFFSET_MAX: float = 10.0
 
 
@@ -389,6 +390,10 @@ SVC_OFFSET_MIN_CHANGE_STEP: Final[float] = 0.5  # °C, step size in UI
 # Offset Sync: maximum offset movement allowed in a single write, since
 # inside_temperature can be momentarily unreliable while a zone is off.
 SVC_OFFSET_MAX_STEP: Final[float] = 1.0  # °C
+
+# Offset Sync: readings within this of each other count as unchanged (API
+# precision is 0.1°C).
+SVC_OFFSET_TRV_EPSILON: Final[float] = 0.05  # °C
 
 # =============================================================================
 # API Write Optimization Constants

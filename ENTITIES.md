@@ -1,4 +1,4 @@
-# Tado CE — Entity Reference (v4.0.1)
+# Tado CE — Entity Reference (v4.5.0)
 
 A catalogue of every entity Tado CE creates, with the exact `entity_id` you'll see in your install.
 
@@ -190,6 +190,7 @@ Six sensors per zone, all CE-exclusive, all diagnostic.
 | Condensation risk | Condensation Risk (was "Condensation" in v3.5.x) | `sensor.lounge_condensation_risk` | `sensor.lounge_condensation` (v3.5) → `sensor.lounge_condensation_risk` (v4.0+) |
 | Surface temperature | Surface Temp | `sensor.lounge_surface_temperature` | `sensor.lounge_surface_temp` |
 | Dew point | Dew Point | `sensor.lounge_dew_point` | `sensor.lounge_dew_point` |
+| Absolute humidity | Absolute Humidity (v4.5.0+) | — (new in v4.5.0) | `sensor.lounge_absolute_humidity` |
 | Comfort level | Comfort Level | `sensor.lounge_comfort_level` | `sensor.lounge_comfort_level` |
 
 **Mold Risk vs Mold Risk Indicator** — these aren't duplicates. The text sensor's state is the risk level (`Critical` / `High` / `Medium` / `Low` / `None`); the numeric sensor's state is surface relative humidity (0–100%) for HA history graphs and threshold automations. Added together in v2.0.1 by request. The numeric sensor was renamed from "Mold Risk %" to "Mold Risk Indicator" in v4.0.1, which also fixed an earlier slug collision (HA's slugify dropped the `%`, so a fresh install gave the second entity an `_2` suffix); its slug is now `mold_risk_pct`.

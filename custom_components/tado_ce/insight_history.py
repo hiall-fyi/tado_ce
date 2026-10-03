@@ -36,7 +36,6 @@ class InsightHistoryTracker:
     """Track insight appearance/disappearance for duration-aware messages and escalation."""
 
     def __init__(self, hass: HomeAssistant, home_id: str) -> None:
-        """Initialize tracker."""
         self._hass = hass
         self._home_id = home_id
         self._store: Store[dict[str, Any]] = Store(

@@ -15,7 +15,6 @@ class HeatingCycleAnalyzer:
     """Analyze heating cycles to extract performance metrics."""
 
     def __init__(self, min_cycles: int = 3) -> None:
-        """Initialize analyzer with minimum cycle requirement."""
         self._min_cycles = min_cycles
 
     def analyze_cycles(self, cycles: list[HeatingCycle]) -> dict[str, Any] | None:

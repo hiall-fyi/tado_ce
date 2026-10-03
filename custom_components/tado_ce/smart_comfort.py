@@ -675,7 +675,15 @@ class SmartComfortManager:
             total_readings = 0
 
             for zone_id, zone_data in zones_data.items():
-                zone = ZoneHistory.from_dict(zone_data)
+                try:
+                    zone = ZoneHistory.from_dict(zone_data)
+                except (KeyError, TypeError, ValueError):
+                    _LOGGER.warning(
+                        "Smart Comfort: skipping malformed cache record for zone %s",
+                        zone_id,
+                        exc_info=True,
+                    )
+                    continue
                 zone.set_history_days(self._history_days)
 
                 if zone.readings:

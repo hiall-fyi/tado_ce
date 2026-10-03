@@ -79,7 +79,7 @@
         }
       },
       "bridge_connected": {
-        "name": "Bridge"
+        "name": "Connection"
       },
       "connection": {
         "name": "Connection",
@@ -1008,6 +1008,23 @@
       },
       "homekit_writes_saved": {
         "name": "HomeKit Writes Saved"
+      },
+      "absolute_humidity": {
+        "name": "Absolute Humidity",
+        "state_attributes": {
+          "room_temperature": {
+            "name": "Room temperature"
+          },
+          "humidity": {
+            "name": "Humidity"
+          },
+          "calculation_method": {
+            "name": "Calculation method"
+          },
+          "zone_type": {
+            "name": "Zone type"
+          }
+        }
       }
     },
     "select": {
@@ -1426,6 +1443,36 @@
     },
     "rate_limited": {
       "message": "Tado API rate-limited. Try again in {retry_after_minutes} min."
+    },
+    "ac_set_temperature_failed": {
+      "message": "AC {zone_name}: set temperature failed"
+    },
+    "ac_set_hvac_mode_failed": {
+      "message": "AC {zone_name}: set {hvac_mode} mode failed"
+    },
+    "ac_set_fan_mode_failed": {
+      "message": "AC {zone_name}: set fan mode failed"
+    },
+    "ac_set_swing_mode_failed": {
+      "message": "AC {zone_name}: set swing mode failed"
+    },
+    "presence_mode_set_failed": {
+      "message": "Set presence mode to {option} failed"
+    },
+    "early_start_queue_full": {
+      "message": "Early Start {zone_name}: device sync queue full"
+    },
+    "child_lock_queue_full": {
+      "message": "Child Lock {zone_name}: device sync queue full"
+    },
+    "water_heater_set_mode_failed": {
+      "message": "Hot water for {zone_name}: set {operation_mode} failed after {attempts} attempts"
+    },
+    "bridge_client_not_available": {
+      "message": "Bridge API client not available"
+    },
+    "boiler_max_output_temp_failed": {
+      "message": "Failed to set boiler max output temperature"
     }
   },
   "issues": {
@@ -1535,7 +1582,7 @@
     "step": {
       "init": {
         "title": "Tado CE Options",
-        "description": "Tailor your Tado experience — built by the community, for the community.",
+        "description": "Set up Tado CE the way you want it, built by the community, for the community.",
         "menu_options": {
           "general_settings": "General Settings",
           "advanced_settings": "Advanced Settings",
@@ -1670,17 +1717,17 @@
               "wc_hysteresis": "Change Hysteresis"
             },
             "data_description": {
-              "wc_slope": "How steeply flow temperature rises as it gets colder outside. Higher = more aggressive heating (0.3–3.0). Auto-adjusted by heating system preset above.",
+              "wc_slope": "How steeply flow temperature rises as it gets colder outside. Higher = more aggressive heating (0.3–3.0). Only used when the heating system preset above is Custom; otherwise it's calculated from your Max/Min Flow, Shutoff and Design Outdoor Temp values.",
               "wc_design_outdoor_temp": "The coldest temperature you expect in your area (-30 to 10°C)",
-              "wc_max_flow_temp": "Highest flow temperature your boiler should reach at the coldest outdoor temp (25–80°C). Auto-adjusted by heating system preset above.",
-              "wc_min_flow_temp": "Lowest flow temperature — also used when heating shuts off (25–60°C). Auto-adjusted by heating system preset above.",
+              "wc_max_flow_temp": "Highest flow temperature your boiler should reach at the coldest outdoor temp (25–80°C). Feeds the automatic slope calculation unless the preset above is Custom.",
+              "wc_min_flow_temp": "Lowest flow temperature — also used when heating shuts off (25–60°C). Feeds the automatic slope calculation unless the preset above is Custom.",
               "wc_shutoff_temp": "Stop heating when outdoor temperature rises above this (5–30°C)",
               "wc_smoothing_method": "How outdoor temperature readings are averaged to avoid sudden changes",
               "wc_smoothing_window": "How long to average outdoor temperature over (15–1440 min)",
               "wc_room_compensation_factor": "How much to adjust flow temperature when a room is colder or warmer than its target (1.0–5.0)",
               "wc_step_size": "Round flow temperature to this step size — larger steps mean fewer boiler adjustments (0.5–2.0°C)",
               "wc_hysteresis": "Only send a new flow temperature when it differs from the last one by at least this much (0.5–3.0°C)",
-              "wc_heating_system_preset": "Selecting a preset sets recommended defaults for slope and flow temperatures. Choose Custom to tune each field manually.",
+              "wc_heating_system_preset": "Custom lets you set your own slope; the other options calculate it automatically from your Max/Min Flow, Shutoff and Design Outdoor Temp fields above.",
               "wc_room_compensation_enabled": "Nudge the flow temperature up or down when a room is colder or warmer than its target, on top of the outdoor-weather curve."
             }
           },
@@ -1716,8 +1763,8 @@
               "mobile_devices_min_refresh_minutes": "Mobile Device Tracking Refresh Interval"
             },
             "data_description": {
-              "day_start_hour": "When daytime polling starts (0–23, default: 7)",
-              "night_start_hour": "When nighttime polling starts — polls less often at night (0–23, default: 23)",
+              "day_start_hour": "When daytime polling starts (0–23, default: 7). If Offset Sync's quiet hours are on, this is also when it resumes writing overnight corrections.",
+              "night_start_hour": "When nighttime polling starts — polls less often at night (0–23, default: 23). If Offset Sync's quiet hours are on, this is also when it stops writing overnight corrections.",
               "custom_day_interval": "Override automatic daytime polling with a fixed interval. Leave empty to let Tado CE adjust polling based on your API quota. (1–1440 min)",
               "custom_night_interval": "Override automatic nighttime polling with a fixed interval. Leave empty to let Tado CE adjust polling based on your API quota. (1–1440 min)",
               "refresh_debounce_seconds": "Wait this long after a change before fetching fresh data from Tado (1–60s)",
@@ -1744,11 +1791,13 @@
             "name": "Outdoor Sensors",
             "data": {
               "use_outdoor_temp_entity": "Use Outdoor Temperature Entity",
-              "outdoor_temp_entity": "Outdoor Temperature Entity"
+              "outdoor_temp_entity": "Outdoor Temperature Entity",
+              "boiler_flow_temp_entity": "Boiler Flow Temperature Entity"
             },
             "data_description": {
               "use_outdoor_temp_entity": "Turn off to disable features that need outdoor temperature (comfort scoring, mold risk)",
-              "outdoor_temp_entity": "Sensor providing outdoor temperature (e.g., weather.home or a local sensor)"
+              "outdoor_temp_entity": "Sensor providing outdoor temperature (e.g., weather.home or a local sensor)",
+              "boiler_flow_temp_entity": "Third-party boiler flow-temperature sensor (ebusd, OpenTherm Gateway, myVaillant) for homes without a Tado Internet Bridge. Feeds the Boiler Flow Temperature sensor and its efficiency insight."
             }
           }
         }
@@ -1888,7 +1937,8 @@
       }
     },
     "abort": {
-      "no_zones": "No zones available for configuration."
+      "no_zones": "No zones available for configuration.",
+      "integration_not_ready": "Tado CE hasn't finished loading yet. Wait a moment and try again."
     },
     "error": {
       "interval_out_of_range": "Polling interval must be between 1 and 1440 minutes",

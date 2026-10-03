@@ -18,6 +18,7 @@ from .const import (
     SMART_VALVE_DEBOUNCE_WINDOW,
     SVC_OFFSET_MAX_STEP,
     SVC_OFFSET_MIN_CHANGE,
+    SVC_OFFSET_TRV_EPSILON,
 )
 
 if TYPE_CHECKING:
@@ -27,6 +28,7 @@ if TYPE_CHECKING:
 
 from .climate_helpers import SensorProxy, subscribe_external_sensors
 from .exceptions import TadoAuthError, TadoRateLimitError
+from .polling import is_daytime
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,11 +43,13 @@ class OffsetSyncRuntime:
     last_written_offset: float | None = None
     last_offset_write_ts: float | None = None
     paused_until_ts: float | None = None
-    # Zone-fetch epoch (coordinator._last_cloud_zone_fetch) in effect at the
+    # Zone-fetch epoch (coordinator.zone_fetch_epoch_for_write) in effect at the
     # last confirmed write. Settling-gate compares it against the current
     # epoch: a write is only allowed once a newer zone-state poll has
     # refreshed inside_temperature to reflect that write.
     zone_fetch_at_last_write: datetime | None = None
+    # inside_temperature at the last write; a newer epoch alone doesn't prove this zone's reading refreshed.
+    inside_temp_at_last_write: float | None = None
     unsub_external_sensors: list[CALLBACK_TYPE] = field(default_factory=list)
     # Set in async_deactivate before unsub/cancel so in-flight sensor
     # callbacks and scheduled debounce timers short-circuit instead of
@@ -58,7 +62,7 @@ class OffsetCalc:
     """Result of calculate_desired_offset: clamped value plus clamp tag.
 
     clamp_direction is "none" (in range), "hit_max" (raw > +10), or
-    "hit_min" (raw < -10). A raw value exactly on the limit is "none";
+    "hit_min" (raw < -9.9). A raw value exactly on the limit is "none";
     only true overshoots flag.
     """
 
@@ -193,20 +197,29 @@ class OffsetSyncController:
             return False
         return time.monotonic() < paused_until
 
-    def is_settling(self) -> bool:
+    def is_settling(self, inside_temperature: float) -> bool:
         """Return True while inside_temperature has not refreshed since the last write.
 
-        Suppresses writes until the cloud zone-state poll reflects the last
-        offset write, so the controller can't march on stale feedback (the
-        dead-time oscillation).
+        Suppresses on either a stale zone-fetch epoch or an unchanged reading,
+        since a newer epoch alone doesn't guarantee this zone's own reading
+        refreshed.
         """
         at_write = self._runtime.zone_fetch_at_last_write
         if at_write is None:
             return False  # never written, nothing to settle against
+
+        last_seen = self._runtime.inside_temp_at_last_write
+        if last_seen is not None and abs(inside_temperature - last_seen) < SVC_OFFSET_TRV_EPSILON:
+            return True  # same reading as last write, not a fresh measurement
+
         current = self._coordinator.last_zone_fetch_ts()
         if current is None:
             return False  # no fetch recorded yet, don't block
         return current <= at_write  # not advanced → still settling
+
+    def is_quiet_hours(self) -> bool:
+        """Return True outside the configured day window, reusing Smart Polling's hours rather than a dedicated setting."""
+        return not is_daytime(self._coordinator.config_manager)
 
     def on_external_offset_write(self) -> None:
         """Pause sync for one rate-limit window after an external offset write."""
@@ -326,9 +339,20 @@ class OffsetSyncController:
             )
             return
 
-        if self.is_settling():
+        if self.is_settling(inside_temperature):
             self._log_decision(
                 trigger, outcome="skip_settling",
+                power=power, target=target, ext=external_temp,
+                trv=inside_temperature, current_offset=physics_offset,
+                last_written=self._runtime.last_written_offset,
+                desired=desired_offset, min_change=min_change,
+                clamp=calc.clamp_direction,
+            )
+            return
+
+        if self.is_quiet_hours():
+            self._log_decision(
+                trigger, outcome="skip_quiet_hours",
                 power=power, target=target, ext=external_temp,
                 trv=inside_temperature, current_offset=physics_offset,
                 last_written=self._runtime.last_written_offset,
@@ -369,7 +393,9 @@ class OffsetSyncController:
         )
 
         try:
-            await self._async_write_offset(desired_offset, calc.clamp_direction)
+            await self._async_write_offset(
+                desired_offset, inside_temperature, calc.clamp_direction,
+            )
         except (TadoAuthError, TadoRateLimitError) as e:
             from .error_dispatch import handle_background_write_error
 
@@ -384,7 +410,7 @@ class OffsetSyncController:
     # ------------------------------------------------------------------
 
     async def _async_write_offset(
-        self, offset: float, clamp_direction: str = "none",
+        self, offset: float, inside_temperature: float, clamp_direction: str = "none",
     ) -> None:
         """Write offset to every device in the zone, gated by readback.
 
@@ -477,7 +503,8 @@ class OffsetSyncController:
 
         self._runtime.last_written_offset = readback
         self._runtime.last_offset_write_ts = time.monotonic()
-        self._runtime.zone_fetch_at_last_write = self._coordinator.last_zone_fetch_ts()
+        self._runtime.zone_fetch_at_last_write = self._coordinator.zone_fetch_epoch_for_write()
+        self._runtime.inside_temp_at_last_write = inside_temperature
 
         raw_offsets = self._coordinator.data_loader.get_cached("offsets")
         cached_offsets: dict[str, float] = (
@@ -501,8 +528,8 @@ class OffsetSyncController:
 
         if clamp_direction != "none":
             direction_desc = (
-                "above the +10°C maximum" if clamp_direction == "hit_max"
-                else "below the -10°C minimum"
+                f"above the +{DEVICE_OFFSET_MAX:g}°C maximum" if clamp_direction == "hit_max"
+                else f"below the {DEVICE_OFFSET_MIN:g}°C minimum"
             )
             _LOGGER.warning(
                 "Offset Sync: zone %s wrote offset %.1f°C, but the required "

@@ -62,7 +62,6 @@ class BridgeHealthTracker:
     """Track Bridge API health across coordinator polls."""
 
     def __init__(self, failure_threshold: int = 3) -> None:
-        """Initialize the BridgeHealthTracker."""
         self._state = BridgeHealthState()
         self._failure_threshold = failure_threshold
 

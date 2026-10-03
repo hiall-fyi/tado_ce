@@ -133,7 +133,6 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
         initial_state: bool,
         home_id: str,
     ) -> None:
-        """Initialize."""
         super().__init__(coordinator)
         _meta = ENTITY_REGISTRY["switch_early_start"]
         self._zone_id = zone_id
@@ -225,6 +224,8 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
             raise HomeAssistantError(
                 f"Early Start {self._zone_name}: device sync queue full",
                 translation_domain=DOMAIN,
+                translation_key="early_start_queue_full",
+                translation_placeholders={"zone_name": self._zone_name},
             )
 
         await async_trigger_immediate_refresh(self.hass, self.entity_id, "early_start_on")
@@ -276,6 +277,8 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
             raise HomeAssistantError(
                 f"Early Start {self._zone_name}: device sync queue full",
                 translation_domain=DOMAIN,
+                translation_key="early_start_queue_full",
+                translation_placeholders={"zone_name": self._zone_name},
             )
 
         await async_trigger_immediate_refresh(self.hass, self.entity_id, "early_start_off")
@@ -339,7 +342,6 @@ class TadoChildLockSwitch(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDat
         zones_info: list[Any],
         home_id: str,
     ) -> None:
-        """Initialize."""
         super().__init__(coordinator)
         _meta = ENTITY_REGISTRY["switch_child_lock"]
         self._zone_id = zone_id
@@ -455,6 +457,8 @@ class TadoChildLockSwitch(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDat
             raise HomeAssistantError(
                 f"Child Lock {self._zone_name}: device sync queue full",
                 translation_domain=DOMAIN,
+                translation_key="child_lock_queue_full",
+                translation_placeholders={"zone_name": self._zone_name},
             )
 
         await async_trigger_immediate_refresh(self.hass, self.entity_id, "child_lock_on")
@@ -502,6 +506,8 @@ class TadoChildLockSwitch(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDat
             raise HomeAssistantError(
                 f"Child Lock {self._zone_name}: device sync queue full",
                 translation_domain=DOMAIN,
+                translation_key="child_lock_queue_full",
+                translation_placeholders={"zone_name": self._zone_name},
             )
 
         await async_trigger_immediate_refresh(self.hass, self.entity_id, "child_lock_off")
@@ -540,7 +546,6 @@ class TadoHubToggleSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
         icon_on: str,
         icon_off: str,
     ) -> None:
-        """Initialize the TadoHubToggleSwitch."""
         super().__init__(coordinator)
         _meta = ENTITY_REGISTRY[registry_key]
         self._option_key = option_key

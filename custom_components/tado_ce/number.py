@@ -18,6 +18,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .bridge_api import FLOW_TEMP_STEP, MAX_FLOW_TEMP, MIN_FLOW_TEMP
+from .const import DOMAIN
 from .device_manager import get_hub_device_info
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
 from .exceptions import TadoBridgeApiError
@@ -44,10 +45,10 @@ async def async_setup_entry(
     entities = []
 
     # Bridge number entity (optional: only when bridge credentials configured
-    # AND the bridge response actually contains the temperature field)
+    # AND enabled AND the bridge response actually contains the temperature field)
     bridge_serial = entry.options.get("bridge_serial")
     bridge_auth_key = entry.options.get("bridge_auth_key")
-    if bridge_serial and bridge_auth_key:
+    if bridge_serial and bridge_auth_key and coordinator.config_manager.get_bridge_enabled():
         bridge_data = coordinator.data.get("bridge")
         if isinstance(bridge_data, dict) and "boilerMaxOutputTemperatureInCelsius" in bridge_data:
             entities.append(TadoBoilerMaxOutputTemperatureNumber(coordinator))
@@ -87,7 +88,6 @@ class TadoBoilerMaxOutputTemperatureNumber(
     _attr_icon = "mdi:thermometer-water"
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the TadoBoilerMaxOutputTemperatureNumber."""
         super().__init__(coordinator)
         _meta = ENTITY_REGISTRY["number_boiler_max_output_temp"]
         self._attr_translation_key = _meta.translation_key
@@ -104,7 +104,11 @@ class TadoBoilerMaxOutputTemperatureNumber(
         client = self.coordinator.bridge_api_client
         if client is None:
             msg = "Bridge API client not available"
-            raise HomeAssistantError(msg)
+            raise HomeAssistantError(
+                msg,
+                translation_domain=DOMAIN,
+                translation_key="bridge_client_not_available",
+            )
         try:
             await client.async_set_max_output_temperature(value)
         except TadoBridgeApiError as err:
@@ -114,7 +118,11 @@ class TadoBoilerMaxOutputTemperatureNumber(
                 err,
             )
             msg = "Failed to set boiler max output temperature"
-            raise HomeAssistantError(msg) from err
+            raise HomeAssistantError(
+                msg,
+                translation_domain=DOMAIN,
+                translation_key="boiler_max_output_temp_failed",
+            ) from err
         # Quantise to the bridge's 0.5°C step before reflecting back.
         # The bridge would round anyway, so showing the user's raw
         # request would briefly disagree with the next poll.

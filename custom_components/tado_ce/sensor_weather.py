@@ -32,7 +32,6 @@ class TadoOutsideTemperatureSensor(
     _attr_has_entity_name = True
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the Outside Temperature Sensor."""
         super().__init__(coordinator)
         _meta = ENTITY_REGISTRY["sensor_outside_temp"]
         self._attr_translation_key = _meta.translation_key
@@ -89,7 +88,6 @@ class TadoSolarIntensitySensor(
     _attr_has_entity_name = True
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the Solar Intensity Sensor."""
         super().__init__(coordinator)
         _meta = ENTITY_REGISTRY["sensor_solar_intensity"]
         self._attr_translation_key = _meta.translation_key
@@ -145,7 +143,6 @@ class TadoWeatherStateSensor(
     _attr_has_entity_name = True
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the Weather State Sensor."""
         super().__init__(coordinator)
         _meta = ENTITY_REGISTRY["sensor_weather"]
         self._attr_translation_key = _meta.translation_key

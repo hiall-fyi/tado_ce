@@ -13,6 +13,8 @@ import voluptuous as vol
 
 from . import ratelimit as _ratelimit
 from .const import (
+    DEVICE_OFFSET_MAX,
+    DEVICE_OFFSET_MIN,
     DOMAIN,
     FORCEABLE_FETCH_HOME_STATE,
     FORCEABLE_FETCH_MOBILE,
@@ -256,7 +258,7 @@ def _resolve_coordinator_for_device(hass: HomeAssistant, device_serial: str) -> 
 
     from .helpers import mask_home_id
 
-    for device in device_registry.devices.values():
+    for device in device_registry.devices:
         for domain, identifier in device.identifiers:
             if domain == DOMAIN and identifier == device_serial:
                 for config_entry_id in device.config_entries:
@@ -1707,7 +1709,9 @@ async def _async_register_services(hass: HomeAssistant) -> None:
         schema=vol.Schema(
             {
                 vol.Required("entity_id"): cv.entity_id,
-                vol.Required("offset"): vol.All(vol.Coerce(float), vol.Range(min=-10.0, max=10.0)),
+                vol.Required("offset"): vol.All(
+                    vol.Coerce(float), vol.Range(min=DEVICE_OFFSET_MIN, max=DEVICE_OFFSET_MAX),
+                ),
             },
         ),
     )

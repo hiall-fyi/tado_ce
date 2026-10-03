@@ -38,6 +38,7 @@ MAX_REFRESH_DEBOUNCE_SECONDS: int = 60
 DEFAULT_SCHEDULE_CALENDAR_ENABLED = False  # Schedule Calendar (opt-in)
 DEFAULT_SMART_COMFORT_ENABLED = False  # Smart Comfort analytics (opt-in)
 DEFAULT_OUTDOOR_TEMP_ENTITY = ""  # Outdoor temperature entity for weather compensation
+DEFAULT_BOILER_FLOW_TEMP_ENTITY = ""  # External boiler flow-temp entity for bridgeless homes
 DEFAULT_WEATHER_COMPENSATION = "none"  # Weather compensation preset
 DEFAULT_USE_FEELS_LIKE = False  # Use feels-like temperature instead of actual
 DEFAULT_SMART_COMFORT_HISTORY_DAYS = 7  # Days of temperature history to keep for rate calculation
@@ -56,7 +57,6 @@ class ConfigurationManager:
     """Manages configuration settings for Tado CE integration."""
 
     def __init__(self, config_entry: ConfigEntry, hass: HomeAssistant = None) -> None:  # type: ignore[assignment]
-        """Initialize configuration manager with config entry."""
         self._config_entry = config_entry
         self._options: Mapping[str, Any] = config_entry.options or {}
         self._hass = hass
@@ -255,6 +255,12 @@ class ConfigurationManager:
         """Get the outdoor temperature entity for weather compensation (any provider)."""
         return self._get_option("outdoor_temp_entity", DEFAULT_OUTDOOR_TEMP_ENTITY)  # type: ignore[no-any-return]
 
+    def get_boiler_flow_temp_entity(self) -> str:
+        """Get the external boiler flow-temperature entity (bridgeless homes)."""
+        return self._get_option(  # type: ignore[no-any-return]
+            "boiler_flow_temp_entity", DEFAULT_BOILER_FLOW_TEMP_ENTITY,
+        )
+
     def get_smart_comfort_mode(self) -> str:
         """Get the Smart Comfort mode preset ('none' / 'light' / 'moderate' / 'aggressive')."""
         # Check new key first, fallback to legacy weather_compensation for backward compatibility
@@ -298,16 +304,16 @@ class ConfigurationManager:
         return self._get_int_option("heating_cycle_min_cycles", 3, 1, 10)
 
     def get_heating_cycle_history_days(self) -> int:
-        """Get heating cycle history retention in days (7-90, default 30)."""
-        return self._get_int_option("heating_cycle_history_days", 30, 7, 90)
+        """Get heating cycle history retention in days (1-30, default 7)."""
+        return self._get_int_option("heating_cycle_history_days", 7, 1, 30)
 
     def get_heating_cycle_inertia_threshold(self) -> float:
         """Get thermal inertia detection threshold in °C (0.05-0.5, default 0.1)."""
         return self._get_float_option("heating_cycle_inertia_threshold", 0.1, 0.05, 0.5)
 
     def get_thermal_analytics_enabled(self) -> bool:
-        """Check if Thermal Analytics sensors are enabled."""
-        return self._get_option("thermal_analytics_enabled", True)  # type: ignore[no-any-return]
+        """Check if Thermal Analytics sensors are enabled (opt-in)."""
+        return self._get_option("thermal_analytics_enabled", False)  # type: ignore[no-any-return]
 
     def get_thermal_analytics_zones(self) -> list[str]:
         """Get list of zone IDs enabled for Thermal Analytics (empty list = all zones with heatingPower)."""
@@ -409,6 +415,16 @@ class ConfigurationManager:
             DEVICE_SYNC_DELAY_MIN,
             DEVICE_SYNC_DELAY_MAX,
         )
+
+    def has_bridge_credentials(self) -> bool:
+        """Check if Internet Bridge serial + auth key are both stored."""
+        return bool(self._get_option("bridge_serial", "")) and bool(
+            self._get_option("bridge_auth_key", ""),
+        )
+
+    def get_bridge_enabled(self) -> bool:
+        """Check if the Internet Bridge toggle is on, defaulting to credential presence."""
+        return self._get_option("bridge_enabled", self.has_bridge_credentials())  # type: ignore[no-any-return]
 
     def get_homekit_enabled(self) -> bool:
         """Check if HomeKit local control is enabled."""

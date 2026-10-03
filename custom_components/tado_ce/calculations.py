@@ -190,7 +190,12 @@ def classify_cold_risk_level(inside_temp: float) -> str:
     return "Cardiovascular"
 
 
-# ============ Dew Point Calculation ============
+# ============ Dew Point / Humidity Calculation ============
+
+
+def _saturation_vapor_pressure(temperature: float) -> float:
+    """Saturation vapour pressure (hPa) via Magnus-Tetens, unified constants (a=17.27, b=237.7)."""
+    return 6.112 * math.exp((MAGNUS_A * temperature) / (temperature + MAGNUS_B))
 
 
 def calculate_dew_point(temperature: float, humidity: float) -> float:
@@ -209,6 +214,20 @@ def calculate_dew_point(temperature: float, humidity: float) -> float:
     humidity = max(1.0, min(100.0, humidity))
     alpha = (MAGNUS_A * temperature) / (MAGNUS_B + temperature) + math.log(humidity / 100.0)
     return (MAGNUS_B * alpha) / (MAGNUS_A - alpha)
+
+
+def calculate_absolute_humidity(temperature: float, humidity: float) -> float:
+    """Calculate absolute humidity (mass of water vapour per air volume) via Magnus-Tetens.
+
+    Args:
+        temperature: Air temperature in °C.
+        humidity: Relative humidity in %.
+
+    Returns:
+        Absolute humidity in g/m³ (exact, no rounding).
+    """
+    vapor_pressure = _saturation_vapor_pressure(temperature) * (humidity / 100.0)
+    return 216.7 * vapor_pressure / (273.15 + temperature)
 
 
 # ============ Surface Temperature Calculation ============
@@ -255,12 +274,9 @@ def calculate_surface_rh(effective_temp: float, dew_point: float) -> int | None:
         Surface relative humidity as integer percentage (0-100), or None on error.
     """
     try:
-
-        def _svp(temp: float) -> float:
-            """Calculate saturation vapour pressure."""
-            return 6.112 * math.exp((MAGNUS_A * temp) / (temp + MAGNUS_B))
-
-        surface_rh = (_svp(dew_point) / _svp(effective_temp)) * 100.0
+        surface_rh = (
+            _saturation_vapor_pressure(dew_point) / _saturation_vapor_pressure(effective_temp)
+        ) * 100.0
         return round(min(100.0, max(0.0, surface_rh)))
     except (ValueError, TypeError, ZeroDivisionError):
         _LOGGER.debug(

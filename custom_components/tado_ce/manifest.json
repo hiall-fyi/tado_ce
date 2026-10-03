@@ -12,8 +12,7 @@
   "issue_tracker": "https://github.com/hiall-fyi/tado_ce/issues/new/choose",
   "loggers": ["aiohomekit"],
   "requirements": [
-    "aiohttp>=3.8.0",
     "aiohomekit>=3.2.20"
   ],
-  "version": "4.4.1"
+  "version": "4.5.0"
 }

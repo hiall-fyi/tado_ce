@@ -31,7 +31,6 @@ class TadoThermalInertiaSensor(CoordinatorEntity["HeatingCycleCoordinator"], Sen
     def __init__(
         self, home_id: str, coordinator: HeatingCycleCoordinator, zone_id: str, zone_name: str, zone_type: str,
     ) -> None:
-        """Initialize sensor with coordinator."""
         super().__init__(coordinator)
         self._home_id = home_id
         self._zone_id = zone_id
@@ -82,7 +81,6 @@ class TadoHeatingRateSensor(CoordinatorEntity["HeatingCycleCoordinator"], Sensor
     def __init__(
         self, home_id: str, coordinator: HeatingCycleCoordinator, zone_id: str, zone_name: str, zone_type: str,
     ) -> None:
-        """Initialize sensor with coordinator."""
         super().__init__(coordinator)
         self._home_id = home_id
         self._zone_id = zone_id
@@ -133,7 +131,6 @@ class TadoPreheatTimeSensor(CoordinatorEntity["HeatingCycleCoordinator"], Sensor
     def __init__(
         self, home_id: str, coordinator: HeatingCycleCoordinator, zone_id: str, zone_name: str, zone_type: str,
     ) -> None:
-        """Initialize sensor with coordinator."""
         super().__init__(coordinator)
         self._home_id = home_id
         self._zone_id = zone_id
@@ -219,7 +216,6 @@ class TadoConfidenceSensor(CoordinatorEntity["HeatingCycleCoordinator"], SensorE
     def __init__(
         self, home_id: str, coordinator: HeatingCycleCoordinator, zone_id: str, zone_name: str, zone_type: str,
     ) -> None:
-        """Initialize sensor with coordinator."""
         super().__init__(coordinator)
         self._home_id = home_id
         self._zone_id = zone_id
@@ -280,7 +276,6 @@ class TadoHeatingAccelerationSensor(CoordinatorEntity["HeatingCycleCoordinator"]
     def __init__(
         self, home_id: str, coordinator: HeatingCycleCoordinator, zone_id: str, zone_name: str, zone_type: str,
     ) -> None:
-        """Initialize sensor with coordinator."""
         super().__init__(coordinator)
         self._home_id = home_id
         self._zone_id = zone_id
@@ -339,7 +334,6 @@ class TadoApproachFactorSensor(CoordinatorEntity["HeatingCycleCoordinator"], Sen
     def __init__(
         self, home_id: str, coordinator: HeatingCycleCoordinator, zone_id: str, zone_name: str, zone_type: str,
     ) -> None:
-        """Initialize sensor with coordinator."""
         super().__init__(coordinator)
         self._home_id = home_id
         self._zone_id = zone_id

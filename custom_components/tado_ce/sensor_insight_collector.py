@@ -10,13 +10,19 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.util import dt as dt_util
 
 from .calculations import (
+    calculate_absolute_humidity,
     calculate_heat_index,
     classify_comfort_level,
     classify_heat_risk_level,
     classify_mold_risk_level,
 )
 from .const import ENTITY_DATA_CONDENSATION_RISK, ENTITY_DATA_WINDOW_PREDICTED
-from .helpers import get_zone_states, merge_homekit_into_zone_data, parse_iso_datetime
+from .helpers import (
+    get_zone_states,
+    merge_homekit_into_zone_data,
+    parse_iso_datetime,
+    resolve_boiler_flow_temperature,
+)
 from .insights_api import (
     calculate_api_quota_planning_insight,
     calculate_api_usage_spike_insight,
@@ -52,10 +58,12 @@ from .insights_misc import (
     calculate_frost_risk_insight,
     calculate_home_all_off_insight,
     calculate_schedule_gap_insight,
+    calculate_ventilation_opportunity_insight,
     calculate_weather_impact_insight,
 )
 from .insights_models import Insight
 from .insights_presenter import get_insight_priority
+from .sensor_helpers import get_outdoor_humidity, get_outdoor_temperature
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -66,6 +74,7 @@ _LOGGER = logging.getLogger(__name__)
 
 # Insight collection thresholds
 _HUMIDITY_HISTORY_MAX_SAMPLES = 48  # max humidity readings to keep per zone
+_VENTILATION_DIFF_HISTORY_MAX_SAMPLES = 48  # max differential readings to keep, whole-home
 _HEATING_ANOMALY_POWER_PCT = 80  # %: high power threshold for anomaly detection
 _HEATING_ANOMALY_TEMP_DELTA = 0.5  # °C: near-target threshold for anomaly detection
 _OUTDOOR_TEMP_MIN_SAMPLES = 48  # minimum outdoor temp readings for 7-day average
@@ -207,24 +216,6 @@ def _collect_comfort_insight(
     )
 
 
-def _collect_boiler_flow_insight(
-    zone_data: dict[str, Any], zone_name: str, insights: list[Any],
-) -> None:
-    """Collect boiler flow anomaly insight."""
-    activity = zone_data.get("activityDataPoints") or {}
-    flow_data = activity.get("boilerFlowTemperature") or {}
-    flow_temp = flow_data.get("celsius")
-    if flow_temp is not None:
-        hp_pct = (activity.get("heatingPower") or {}).get("percentage")
-        insight = calculate_boiler_flow_anomaly_insight(
-            flow_temp=flow_temp,
-            heating_power_pct=hp_pct,
-            zone_name=zone_name,
-        )
-        if insight:
-            insights.append(insight)
-
-
 def _collect_humidity_trend_insight(
     zone_id: str,
     zone_name: str,
@@ -264,7 +255,6 @@ def _collect_optional_zone_insights(
         insight = _check_thermal_efficiency(coordinator, zone_id, zone_name)
         if insight:
             insights.append(insight)
-        _collect_boiler_flow_insight(zone_data, zone_name, insights)
 
     if ctx.schedule_enabled and schedules and inside_temp is not None:
         insight = _check_schedule_gap(schedules, zone_id, zone_data, inside_temp, zone_name)
@@ -896,6 +886,109 @@ def _collect_weather_insights(
         hub_insights.append(frost_insight)
 
 
+def _collect_boiler_flow_insight(
+    coordinator: TadoDataUpdateCoordinator, hub_insights: list[Any],
+) -> None:
+    """Collect boiler-flow-anomaly insight, home-level: one boiler-wide flow reading vs the highest zone demand."""
+    flow_temp, source = resolve_boiler_flow_temperature(coordinator)
+    if source is None:
+        return
+
+    zone_states = get_zone_states(coordinator.data or {})
+    hp_pct: float | None = None
+    hot_water_on = False
+    for zone_data in zone_states.values():
+        setting = zone_data.get("setting") or {}
+        if setting.get("type") == "HOT_WATER" and setting.get("power") == "ON":
+            hot_water_on = True
+        activity = zone_data.get("activityDataPoints") or {}
+        pct = (activity.get("heatingPower") or {}).get("percentage")
+        if pct is not None and (hp_pct is None or pct > hp_pct):
+            hp_pct = pct
+
+    insight = calculate_boiler_flow_anomaly_insight(
+        flow_temp=flow_temp,
+        heating_power_pct=hp_pct,
+        zone_name="",
+        hot_water_on=hot_water_on,
+    )
+    if insight:
+        hub_insights.append(insight)
+
+
+def _compute_ventilation_differential(
+    coordinator: TadoDataUpdateCoordinator,
+) -> tuple[float, str] | None:
+    """Return (wettest zone's indoor AH minus outdoor AH, that zone's name), or None when inputs are missing."""
+    outdoor_entity = coordinator.config_manager.get_outdoor_temp_entity()
+    if not outdoor_entity:
+        return None
+
+    outdoor_temp = get_outdoor_temperature(coordinator.hass, outdoor_entity)
+    outdoor_humidity = get_outdoor_humidity(coordinator.hass, outdoor_entity)
+    if outdoor_temp is None or outdoor_humidity is None:
+        return None
+    outdoor_ah = calculate_absolute_humidity(outdoor_temp, outdoor_humidity)
+
+    coord_data = coordinator.data or {}
+    zones_info = coord_data.get("zones_info") or []
+    zone_name_map = {str(z.get("id")): z.get("name", f"Zone {z.get('id')}") for z in zones_info}
+
+    zone_states = get_zone_states(coord_data)
+    wettest_zone_name: str | None = None
+    wettest_indoor_ah: float | None = None
+    for zid, zdata in zone_states.items():
+        merged = merge_homekit_into_zone_data(zdata, zid, coordinator)
+        sensor_data = merged.get("sensorDataPoints") or {}
+        temp = (sensor_data.get("insideTemperature") or {}).get("celsius")
+        humidity = (sensor_data.get("humidity") or {}).get("percentage")
+        if temp is None or humidity is None:
+            continue
+        indoor_ah = calculate_absolute_humidity(temp, humidity)
+        if wettest_indoor_ah is None or indoor_ah > wettest_indoor_ah:
+            wettest_indoor_ah = indoor_ah
+            wettest_zone_name = zone_name_map.get(zid, f"Zone {zid}")
+
+    if wettest_indoor_ah is None or wettest_zone_name is None:
+        return None
+
+    return wettest_indoor_ah - outdoor_ah, wettest_zone_name
+
+
+def advance_ventilation_diff_history(coordinator: TadoDataUpdateCoordinator) -> None:
+    """Append one differential sample per poll, so the baseline spans polls, not listener fires."""
+    try:
+        reading = _compute_ventilation_differential(coordinator)
+    except Exception as e:  # broad: raising here would fail every poll, not just this sample
+        _LOGGER.debug("Insight Collector: ventilation sample skipped (%s)", e)
+        return
+    if reading is None:
+        return
+
+    history = coordinator._insight_ventilation_diff_history
+    history.append(reading[0])
+    if len(history) > _VENTILATION_DIFF_HISTORY_MAX_SAMPLES:
+        del history[:-_VENTILATION_DIFF_HISTORY_MAX_SAMPLES]
+
+
+def _collect_ventilation_opportunity_insight(
+    coordinator: TadoDataUpdateCoordinator, hub_insights: list[Any],
+) -> None:
+    """Collect ventilation-opportunity insight against the per-poll history, which this only reads."""
+    reading = _compute_ventilation_differential(coordinator)
+    if reading is None:
+        return
+
+    current_differential, wettest_zone_name = reading
+    insight = calculate_ventilation_opportunity_insight(
+        current_differential=current_differential,
+        differential_history=coordinator._insight_ventilation_diff_history,
+        zone_name=wettest_zone_name,
+    )
+    if insight:
+        hub_insights.append(insight)
+
+
 def get_hub_insights(
     hass: HomeAssistant,
     coordinator: TadoDataUpdateCoordinator,
@@ -911,6 +1004,8 @@ def get_hub_insights(
         coord_data = coordinator.data or {}
 
         _collect_api_quota_insight(coord_data, hub_insights)
+        _collect_boiler_flow_insight(coordinator, hub_insights)
+        _collect_ventilation_opportunity_insight(coordinator, hub_insights)
 
         if ctx.weather_enabled:
             _collect_weather_insights(coordinator, coord_data, hub_insights)

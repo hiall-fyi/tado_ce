@@ -23,7 +23,7 @@ from .bridge_discovery import (
     flatten_response,
 )
 from .bridge_type_inference import format_display_value
-from .device_manager import get_hub_device_info
+from .device_manager import get_bridge_device_info
 from .entity_registry import get_meta
 from .helpers import PerEntityAvailabilityMixin, parse_iso_datetime
 from .sensor_hub import _ATTR_HISTORY_CAP
@@ -134,13 +134,13 @@ class TadoDynamicBridgeSensor(
         self,
         coordinator: TadoDataUpdateCoordinator,
         resolved: ResolvedEntity,
+        bridge_serial: str,
     ) -> None:
-        """Initialize from a ResolvedEntity."""
         super().__init__(coordinator)
         self._field_path = resolved.path
         self._value_type = resolved.value_type
         self._value_formatter_name: str | None = None
-        self._attr_device_info = get_hub_device_info(coordinator.home_id)
+        self._attr_device_info = get_bridge_device_info(bridge_serial, coordinator.home_id)
         self._data_present = False
         self._attr_native_value = None
 
@@ -240,11 +240,10 @@ class TadoBridgeCapabilitiesSensor(
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
-    def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the TadoBridgeCapabilitiesSensor."""
+    def __init__(self, coordinator: TadoDataUpdateCoordinator, bridge_serial: str) -> None:
         super().__init__(coordinator)
         meta = get_meta("sensor_bridge_capabilities")
-        self._attr_device_info = get_hub_device_info(coordinator.home_id)
+        self._attr_device_info = get_bridge_device_info(bridge_serial, coordinator.home_id)
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{meta.unique_id_suffix}"
         self._attr_translation_key = meta.translation_key
         self._attr_entity_registry_enabled_default = meta.enabled_default
@@ -293,11 +292,10 @@ class TadoBridgeSchemaVersionSensor(
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
-    def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the TadoBridgeSchemaVersionSensor."""
+    def __init__(self, coordinator: TadoDataUpdateCoordinator, bridge_serial: str) -> None:
         super().__init__(coordinator)
         meta = get_meta("sensor_bridge_schema_version")
-        self._attr_device_info = get_hub_device_info(coordinator.home_id)
+        self._attr_device_info = get_bridge_device_info(bridge_serial, coordinator.home_id)
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{meta.unique_id_suffix}"
         self._attr_translation_key = meta.translation_key
         self._attr_entity_registry_enabled_default = meta.enabled_default

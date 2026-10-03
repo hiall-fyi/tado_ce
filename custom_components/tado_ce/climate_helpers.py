@@ -74,7 +74,7 @@ def update_offset_clamp(
     """Return the offset-sync clamp signal for one zone, or None when not applicable.
 
     Values: "none" (no clamp), "hit_max" (+10°C limit hit),
-    "hit_min" (-10°C limit hit). The climate entity surfaces this
+    "hit_min" (-9.9°C limit hit). The climate entity surfaces this
     in extra_state_attributes so users can see when the physical
     gap exceeds Tado's stored-offset range.
     """

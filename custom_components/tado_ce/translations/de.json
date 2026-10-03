@@ -79,7 +79,7 @@
         }
       },
       "bridge_connected": {
-        "name": "Brücke"
+        "name": "Verbindung"
       },
       "connection": {
         "name": "Verbindung",
@@ -1008,6 +1008,23 @@
       },
       "homekit_writes_saved": {
         "name": "HomeKit schreibt gerettet"
+      },
+      "absolute_humidity": {
+        "name": "Absolute Luftfeuchtigkeit",
+        "state_attributes": {
+          "room_temperature": {
+            "name": "Raumtemperatur"
+          },
+          "humidity": {
+            "name": "Luftfeuchtigkeit"
+          },
+          "calculation_method": {
+            "name": "Berechnungsmethode"
+          },
+          "zone_type": {
+            "name": "Zonentyp"
+          }
+        }
       }
     },
     "select": {
@@ -1426,6 +1443,36 @@
     },
     "rate_limited": {
       "message": "Die Tado-API unterliegt einer Ratenbegrenzung. Bitte versuche es in {retry_after_minutes} Minuten erneut."
+    },
+    "ac_set_temperature_failed": {
+      "message": "{zone_name} der Klimaanlage: Temperatur kann nicht eingestellt werden"
+    },
+    "ac_set_hvac_mode_failed": {
+      "message": "AC-{zone_name}: Einstellung des „{hvac_mode}“-Modus fehlgeschlagen"
+    },
+    "ac_set_fan_mode_failed": {
+      "message": "{zone_name} der Klimaanlage: Einstellen des Lüftungsmodus fehlgeschlagen"
+    },
+    "ac_set_swing_mode_failed": {
+      "message": "AC-{zone_name}: Einstellen des Schwingmodus fehlgeschlagen"
+    },
+    "presence_mode_set_failed": {
+      "message": "Das Einstellen des Präsenzmodus auf „{option}“ ist fehlgeschlagen"
+    },
+    "early_start_queue_full": {
+      "message": "{zone_name} von „Early Start“: Warteschlange für die Gerätesynchronisierung voll"
+    },
+    "child_lock_queue_full": {
+      "message": "Kindersicherung „{zone_name}“: Synchronisierungswarteschlange des Geräts voll"
+    },
+    "water_heater_set_mode_failed": {
+      "message": "Heißwasser für „{zone_name}“: Das Setzen von „{operation_mode}“ ist nach {attempts} Versuchen fehlgeschlagen"
+    },
+    "bridge_client_not_available": {
+      "message": "Bridge-API-Client nicht verfügbar"
+    },
+    "boiler_max_output_temp_failed": {
+      "message": "Die maximale Ausgangstemperatur des Heizkessels konnte nicht eingestellt werden"
     }
   },
   "issues": {
@@ -1535,7 +1582,7 @@
     "step": {
       "init": {
         "title": "Tado CE Optionen",
-        "description": "Passen Sie Ihr Tado-Erlebnis an - von der Community für die Community entwickelt.",
+        "description": "Richten Sie Tado CE ganz nach Ihren Wünschen ein – von der Community entwickelt, für die Community.",
         "menu_options": {
           "zone_config": "Zone Konfiguration",
           "general_settings": "Allgemeine Einstellungen",
@@ -1746,8 +1793,8 @@
               "mobile_devices_min_refresh_minutes": "Aktualisierungsintervall für die Ortung mobiler Geräte"
             },
             "data_description": {
-              "day_start_hour": "Wann der Abruf am Tag beginnt (0-23, Standard: 7)",
-              "night_start_hour": "Wann die nächtliche Abfrage beginnt - es wird nachts seltener abgefragt (0-23, Standard: 23)",
+              "day_start_hour": "Wenn die tageszeitliche Abfrage beginnt (0–23, Standard: 7). Wenn die Ruhezeiten von „Offset Sync“ aktiviert sind, werden zu diesem Zeitpunkt auch die nächtlichen Korrekturen wieder fortgesetzt.",
+              "night_start_hour": "Wenn die nächtliche Abfrage beginnt – die Abfrage erfolgt nachts seltener (0–23, Standard: 23). Wenn die „Quiet Hours“ von Offset Sync aktiviert sind, werden zu diesem Zeitpunkt auch keine nächtlichen Korrekturen mehr geschrieben.",
               "custom_day_interval": "Überschreiben Sie die automatische Abfrage während des Tages durch ein festes Intervall. Lassen Sie das Feld leer, damit Tado CE die Abfrage entsprechend Ihrer API-Quote anpasst. (1–1440 Min.)",
               "custom_night_interval": "Überschreiben Sie die automatische nächtliche Abfrage durch ein festes Intervall. Lassen Sie das Feld leer, damit Tado CE die Abfrage entsprechend Ihrer API-Quote anpasst. (1–1440 Min.)",
               "refresh_debounce_seconds": "Warte so lange nach einer Änderung, bevor du neue Daten von Tado abrufst (1-60s)",
@@ -1803,17 +1850,17 @@
               "wc_hysteresis": "Hysterese ändern"
             },
             "data_description": {
-              "wc_slope": "Wie stark steigt die Vorlauftemperatur an, wenn es draußen kälter wird? Je höher der Wert, desto stärker wird geheizt (0,3–3,0). Wird automatisch anhand der oben festgelegten Voreinstellung der Heizungsanlage angepasst.",
+              "wc_slope": "Wie stark steigt die Vorlauftemperatur an, wenn es draußen kälter wird? Je höher der Wert, desto stärker wird geheizt (0,3–3,0). Wird nur verwendet, wenn die oben angegebene Voreinstellung des Heizsystems auf „Benutzerdefiniert“ gesetzt ist; andernfalls wird der Wert anhand Ihrer Werte für Maximal-/Minimalvorlauf, Absperrtemperatur und Auslegungsaußentemperatur berechnet.",
               "wc_design_outdoor_temp": "Die kälteste Temperatur, die Sie in Ihrem Gebiet erwarten (-30 bis 10°C)",
-              "wc_max_flow_temp": "Höchste Vorlauftemperatur, die Ihr Heizkessel bei der niedrigsten Außentemperatur erreichen sollte (25–80 °C). Wird automatisch anhand der oben festgelegten Heizungsvoreinstellung angepasst.",
-              "wc_min_flow_temp": "Niedrigste Vorlauftemperatur – wird auch bei Abschaltung der Heizung verwendet (25–60 °C). Wird automatisch durch die oben festgelegte Voreinstellung des Heizsystems angepasst.",
+              "wc_max_flow_temp": "Höchste Vorlauftemperatur, die Ihr Heizkessel bei der kältesten Außentemperatur erreichen sollte (25–80 °C). Diese Angabe fließt in die automatische Steigungsberechnung ein, es sei denn, die oben genannte Voreinstellung lautet „Benutzerdefiniert“.",
+              "wc_min_flow_temp": "Niedrigste Vorlauftemperatur – wird auch verwendet, wenn die Heizung abgeschaltet wird (25–60 °C). Dient als Grundlage für die automatische Steigungsberechnung, sofern die oben angegebene Voreinstellung nicht auf „Benutzerdefiniert“ gesetzt ist.",
               "wc_shutoff_temp": "Heizen stoppen, wenn die Außentemperatur über diesen Wert steigt (5-30°C)",
               "wc_smoothing_method": "Wie die Außentemperaturmesswerte gemittelt werden, um plötzliche Änderungen zu vermeiden",
               "wc_smoothing_window": "Wie lange soll die Außentemperatur gemittelt werden (15-1440 min)",
               "wc_room_compensation_factor": "Wie stark die Vorlauftemperatur angepasst werden soll, wenn ein Raum kälter oder wärmer als der Sollwert ist (1,0-5,0)",
               "wc_step_size": "Runden Sie die Vorlauftemperatur auf diese Schrittgröße ab - größere Schritte bedeuten weniger Kesseleinstellungen (0,5-2,0°C)",
               "wc_hysteresis": "Senden Sie nur dann eine neue Vorlauftemperatur, wenn sie sich von der letzten um mindestens diesen Wert unterscheidet (0,5-3,0°C)",
-              "wc_heating_system_preset": "Durch Auswahl einer Voreinstellung werden empfohlene Standardwerte für Steigungs- und Vorlauftemperaturen festgelegt. Wählen Sie „Benutzerdefiniert“, um jedes Feld manuell anzupassen.",
+              "wc_heating_system_preset": "Mit „Benutzerdefiniert“ können Sie die Steigung selbst festlegen; die anderen Optionen berechnen diese automatisch anhand der oben angegebenen Werte für „Max./Min. Durchfluss“, „Absperrdruck“ und „Auslegungsaußentemperatur“.",
               "wc_room_compensation_enabled": "Passen Sie die Vorlauftemperatur nach oben oder unten an, wenn ein Raum kälter oder wärmer als die Solltemperatur ist, und zwar zusätzlich zur Außenwetterkurve."
             }
           },
@@ -1830,11 +1877,13 @@
             "name": "Außensensoren",
             "data": {
               "use_outdoor_temp_entity": "Entität „Außentemperatur“ verwenden",
-              "outdoor_temp_entity": "Entität „Außentemperatur“"
+              "outdoor_temp_entity": "Entität „Außentemperatur“",
+              "boiler_flow_temp_entity": "Entität „Vorlauftemperatur des Heizkessels“"
             },
             "data_description": {
               "use_outdoor_temp_entity": "Deaktivieren Sie diese Option, um Funktionen zu deaktivieren, für die die Außentemperatur benötigt wird (Fenstererkennung, Komfortbewertung, Schimmelrisiko).",
-              "outdoor_temp_entity": "Sensor zur Erfassung der Außentemperatur (z. B. „weather.home“ oder ein lokaler Sensor)"
+              "outdoor_temp_entity": "Sensor zur Erfassung der Außentemperatur (z. B. „weather.home“ oder ein lokaler Sensor)",
+              "boiler_flow_temp_entity": "Durchfluss- und Temperatursensor für Heizkessel von Drittanbietern (ebusd, OpenTherm Gateway, myVaillant) für Haushalte ohne Tado Internet Bridge. Liefert die Daten des Durchfluss- und Temperatursensors für den Heizkessel sowie Informationen zur Effizienz."
             }
           }
         }
@@ -1888,7 +1937,8 @@
       }
     },
     "abort": {
-      "no_zones": "Keine Zonen für die Konfiguration verfügbar."
+      "no_zones": "Keine Zonen für die Konfiguration verfügbar.",
+      "integration_not_ready": "Tado CE wurde noch nicht vollständig geladen. Bitte warten Sie einen Moment und versuchen Sie es erneut."
     },
     "error": {
       "interval_out_of_range": "Das Abfrageintervall muss zwischen 1 und 1440 Minuten liegen.",

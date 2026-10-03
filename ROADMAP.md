@@ -1,4 +1,4 @@
-# Roadmap
+# Tado CE Roadmap
 
 Planned features and improvements for Tado CE.
 
@@ -6,26 +6,125 @@ For completed features, see [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
-## Up Next
+## Version Overview
+
+### Current Release
+
+- Stable: v4.5.0 (released 2026-10-03)
+- Headliners:
+  - Boiler Flow Temperature: bind a third-party boiler flow-temperature sensor (for homes without Internet Bridge)
+  - Absolute Humidity sensor, per zone (g/m³, alongside Dew Point) — more accurate mold risk assessment
+  - Ventilation Opportunity insight — alerts when outside air is drier than your room
+- Supported versions: v4.1.0 and later
+
+### Next Release
+
+- Major: v5.0.0 (in development)
+- Breaking changes: see [Breaking Changes](#breaking-changes-v500) below
+
+### End of Life
+
+- v4.x support continues until v5.0.0 launches
+- v5.0 launch will trigger v4.x EOL
+
+## Upgrade Paths
+
+| From | To | Intermediate Step | Notes |
+|------|----|--------------------|-------|
+| v3.x or v4.0.x | v4.x (any, including this release) | None | Direct upgrade; the migration code that reads your old settings is still in place |
+| v3.x or v4.0.x | v5.0.0+ | Install any v4.1.0+ release first | v5.0.0 only reads the settings format v4.1.0 introduced; an older install needs one v4.1.0+ release to update to it first |
+| v4.1.0+ | v5.0.0+ | None | Direct upgrade |
+
+### v3.x or v4.0.x to v4.x
+
+Direct upgrade to any v4.x release, including this one. No intermediate step required. Settings and entity IDs carry over automatically.
+
+### v3.x or v4.0.x to v5.0.0+
+
+v5.0.0 requires **v4.1.0 or later** to load your saved state. If you're not there yet, install any v4.1.0+ release first (this one included), verify your setup works (run a fresh restart, check entities in Developer Tools), then install v5.0.0+ whenever it's out.
+
+### v4.1.0+ to v5.0.0+
+
+Direct upgrade. No intermediate steps required.
+
+v5.0.0 removes migration code for versions older than v4.1.0, so it will refuse to load anything below that and tell you which version to upgrade to first.
+
+## Breaking Changes (v5.0.0)
+
+### Removal: Pre-v4.1.0 Data Format Migration
+
+**What breaks:** v5.0.0 will refuse to load state from v3.x or v4.0.x installations. Existing installs on older versions will be blocked with a clear error message.
+
+**Why:** Post-v4.0 migration code is maintenance debt. Removing it simplifies version floor logic and allows aggressive refactoring downstream.
+
+**When:** v5.0.0 release
+
+**Migration:** Upgrade to **v4.1.0 or later before moving to v5.0.0**. See [Upgrade Paths](#upgrade-paths) for step-by-step instructions. Any v4.1.0+ release, including v4.5.0, auto-migrates v3.x and v4.0.x state automatically; simply install one, verify the setup works, then install v5.0.0.
+
+### Rename: Refresh AC Capabilities → Refresh Zone Capabilities
+
+**What changes:** The hub button that re-fetches a zone's supported modes is renamed from "Refresh AC Capabilities" to "Refresh Zone Capabilities", reflecting what it actually covers since v4.1.4 (AC zones and hot-water zones).
+
+**User impact:** Minimal. On upgrade, the button keeps its history and customisation; the friendly name and icon update in the UI. The `entity_id` doesn't change for existing installs because Home Assistant only sets it once, at creation. New installs from v5.0.0 onward get the updated `entity_id` (`button.tado_ce_hub_refresh_zone_capabilities`).
+
+**When:** v5.0.0 release
+
+---
+
+*Additional breaking changes to be documented as v5.0 development progresses. Check back before upgrading.*
+
+## Future Features
+
+### Up Next
 
 **On API-call optimisation as a through-line.** A design principle that runs through the whole v4.x line: spend as few of your daily Tado API calls as possible without losing freshness. The pieces already shipped (the 5-minute polling floor, per-type refresh floors you can tune, deferring to HomeKit's dial when local control is connected, taking the offset refresh off its all-at-once burst, and the `tado_ce.refresh` service that lets you force a single presence fetch past the floor when you drive your own cadence) are in the changelog. The next step on this front is the API resilience pass under **Later** below, which hardens how the integration degrades when any one Tado endpoint is unavailable. The goal stays the same: your quota goes further and local control stays solid.
 
 AC mode, swing, fan and timer changes all go through the cloud. A plain temperature change on a running AC zone can go over HomeKit when the bridge is connected, the same as a heating zone. See the AC entry below for why fuller HomeKit local control on Smart AC Control V3+ isn't on the active roadmap.
 
-## Later — feature additions, no fixed release
+### Later — feature additions, no fixed release
 
-Both are wanted and well-specified, and the foundation they build on (persistence, polling rework, HomeKit reliability) is already in place. The boiler flow sensor has a release target now; the API resilience pass doesn't yet.
+Wanted and well-specified, and the foundation it builds on (persistence, polling rework, HomeKit reliability) is already in place.
 
-- **External boiler flow temperature sensor** ([#254](https://github.com/hiall-fyi/tado_ce/issues/254) - @apilone) — read your boiler's flow temperature from any HA sensor for Weather Compensation, so OpenTherm owners on myVaillant / ebusd / OTGW don't need Tado's own bridge for it. Builds on the same external-sensor Options Flow pattern the outdoor temperature binding already uses. Planned for v4.5.0.
 - **API resilience pass** — a review of every Tado endpoint the integration relies on, hardening how it degrades when any one of them is unavailable so a single Tado-side hiccup doesn't take entities down with it. Also settles a long-standing request: per-zone hysteresis / Acceptance Range and Minimum On/Off Time can't be exposed as entities because Tado serves them from a newer API the integration doesn't reach. They become a documentation note rather than a sensor.
+
+### Future Consideration
+
+#### AC
+
+- **Smart AC Control V3+ standalone HomeKit pairing** ([Discussion #271](https://github.com/hiall-fyi/tado_ce/discussions/271) - @MacrosorcH) — Smart AC Control units are autonomous WiFi devices, each with its own 8-digit HomeKit code, paired separately from the Internet Bridge. Tado CE only handles the bridge pairing today, so AC zones use the cloud path for every operation regardless of HomeKit configuration. Checked what owning that pairing would actually add: a paired unit's HomeKit characteristics cap out at temperature and on/off, the same ceiling Home Assistant's own HomeKit Device integration already gets, so native support wouldn't add fan, swing or mode control either. You can get local temperature and humidity readings today without it: pair the unit to Home Assistant's HomeKit Device integration, then bind its temperature and humidity entities under the AC zone's Options Flow, the same external-sensor binding a heating zone uses. Native per-unit pairing stays off the active roadmap, since it would save a setup step rather than add a capability, and it's still hardware I don't own to build or test against.
+- **AC cloud-path fixes still land from field reports.** The hardware gap above blocks *local* HomeKit control, but the cloud path AC uses today is maintained, and a user with the unit can drive a fix without me owning one. In v4.1.0, [#305](https://github.com/hiall-fyi/tado_ce/issues/305) (@stefanzweig1979) was exactly that: fan changes never reached older units because the integration sent the fan setting under the wrong field name (the plural `fanSpeeds` from the capability list, where the write payload wants the singular `fanSpeed`). A debug log plus a captured Tado web-app request confirmed the correct field, and the fix shipped. So a cloud-side AC issue with a clear repro is actionable; only the standalone local-control feature is hardware-blocked.
+
+
+#### Weather Compensation
+
+- **Exponential Heating Curve** ([#187](https://github.com/hiall-fyi/tado_ce/issues/187) - @driagi) — Non-linear heating curve for weather compensation, using a building thermal sensitivity coefficient (`k` factor). Better models real-world heat loss in well-insulated vs poorly-insulated buildings compared to the current linear approach. Would sit alongside the existing linear presets as an "Expert" option. A spec is starting now that heating season is approaching, so real-world validation can begin as soon as it's built.
+
+#### Infrastructure
+
+- **Local Only Mode** — A toggle that stops all cloud polling after initial setup, running purely off HomeKit bridge data. Technically feasible — the coordinator already skips cloud calls when HomeKit provides live data. Tradeoff: cloud-only data (schedules, battery, heating power, geofencing) would go stale. Could include a daily cloud check for diagnostics.
+- **Bridge wiring-state poll cadence** ([#289](https://github.com/hiall-fyi/tado_ce/issues/289) - @driagi) — the boiler wiring sensor reads the bridge every 60 seconds on its own loop. These calls hit the bridge directly with its local auth key, so they don't count against your daily Tado cloud quota, but a minute-by-minute read of an almost-static value is heavier on the bridge than it needs to be. The wiring state only changes when you rewire the boiler, so a much slower cadence (or an event-driven refresh) covers it. Surfaced while diagnosing #289's call volume.
+- **Smart polling pause/resume rework** — the polling cadence has grown a handful of separate decisions (when to slow down on low quota, when to pause entirely, when to resume after the quota resets) that were each added on their own and never designed as one piece. The plan is to pull them into a single clear state machine so the edges line up. The tier-aware quota reserve that the rework was originally going to fix already landed in v4.0.2, so this was parked pending a concrete sign that the pause/resume path itself, not just the reserve threshold, was where a bug lived. Two such signs turned up during testing: a reload landing while quota was already at the reserve floor could leave entities unavailable instead of serving cached data, and a repair notification tied to the same pause logic could linger after the underlying problem had already cleared. Both get their own fixes first, but finding two independent gaps in one sitting is exactly the "grown on its own, never designed as one piece" pattern this rework exists to fix.
+- **Smart Valve and Offset Sync read different temperatures** — the two compensation modes don't read the room the same way. On a zone with a HomeKit bridge connected, Smart Valve Control reads the live HomeKit-merged temperature, while Offset Sync reads the cloud reading. Only one mode runs per zone, so they never fight inside a single zone, but two zones set up the same way can compensate off slightly different numbers depending on which mode they're in. It's a small difference in practice and there's no bug today, but the inconsistency is worth tidying so both modes share one source. Folds in naturally with the temperature-source work the integration already exposes per zone.
+  - **Pick the source direction deliberately, it's not a free change.** Moving Offset Sync onto the live HomeKit reading only helps zones that have a bridge connected, so it trades the current mode-to-mode inconsistency for a new connected-vs-cloud-only one. The cleaner direction is usually the other way (both modes read the cloud reading), but that gives up Smart Valve's real-time response. Decide this on its own before building, not as a rider on another change.
+  - **It ties into the overnight offset-swing fix.** That fix waits for the cloud reading to catch up to the last write before correcting again, keyed on the cloud poll. Offset Sync reads the cloud reading today, so that timing lines up. If Offset Sync is ever switched to the live HomeKit reading, the wait has to follow the HomeKit reading instead, or it'll hold off corrections longer than it should. Whoever does this must re-check the swing fix's timing in the same pass.
+
+#### Long-Term Exploration
+
+- **Fully Local Control** ([Discussion #29](https://github.com/hiall-fyi/tado_ce/discussions/29)) — Control via the 868MHz protocol between Bridge and TRVs, bypassing both cloud and HomeKit. Requires specialized hardware and community help.
+
+## Support Timeline
+
+v4.x support continues until v5.0.0 launches. EOL dates will be announced closer to the v5.0.0 release.
+
+---
 
 ## v5.0.0 — Legacy cleanup
 
 A spring-clean release that drops backward-compat code accumulated through the v3.x and v4.x cycles. The cleanup is laser-focused on dead surface area, not behaviour change.
 
-**You will need v4.1.0 or later installed before you upgrade to v5.0.0, and if you are older than that, go through v4.3.x.** Two different numbers, so worth separating. v4.1.0 is the line v5.0.0 refuses to load below, because that is where the saved-settings format it reads begins. v4.3.x is what to install if you are below that line: any 4.1.0+ release would update your settings, but there is no reason to pick an older one. Coming from v4.1.0 or later, there is nothing to do. v5.0.0 will not auto-migrate the v3.x option keys, entity unique_ids or storage layouts, because the code that handled those upgrades is removed in that release. The path through v4.3.x stays open, so there is no rush to do it in one jump.
+**You will need v4.1.0 or later installed before you upgrade to v5.0.0, and if you are older than that, go through the current v4.x release first.** Two different numbers, so worth separating. v4.1.0 is the line v5.0.0 refuses to load below, because that is where the saved-settings format it reads begins. Any 4.1.0+ release updates your settings to that format, including the current one (v4.5.0), so there is no reason to pick an older one. Coming from v4.1.0 or later, there is nothing to do. v5.0.0 will not auto-migrate the v3.x option keys, entity unique_ids or storage layouts, because the code that handled those upgrades is removed in that release. The path through the current v4.x release stays open, so there is no rush to do it in one jump.
 
-Note this is v5.0.0's rule, not this release's. v4.4.1 itself still accepts an entry from v3.0.0 onwards.
+Note this is v5.0.0's rule, not this release's. v4.5.0 itself still accepts an entry from v3.0.0 onwards.
 
 Planned removals:
 
@@ -40,32 +139,4 @@ Planned removals:
 - **Download Diagnostics dropped** — the Settings → Download Diagnostics button (a config-and-state snapshot) is removed. In practice it hasn't earned its place: troubleshooting an issue always comes down to a debug log, which shows what happened over time, where the snapshot only shows one frozen moment and can't. The button also carried an ongoing privacy cost, needing a redaction list kept up to date so it never leaked a serial or token. Removing it takes that maintenance surface out. Nothing you script against changes and no automation breaks, the button simply won't be there; for any problem, a debug log is the thing to grab.
 - **Service-call consistency** — three older services use a plain entity field instead of the entity picker, and timer vs open-window durations read in different units. Aligned here with the old form kept working through a deprecation window, since changing them affects how you call the service from automations.
 
-No timeline yet. Detailed findings are tracked internally.
-
-## Future Consideration
-
-### AC
-
-- **Smart AC Control V3+ standalone HomeKit pairing** ([Discussion #271](https://github.com/hiall-fyi/tado_ce/discussions/271) - @MacrosorcH) — Smart AC Control units are autonomous WiFi devices, each with its own 8-digit HomeKit code, paired separately from the Internet Bridge. Tado CE only handles the bridge pairing today, so AC zones use the cloud path for every operation regardless of HomeKit configuration. Checked what owning that pairing would actually add: a paired unit's HomeKit characteristics cap out at temperature and on/off, the same ceiling Home Assistant's own HomeKit Device integration already gets, so native support wouldn't unlock fan, swing or mode control either. You can get local temperature and humidity readings today without it: pair the unit to Home Assistant's HomeKit Device integration, then bind its temperature and humidity entities under the AC zone's Options Flow, the same external-sensor binding a heating zone uses. Native per-unit pairing stays off the active roadmap, since it would save a setup step rather than add a capability, and it's still hardware I don't own to build or test against.
-- **AC cloud-path fixes still land from field reports.** The hardware gap above blocks *local* HomeKit control, but the cloud path AC uses today is maintained, and a user with the unit can drive a fix without me owning one. In v4.1.0, [#305](https://github.com/hiall-fyi/tado_ce/issues/305) (@stefanzweig1979) was exactly that: fan changes never reached older units because the integration sent the fan setting under the wrong field name (the plural `fanSpeeds` from the capability list, where the write payload wants the singular `fanSpeed`). A debug log plus a captured Tado web-app request confirmed the correct field, and the fix shipped. So a cloud-side AC issue with a clear repro is actionable; only the standalone local-control feature is hardware-blocked.
-
-### Window Detection
-
-- **Predicted-window sensor slated for retirement in v5.0.0** — v4.3.0 tried to rework the predicted-window sensor to catch slow opens (scoring how fast a room closes the gap to the outside temperature), but the new scoring fired far too often on settled rooms once live, so the rework was withdrawn before release and the sensor stayed on its earlier drop-rate detection. The plan now is to retire the predicted-window sensor at v5.0.0 rather than keep tuning it: it drives display and insights only, never a heating decision, and getting its accuracy right has taken a lot of tweaking for what it gives back. The effort is better spent on the core features that more people rely on. Anyone who leans on it can raise it before then.
-
-### Weather Compensation
-
-- **Exponential Heating Curve** ([#187](https://github.com/hiall-fyi/tado_ce/issues/187) - @driagi) — Non-linear heating curve for weather compensation, using a building thermal sensitivity coefficient (`k` factor). Better models real-world heat loss in well-insulated vs poorly-insulated buildings compared to the current linear approach. Would sit alongside the existing linear presets as an "Expert" option. A spec is starting now that heating season is approaching, so real-world validation can begin as soon as it's built.
-
-### Infrastructure
-
-- **Local Only Mode** — A toggle that stops all cloud polling after initial setup, running purely off HomeKit bridge data. Technically feasible — the coordinator already skips cloud calls when HomeKit provides live data. Tradeoff: cloud-only data (schedules, battery, heating power, geofencing) would go stale. Could include a daily cloud check for diagnostics.
-- **Bridge wiring-state poll cadence** ([#289](https://github.com/hiall-fyi/tado_ce/issues/289) - @driagi) — the boiler wiring sensor reads the bridge every 60 seconds on its own loop. These calls hit the bridge directly with its local auth key, so they don't count against your daily Tado cloud quota, but a minute-by-minute read of an almost-static value is heavier on the bridge than it needs to be. The wiring state only changes when you rewire the boiler, so a much slower cadence (or an event-driven refresh) covers it. Surfaced while diagnosing #289's call volume.
-- **Smart polling pause/resume rework** — the polling cadence has grown a handful of separate decisions (when to slow down on low quota, when to pause entirely, when to resume after the quota resets) that were each added on their own and never designed as one piece. The plan is to pull them into a single clear state machine so the edges line up. The tier-aware quota reserve that the rework was originally going to fix already landed in v4.0.2, so this was parked pending a concrete sign that the pause/resume path itself, not just the reserve threshold, was where a bug lived. Two such signs turned up during testing: a reload landing while quota was already at the reserve floor could leave entities unavailable instead of serving cached data, and a repair notification tied to the same pause logic could linger after the underlying problem had already cleared. Both get their own fixes first, but finding two independent gaps in one sitting is exactly the "grown on its own, never designed as one piece" pattern this rework exists to fix.
-- **Smart Valve and Offset Sync read different temperatures** — the two compensation modes don't read the room the same way. On a zone with a HomeKit bridge connected, Smart Valve Control reads the live HomeKit-merged temperature, while Offset Sync reads the cloud reading. Only one mode runs per zone, so they never fight inside a single zone, but two zones set up the same way can compensate off slightly different numbers depending on which mode they're in. It's a small difference in practice and there's no bug today, but the inconsistency is worth tidying so both modes share one source. Folds in naturally with the temperature-source work the integration already exposes per zone.
-  - **Pick the source direction deliberately, it's not a free change.** Moving Offset Sync onto the live HomeKit reading only helps zones that have a bridge connected, so it trades the current mode-to-mode inconsistency for a new connected-vs-cloud-only one. The cleaner direction is usually the other way (both modes read the cloud reading), but that gives up Smart Valve's real-time response. Decide this on its own before building, not as a rider on another change.
-  - **It ties into the overnight offset-swing fix.** That fix waits for the cloud reading to catch up to the last write before correcting again, keyed on the cloud poll. Offset Sync reads the cloud reading today, so that timing lines up. If Offset Sync is ever switched to the live HomeKit reading, the wait has to follow the HomeKit reading instead, or it'll hold off corrections longer than it should. Whoever does this must re-check the swing fix's timing in the same pass.
-
-### Long-Term Exploration
-
-- **Fully Local Control** ([Discussion #29](https://github.com/hiall-fyi/tado_ce/discussions/29)) — Control via the 868MHz protocol between Bridge and TRVs, bypassing both cloud and HomeKit. Requires specialized hardware and community help.
+No timeline yet.

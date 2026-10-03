@@ -34,6 +34,7 @@ from .const import (
     MAX_SCHEDULE_FETCH_CALLS,
     QUOTA_WARNING_PERCENTAGE,
     TADO_API_BASE,
+    TADO_GRAPHQL_API,
     is_climate_zone,
     is_valid_device_offset,
 )
@@ -779,6 +780,39 @@ class TadoApiClient(TadoAuthMixin):
 
         return None
 
+    async def _graphql_call(
+        self, query: str, variables: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """POST a query/mutation to Tado's GraphQL gateway; returns `data`, or None on failure.
+
+        Reuses `api_call`'s auth/retry handling via `full_url`. Rate-limit
+        header parsing is off: the tracked quota belongs to `my.tado.com`,
+        and a gateway response parsed into it would clear the reset time a
+        prior 429 left there. GraphQL returns HTTP 200 even on failure, so a non-empty top-level
+        `errors` array is treated as failure here; a mutation's own
+        `success`/`failureReason` is the caller's to interpret, since only
+        the caller knows the field name.
+        """
+        result = await self.api_call(
+            "graphql",
+            method="POST",
+            data={"query": query, "variables": variables},
+            parse_ratelimit=False,
+            full_url=TADO_GRAPHQL_API,
+        )
+        if result is None:
+            return None
+
+        errors = result.get("errors")
+        if errors:
+            _LOGGER.warning(
+                "API: GraphQL request rejected: %s",
+                errors[0].get("message", errors) if errors else errors,
+            )
+            return None
+
+        return result.get("data")
+
     async def get_device_offset(self, serial: str) -> float | None:
         """Return the device's stored temperature offset in °C, or None on failure."""
         url = f"{API_ENDPOINT_DEVICES}/{serial}/temperatureOffset"
@@ -1384,39 +1418,70 @@ class TadoApiClient(TadoAuthMixin):
             )
 
     async def add_meter_reading(self, reading: int, date: str | None = None) -> bool:
-        """POST a meter reading to Tado (non-idempotent: no retry on failure)."""
+        """Submit a meter reading via GraphQL (non-idempotent: no retry on failure).
+
+        Tado's legacy REST `meterReadings` endpoint now rejects writes with
+        a 403; this mirrors the mutation the app itself uses.
+        """
         if not date:
             try:
                 date = dt_util.now().strftime("%Y-%m-%d")
             except (ValueError, TypeError):
                 date = dt_util.utcnow().strftime("%Y-%m-%d")
 
-        result = await self.api_call(
-            "meterReadings",
-            method="POST",
-            data={"date": date, "reading": reading},
+        home_id = await self._ensure_home_id()
+        if not home_id:
+            return False
+
+        data = await self._graphql_call(
+            "mutation SaveMeterReadings($homeId: ID!, $meterReadings: "
+            "HeatingInsightsMeterReadingInput!) { addHeatingInsightsMeterReading("
+            "homeId: $homeId, meterReading: $meterReadings) { success failureReason } }",
+            {"homeId": str(home_id), "meterReadings": {"date": date, "reading": reading}},
         )
-        if result is not None:
+        result = (data or {}).get("addHeatingInsightsMeterReading") or {}
+        if result.get("success"):
             _LOGGER.info(
                 "API: meter reading %s saved for %s", reading, date,
             )
             return True
+
+        _LOGGER.warning(
+            "API: meter reading %s for %s rejected by Tado (%s)",
+            reading, date, result.get("failureReason", "no reason given"),
+        )
         return False
 
     async def identify_device(self, device_serial: str) -> bool:
-        """POST an identify command to a device (it flashes its LED)."""
-        url = f"{API_ENDPOINT_DEVICES}/{device_serial}/identify"
-        result = await self.api_call(
-            f"devices/{device_serial}/identify",
-            method="POST",
-            full_url=url,
+        """Send an identify command via GraphQL (it flashes the device's LED).
+
+        Supersedes the legacy REST identify endpoint. Addresses the device
+        by a composite id, `{home_id}:PRE_LINE_X:{serial}` — empirically
+        observed on TRVs, not documented by Tado; unverified for other
+        device types.
+        """
+        home_id = await self._ensure_home_id()
+        if not home_id:
+            return False
+
+        device_id = f"{home_id}:PRE_LINE_X:{device_serial}"
+        data = await self._graphql_call(
+            "mutation IdentifyDevice($deviceId: ID!) { identifyDevice(deviceId: $deviceId) "
+            "{ success failureReason } }",
+            {"deviceId": device_id},
         )
-        if result is not None:
+        result = (data or {}).get("identifyDevice") or {}
+        if result.get("success"):
             _LOGGER.info(
                 "API: identify command sent to device %s",
                 mask_serial(device_serial),
             )
             return True
+
+        _LOGGER.warning(
+            "API: identify command for device %s rejected by Tado (%s)",
+            mask_serial(device_serial), result.get("failureReason", "no reason given"),
+        )
         return False
 
     async def set_away_configuration(

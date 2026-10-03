@@ -127,6 +127,10 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
     consolidation). Older paths require an intermediate v3.x install. A `None`
     version is treated as recovery from a previously-aborted migration: we
     snap forward and let the entry resume.
+
+    Minor version 2 forward-writes `thermal_analytics_enabled=True` and
+    `heating_cycle_history_days=30` so existing installs keep their old
+    effective values after the getters' defaults were corrected.
     """
     target_version = _TARGET_VERSION
     initial_version = config_entry.version
@@ -166,10 +170,20 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
         hass.config_entries.async_update_entry(config_entry, version=_TARGET_VERSION)
         _LOGGER.info("Migration: v12 → v13 complete")
 
+    if config_entry.minor_version < 2:
+        options = dict(config_entry.options)
+        options.setdefault("thermal_analytics_enabled", True)
+        options.setdefault("heating_cycle_history_days", 30)
+        hass.config_entries.async_update_entry(
+            config_entry, options=options, minor_version=2,
+        )
+        _LOGGER.debug("Migration: config entry moved to minor version 2")
+
     _LOGGER.debug(
-        "Migration: config entry already at version %s, no further "
+        "Migration: config entry already at version %s.%s, no further "
         "migration needed",
         config_entry.version,
+        config_entry.minor_version,
     )
     return True
 

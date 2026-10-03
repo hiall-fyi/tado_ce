@@ -230,7 +230,6 @@ class TadoZoneScheduleCalendar(CoordinatorEntity["TadoDataUpdateCoordinator"], C
         schedule: dict[str, Any],
         home_id: str = "",
     ) -> None:
-        """Initialize the calendar."""
         super().__init__(coordinator)
         self._zone_id = zone_id
         self._zone_name = zone_name

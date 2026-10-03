@@ -28,7 +28,6 @@ class HeatingCycleStorage:
     """Persist heating cycles to HA Store with debounced writes and migration."""
 
     def __init__(self, hass: HomeAssistant, home_id: str) -> None:
-        """Initialize storage with home ID."""
         self._hass = hass
         self._home_id = home_id
         self._store: Store[dict[str, Any]] = Store(
@@ -157,25 +156,65 @@ class HeatingCycleStorage:
             return []
 
         cutoff = dt_util.utcnow() - timedelta(days=window_days)
+        cycles_list = self._data["zones"][zone_id]["cycles"]
         cycles = []
+        bad_indices: set[int] = set()
 
-        for cycle_dict in self._data["zones"][zone_id]["cycles"]:
-            cycle = HeatingCycle.from_dict(cycle_dict)
+        for idx, cycle_dict in enumerate(cycles_list):
+            try:
+                cycle = HeatingCycle.from_dict(cycle_dict)
+            except (KeyError, TypeError, ValueError):
+                _LOGGER.warning(
+                    "Heating Storage: dropping malformed cycle record for zone %s",
+                    zone_id,
+                    exc_info=True,
+                )
+                bad_indices.add(idx)
+                continue
             # Only include completed, non-interrupted cycles within window
             if cycle.start_time >= cutoff and cycle.completed and not cycle.interrupted:
                 cycles.append(cycle)
+
+        if bad_indices:
+            # Also drop from storage so an idle zone doesn't relog this forever.
+            self._data["zones"][zone_id]["cycles"] = [
+                c for i, c in enumerate(cycles_list) if i not in bad_indices
+            ]
+            self._schedule_save()
 
         return cycles
 
     async def get_active_cycles(self) -> dict[str, HeatingCycle]:
         """Get all active cycles (for resume after restart)."""
         active = {}
+        any_dropped = False
+
         for zone_id, zone_data in self._data["zones"].items():
-            for cycle_dict in zone_data["cycles"]:
-                cycle = HeatingCycle.from_dict(cycle_dict)
+            cycles_list = zone_data["cycles"]
+            bad_indices: set[int] = set()
+
+            for idx, cycle_dict in enumerate(cycles_list):
+                try:
+                    cycle = HeatingCycle.from_dict(cycle_dict)
+                except (KeyError, TypeError, ValueError):
+                    _LOGGER.warning(
+                        "Heating Storage: dropping malformed cycle record for zone %s",
+                        zone_id,
+                        exc_info=True,
+                    )
+                    bad_indices.add(idx)
+                    continue
                 if not cycle.completed and not cycle.interrupted:
                     active[zone_id] = cycle
                     break  # Only one active cycle per zone
+
+            if bad_indices:
+                # Also drop from storage; only indices scanned before the
+                # break above are removed, unscanned tail records are left alone.
+                zone_data["cycles"] = [
+                    c for i, c in enumerate(cycles_list) if i not in bad_indices
+                ]
+                any_dropped = True
 
         if active:
             _LOGGER.info(
@@ -183,6 +222,9 @@ class HeatingCycleStorage:
                 "restart",
                 len(active),
             )
+
+        if any_dropped:
+            self._schedule_save()
 
         return active
 
@@ -197,8 +239,19 @@ class HeatingCycleStorage:
         cycles = self._data["zones"][zone_id]["cycles"]
         original_count = len(cycles)
 
+        def _still_within_window(c: dict[str, Any]) -> bool:
+            try:
+                return parse_iso_datetime(c["start_time"]) >= cutoff
+            except (KeyError, TypeError, ValueError):
+                _LOGGER.warning(
+                    "Heating Storage: dropping malformed cycle record for zone %s",
+                    zone_id,
+                    exc_info=True,
+                )
+                return False
+
         self._data["zones"][zone_id]["cycles"] = [
-            c for c in cycles if parse_iso_datetime(c["start_time"]) >= cutoff
+            c for c in cycles if _still_within_window(c)
         ]
 
         removed_count = original_count - len(self._data["zones"][zone_id]["cycles"])

@@ -98,7 +98,6 @@ class TadoDeviceTracker(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataU
         device_data: dict[str, Any],
         home_id: str,
     ) -> None:
-        """Initialize the TadoDeviceTracker."""
         super().__init__(coordinator)
         self._device_id = device_id
         self._device_name = device_name

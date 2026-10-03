@@ -79,7 +79,7 @@
         }
       },
       "bridge_connected": {
-        "name": "Brug"
+        "name": "Verbinding"
       },
       "connection": {
         "name": "Aansluiting",
@@ -1008,6 +1008,23 @@
       },
       "homekit_writes_saved": {
         "name": "HomeKit schrijft opgeslagen"
+      },
+      "absolute_humidity": {
+        "name": "Absolute vochtigheid",
+        "state_attributes": {
+          "room_temperature": {
+            "name": "Kamertemperatuur"
+          },
+          "humidity": {
+            "name": "Luchtvochtigheid"
+          },
+          "calculation_method": {
+            "name": "Berekeningsmethode"
+          },
+          "zone_type": {
+            "name": "Zone-type"
+          }
+        }
       }
     },
     "select": {
@@ -1426,6 +1443,36 @@
     },
     "rate_limited": {
       "message": "De Tado API heeft een limiet op het aantal verzoeken. Probeer het over {retry_after_minutes} min. opnieuw."
+    },
+    "ac_set_temperature_failed": {
+      "message": "{zone_name} van de airconditioning: het instellen van de temperatuur is mislukt"
+    },
+    "ac_set_hvac_mode_failed": {
+      "message": "AC-{zone_name}: het instellen van de {hvac_mode}-modus is mislukt"
+    },
+    "ac_set_fan_mode_failed": {
+      "message": "AC-{zone_name}: het instellen van de ventilatiestand is mislukt"
+    },
+    "ac_set_swing_mode_failed": {
+      "message": "AC-{zone_name}: het instellen van de swingmodus is mislukt"
+    },
+    "presence_mode_set_failed": {
+      "message": "Het instellen van de aanwezigheidsmodus op ‘{option}’ is mislukt"
+    },
+    "early_start_queue_full": {
+      "message": "{zone_name} 'Early Start': wachtrij voor apparaatsynchronisatie vol"
+    },
+    "child_lock_queue_full": {
+      "message": "{zone_name} voor kinderslot: wachtrij voor apparaatsynchronisatie vol"
+    },
+    "water_heater_set_mode_failed": {
+      "message": "Warm water voor {zone_name}: het instellen van {operation_mode} is mislukt na {attempts} pogingen"
+    },
+    "bridge_client_not_available": {
+      "message": "Bridge API-client niet beschikbaar"
+    },
+    "boiler_max_output_temp_failed": {
+      "message": "Het is niet gelukt om de maximale uitgangstemperatuur van de ketel in te stellen"
     }
   },
   "issues": {
@@ -1535,7 +1582,7 @@
     "step": {
       "init": {
         "title": "Tado CE-opties",
-        "description": "Pas je Tado ervaring aan - gebouwd door de community, voor de community.",
+        "description": "Stel Tado CE helemaal naar eigen wens in: ontwikkeld door de community, voor de community.",
         "menu_options": {
           "zone_config": "Zone Configuratie",
           "general_settings": "Algemene instellingen",
@@ -1746,8 +1793,8 @@
               "mobile_devices_min_refresh_minutes": "Vernieuwingsinterval voor het volgen van mobiele apparaten"
             },
             "data_description": {
-              "day_start_hour": "Wanneer de polling overdag start (0-23, standaard: 7)",
-              "night_start_hour": "Wanneer de nachtpeiling begint - peilt 's nachts minder vaak (0-23, standaard: 23)",
+              "day_start_hour": "Wanneer de peilingen overdag beginnen (0–23, standaard: 7). Als de rusturen van Offset Sync zijn ingeschakeld, wordt op dat moment ook het bijwerken van de nachtelijke correcties hervat.",
+              "night_start_hour": "Wanneer de nachtelijke peiling begint — er wordt ’s nachts minder vaak gepeild (0–23, standaard: 23). Als de rusturen van Offset Sync zijn ingeschakeld, stopt het op dat moment ook met het aanbrengen van nachtelijke correcties.",
               "custom_day_interval": "Overschrijf de automatische polling overdag met een vast interval. Laat dit veld leeg om Tado CE de polling te laten aanpassen op basis van je API-quotum. (1–1440 min)",
               "custom_night_interval": "Overschrijf de automatische nachtelijke polling met een vast interval. Laat dit veld leeg om Tado CE de polling te laten aanpassen op basis van je API-quotum. (1–1440 min)",
               "refresh_debounce_seconds": "Wacht zo lang na een wijziging voordat nieuwe gegevens van Tado worden opgehaald (1-60s)",
@@ -1803,17 +1850,17 @@
               "wc_hysteresis": "Hysterese wijzigen"
             },
             "data_description": {
-              "wc_slope": "Hoe sterk de aanvoertemperatuur stijgt naarmate het buiten kouder wordt. Hoe hoger de waarde, hoe krachtiger de verwarming (0,3–3,0). Wordt automatisch aangepast op basis van de hierboven ingestelde waarde van het verwarmingssysteem.",
+              "wc_slope": "Hoe sterk de aanvoertemperatuur stijgt naarmate het buiten kouder wordt. Hoe hoger de waarde, hoe krachtiger de verwarming (0,3–3,0). Wordt alleen gebruikt wanneer de hierboven ingestelde verwarmingsmodus op ‘Aangepast’ staat; anders wordt deze waarde berekend op basis van uw waarden voor maximale/minimale aanvoertemperatuur, afsluitwaarde en ontwerpbuitentemperatuur.",
               "wc_design_outdoor_temp": "De koudste temperatuur die je verwacht in jouw gebied (-30 tot 10°C)",
-              "wc_max_flow_temp": "De hoogste aanvoertemperatuur die uw ketel mag bereiken bij de laagste buitentemperatuur (25–80 °C). Wordt automatisch aangepast op basis van de hierboven ingestelde verwarmingsinstelling.",
-              "wc_min_flow_temp": "Laagste aanvoertemperatuur — wordt ook gebruikt wanneer de verwarming wordt uitgeschakeld (25–60 °C). Wordt automatisch aangepast op basis van de hierboven ingestelde waarde voor het verwarmingssysteem.",
+              "wc_max_flow_temp": "De hoogste aanvoertemperatuur die uw ketel bij de laagste buitentemperatuur mag bereiken (25–80 °C). Deze waarde wordt gebruikt voor de automatische hellingsberekening, tenzij de hierboven ingestelde waarde op „Aangepast” is ingesteld.",
+              "wc_min_flow_temp": "Laagste aanvoertemperatuur — wordt ook gebruikt wanneer de verwarming wordt uitgeschakeld (25–60 °C). Wordt gebruikt voor de automatische hellingsberekening, tenzij de hierboven ingestelde waarde ‘Aangepast’ is.",
               "wc_shutoff_temp": "Stop met verwarmen wanneer de buitentemperatuur boven deze waarde stijgt (5-30°C)",
               "wc_smoothing_method": "Hoe buitentemperatuurmetingen worden gemiddeld om plotselinge veranderingen te voorkomen",
               "wc_smoothing_window": "Hoe lang gemiddelde buitentemperatuur over (15-1440 min)",
               "wc_room_compensation_factor": "Hoeveel moet de aanvoertemperatuur worden aangepast als een kamer kouder of warmer is dan de doelstelling (1,0-5,0)?",
               "wc_step_size": "Rond de aanvoertemperatuur af op deze stapgrootte - grotere stappen betekenen minder aanpassingen aan de ketel (0,5-2,0°C)",
               "wc_hysteresis": "Verstuur alleen een nieuwe aanvoertemperatuur als deze ten minste zoveel verschilt van de vorige (0,5-3,0°C).",
-              "wc_heating_system_preset": "Als u een voorinstelling selecteert, worden de aanbevolen standaardwaarden voor de helling en de aanvoertemperatuur ingesteld. Kies 'Aangepast' om elk veld handmatig in te stellen.",
+              "wc_heating_system_preset": "Met de optie ‘Aangepast’ kun je zelf de hellingsgraad instellen; de andere opties berekenen deze automatisch op basis van de hierboven ingevulde velden ‘Max./min. debiet’, ‘Afsluiting’ en ‘Ontwerptemperatuur buiten’.",
               "wc_room_compensation_enabled": "Pas de aanvoertemperatuur iets naar boven of naar beneden aan wanneer een ruimte kouder of warmer is dan de streeftemperatuur, bovenop de buitentemperatuurcurve."
             }
           },
@@ -1830,11 +1877,13 @@
             "name": "Buiten sensoren",
             "data": {
               "use_outdoor_temp_entity": "Gebruik de entiteit 'Buitentemperatuur'",
-              "outdoor_temp_entity": "Entiteit 'Buitentemperatuur'"
+              "outdoor_temp_entity": "Entiteit 'Buitentemperatuur'",
+              "boiler_flow_temp_entity": "Entiteit ‘Doorstroomtemperatuur van de ketel’"
             },
             "data_description": {
               "use_outdoor_temp_entity": "Schakel deze functie uit om functies uit te schakelen die de buitentemperatuur nodig hebben (raamdetectie, comfortbeoordeling, schimmelrisico)",
-              "outdoor_temp_entity": "Sensor die de buitentemperatuur weergeeft (bijvoorbeeld weather.home of een lokale sensor)"
+              "outdoor_temp_entity": "Sensor die de buitentemperatuur weergeeft (bijvoorbeeld weather.home of een lokale sensor)",
+              "boiler_flow_temp_entity": "Externe sensor voor de aanvoertemperatuur van de ketel (ebusd, OpenTherm Gateway, myVaillant) voor woningen zonder Tado Internet Bridge. Levert gegevens aan de sensor voor de aanvoertemperatuur van de ketel en biedt inzicht in het rendement."
             }
           }
         }
@@ -1888,7 +1937,8 @@
       }
     },
     "abort": {
-      "no_zones": "Geen zones beschikbaar voor configuratie."
+      "no_zones": "Geen zones beschikbaar voor configuratie.",
+      "integration_not_ready": "Tado CE is nog niet volledig geladen. Wacht even en probeer het nog eens."
     },
     "error": {
       "interval_out_of_range": "Polling-interval moet tussen 1 en 1440 minuten liggen",

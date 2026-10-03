@@ -11,6 +11,11 @@ import aiohttp
 from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.selector import (
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
+)
 import voluptuous as vol
 
 from .config_flow_options import TadoCEOptionsFlow
@@ -36,9 +41,9 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Tado CE."""
 
     VERSION = 13
+    MINOR_VERSION = 2
 
     def __init__(self) -> None:
-        """Initialize the config flow."""
         self._device_code: str | None = None
         self._user_code: str | None = None
         self._verify_url: str | None = None
@@ -140,7 +145,9 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="manual_token",
             data_schema=vol.Schema(
                 {
-                    vol.Required("refresh_token"): str,
+                    vol.Required("refresh_token"): TextSelector(
+                        TextSelectorConfig(type=TextSelectorType.PASSWORD),
+                    ),
                 },
             ),
             errors=errors,

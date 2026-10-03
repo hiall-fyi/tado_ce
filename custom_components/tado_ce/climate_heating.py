@@ -83,7 +83,6 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
     _attr_has_entity_name = True
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, home_id: str) -> None:
-        """Initialize."""
         super().__init__(coordinator)
         self._zone_id = zone_id
         self._zone_name = zone_name
@@ -152,6 +151,9 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
 
         # Unsubscribe callback for HomeKit dispatcher signal
         self._unsub_homekit_signal: Callable[[], None] | None = None
+
+        # Last HomeKit write payload, outside _OPTIMISTIC_FIELDS for EXPIRED-retry use.
+        self._last_homekit_write_payload: dict[str, Any] | None = None
 
     # ------------------------------------------------------------------
     # Public API (TadoZoneEntity Protocol, see entity_types.py)
@@ -599,12 +601,20 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
                     "climate card to Tado's reported state",
                     self._zone_name,
                 )
-                # Record failure if this was a HomeKit write
+                # Record failure if this was a HomeKit write, and retry it
+                # via cloud PUT: the local write may well have succeeded, the
+                # bridge→cloud sync just hasn't caught up within the window.
                 if self._last_write_source == "homekit":
                     write_tracker = self.coordinator.write_health_tracker
                     if write_tracker is not None:
                         write_tracker.record_failure()
                     self._last_write_source = ""
+                    pending_write = self._last_homekit_write_payload
+                    self._last_homekit_write_payload = None
+                    if pending_write is not None:
+                        self.hass.async_create_task(
+                            self._retry_expired_write_via_cloud(pending_write),
+                        )
 
             elif result == OptimisticUpdateResult.ACCEPT_API and self._last_write_source == "homekit":
                 # API confirmed the HomeKit write
@@ -775,6 +785,78 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
             clear_optimistic_state(self)
             self.async_write_ha_state()
 
+    async def _write_via_cloud(
+        self,
+        *,
+        power_on: bool,
+        temperature: float | None,
+        termination: dict[str, Any],
+        hvac_mode: HVACMode,
+        hvac_action: HVACAction,
+        reason: str,
+        rollback_target_temp: float | None = None,
+        capture_source: str | None = "set_temperature",
+    ) -> None:
+        """Send a heating overlay write via the cloud API, with optimistic rollback.
+
+        Shared by the three cloud-fallback call sites (temperature write,
+        HEAT mode, OFF mode) and the EXPIRED-retry path
+        (`_retry_expired_write_via_cloud`), which calls this when a
+        HomeKit write's cloud-sync confirmation didn't land inside the
+        optimistic window.
+        """
+        client = self.coordinator.api_client
+        if power_on:
+            setting: dict[str, Any] = {
+                "type": "HEATING",
+                "power": "ON",
+                "temperature": {"celsius": temperature},
+            }
+        else:
+            setting = {"type": "HEATING", "power": "OFF"}
+
+        await api_call_with_rollback(
+            self,
+            client.set_zone_overlay(self._zone_id, setting, termination),
+            hvac_mode=hvac_mode,
+            hvac_action=hvac_action,
+            target_temp=temperature,
+            rollback_target_temp=rollback_target_temp,
+            reason=reason,
+            capture_source=capture_source,
+        )
+        self._last_write_source = "cloud"
+
+    async def _retry_expired_write_via_cloud(self, payload: dict[str, Any]) -> None:
+        # Retry a HomeKit write via cloud PUT after optimistic window expired.
+        termination = get_zone_overlay_termination(self.hass, self._zone_id, entry_id=self._entry_id)
+        power_on = payload["power_on"]
+        temperature = payload["temperature"]
+        if power_on:
+            hvac_mode, hvac_action = HVACMode.HEAT, self._calculate_hvac_action(target_temp=temperature)
+            reason = "HomeKit write confirmation expired, retrying via cloud"
+            capture_source = "set_temperature"
+        else:
+            hvac_mode, hvac_action = HVACMode.OFF, HVACAction.OFF
+            reason = "HomeKit OFF write confirmation expired, retrying via cloud"
+            capture_source = "set_hvac_mode"
+        try:
+            await self._write_via_cloud(
+                power_on=power_on,
+                temperature=temperature,
+                termination=termination,
+                hvac_mode=hvac_mode,
+                hvac_action=hvac_action,
+                reason=reason,
+                capture_source=capture_source,
+            )
+        except HomeAssistantError:
+            _LOGGER.debug(
+                "Climate Heating: %s EXPIRED-retry cloud write failed, "
+                "staying on Tado's reported state",
+                self._zone_name,
+            )
+
     async def _execute_set_temp_api(
         self,
         client: TadoApiClient,
@@ -834,6 +916,7 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
         if local_success:
             self.coordinator.record_homekit_write_saved(self._zone_id)
             self._last_write_source = "homekit"
+            self._last_homekit_write_payload = {"power_on": True, "temperature": temperature}
             _LOGGER.debug(
                 "Climate Heating: %s target set to %s°C via HomeKit",
                 self._zone_name, temperature,
@@ -852,14 +935,14 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
 
         # Cloud fallback
         try:
-            await api_call_with_rollback(
-                self,
-                client.set_zone_overlay(self._zone_id, setting, termination),
+            await self._write_via_cloud(
+                power_on=True,
+                temperature=temperature,
+                termination=termination,
                 hvac_mode=HVACMode.HEAT,
                 hvac_action=self._calculate_hvac_action(target_temp=temperature),
-                target_temp=temperature,
-                rollback_target_temp=old_temp,
                 reason=f"Set temperature to {temperature}°C",
+                rollback_target_temp=old_temp,
                 capture_source="set_temperature",
             )
         except HomeAssistantError:
@@ -867,7 +950,6 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
                 raise
             return
 
-        self._last_write_source = "cloud"
         heating_cycle_coordinator = self.coordinator.heating_cycle_coordinator
         if heating_cycle_coordinator:
             await heating_cycle_coordinator.on_zone_update(
@@ -1059,6 +1141,7 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
             if local_success:
                 self.coordinator.record_homekit_write_saved(self._zone_id)
                 self._last_write_source = "homekit"
+                self._last_homekit_write_payload = {"power_on": True, "temperature": temp}
                 _LOGGER.debug(
                     "Climate Heating: %s set to HEAT via HomeKit",
                     self._zone_name,
@@ -1072,29 +1155,24 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
                 return
 
             # Cloud fallback
-            setting = {
-                "type": "HEATING",
-                "power": "ON",
-                "temperature": {"celsius": temp},
-            }
             termination = get_zone_overlay_termination(self.hass, self._zone_id, entry_id=self._entry_id)
             new_hvac_action = self._calculate_hvac_action(target_temp=temp, hvac_mode=HVACMode.HEAT)
-            await api_call_with_rollback(
-                self,
-                client.set_zone_overlay(self._zone_id, setting, termination),
+            await self._write_via_cloud(
+                power_on=True,
+                temperature=temp,
+                termination=termination,
                 hvac_mode=HVACMode.HEAT,
                 hvac_action=new_hvac_action,
-                target_temp=temp,
                 reason=f"Set HEAT mode at {temp}°C",
                 capture_source="set_hvac_mode",
             )
-            self._last_write_source = "cloud"
 
         elif hvac_mode == HVACMode.OFF:
             local_success = await self._try_homekit_hvac_mode_write(0, "OFF")
             if local_success:
                 self.coordinator.record_homekit_write_saved(self._zone_id)
                 self._last_write_source = "homekit"
+                self._last_homekit_write_payload = {"power_on": False, "temperature": OPEN_WINDOW_DEFAULT_TEMP}
                 _LOGGER.debug(
                     "Climate Heating: %s set to OFF via HomeKit",
                     self._zone_name,
@@ -1106,21 +1184,16 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
                 return
 
             # Cloud fallback
-            setting = {
-                "type": "HEATING",
-                "power": "OFF",
-            }
             termination = get_zone_overlay_termination(self.hass, self._zone_id, entry_id=self._entry_id)
-            await api_call_with_rollback(
-                self,
-                client.set_zone_overlay(self._zone_id, setting, termination),
+            await self._write_via_cloud(
+                power_on=False,
+                temperature=OPEN_WINDOW_DEFAULT_TEMP,
+                termination=termination,
                 hvac_mode=HVACMode.OFF,
                 hvac_action=HVACAction.OFF,
-                target_temp=OPEN_WINDOW_DEFAULT_TEMP,
                 reason="Set OFF mode",
                 capture_source="set_hvac_mode",
             )
-            self._last_write_source = "cloud"
 
         elif hvac_mode == HVACMode.AUTO:
             await api_call_with_rollback(

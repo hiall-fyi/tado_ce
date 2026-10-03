@@ -54,6 +54,47 @@ def get_outdoor_temperature(hass: HomeAssistant, entity_id: str, use_feels_like:
     return None
 
 
+def get_outdoor_humidity(hass: HomeAssistant, entity_id: str) -> float | None:
+    """Read outdoor humidity from a weather entity or companion sensor."""
+    if not hass or not entity_id:
+        return None
+
+    try:
+        state = hass.states.get(entity_id)
+        if state is None or state.state in ("unknown", "unavailable"):
+            return None
+
+        if entity_id.startswith("weather."):
+            humidity = state.attributes.get("humidity")
+            if humidity is not None:
+                return float(humidity)
+
+        # For non-weather entities, try to find a companion humidity sensor
+        # e.g., sensor.outdoor_temperature -> sensor.outdoor_humidity
+        if entity_id.startswith("sensor.") and "temperature" in entity_id.lower():
+            humidity_entity = entity_id.lower().replace("temperature", "humidity")
+            humidity_state = hass.states.get(humidity_entity)
+            if humidity_state and humidity_state.state not in ("unknown", "unavailable"):
+                try:
+                    return float(humidity_state.state)
+                except (ValueError, TypeError):
+                    pass
+
+    except Exception as e:
+        _LOGGER.debug(
+            "Sensor Helpers: could not read outdoor humidity from %s (%s), falling back to None",
+            entity_id, e,
+        )
+        return None
+
+    _LOGGER.debug(
+        "Sensor Helpers: no outdoor humidity available for %s, set a weather.* "
+        "entity or pair the outdoor temperature sensor with a sensor.*_humidity sibling",
+        entity_id,
+    )
+    return None
+
+
 def get_effective_temperature(
     hass: HomeAssistant,
     zone_id: str,

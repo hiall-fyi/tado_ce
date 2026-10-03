@@ -75,11 +75,14 @@ def _is_tado_bridge(category: Any, name: str) -> bool:
     return category == Categories.BRIDGE and "tado" in (name or "").lower()
 
 
-def _bridgeless_home(zones_info: list[dict[str, Any]]) -> bool:
-    """Return True only when zones positively show devices and none is a Tado bridge.
+def _bridgeless_home(
+    zones_info: list[dict[str, Any]],
+    home_devices: list[dict[str, Any]] | None = None,
+) -> bool:
+    """Return True only when devices are present and none is a Tado bridge.
 
-    Fails open on missing/stale `zones_info` so a heating home isn't
-    blocked by data that hasn't loaded yet.
+    Checks `home_devices` too: a relay-only zone (no in-zone thermostat)
+    never lists the bridge among its own devices. Fails open on missing data.
     """
     from .const import TADO_BRIDGE_MODELS
 
@@ -89,6 +92,10 @@ def _bridgeless_home(zones_info: list[dict[str, Any]]) -> bool:
             saw_a_device = True
             if device.get("deviceType") in TADO_BRIDGE_MODELS:
                 return False
+    for device in home_devices or []:
+        saw_a_device = True
+        if isinstance(device, dict) and device.get("deviceType") in TADO_BRIDGE_MODELS:
+            return False
     return saw_a_device
 
 
@@ -746,6 +753,36 @@ def _shared_controller(flow: TadoCEOptionsFlow) -> Any | None:
     return getattr(coordinator, "homekit_controller", None)
 
 
+def _flush_pending_advanced_options(flow: TadoCEOptionsFlow) -> bool:
+    """Persist Advanced Settings edits co-submitted with a re-pair/unpair redirect.
+
+    The redirect hands off before the parent step ever writes them. Returns
+    whether anything actually changed.
+    """
+    if not flow._pending_advanced_options:
+        return False
+    return flow.hass.config_entries.async_update_entry(
+        flow.config_entry, options=flow._pending_advanced_options,
+    )
+
+
+def _create_entry_with_cleanup(
+    flow: TadoCEOptionsFlow, data: dict[str, Any],
+) -> ConfigFlowResult:
+    """Finish a General Settings first-enable redirect that lands here.
+
+    `_detect_first_enable`'s redirect hands off before General Settings' own
+    `queue_cleanup_flags` call ever runs, so a submit that both disables one
+    feature and first-enables HomeKit in the same form would otherwise never
+    detect the disabled feature's cleanup. Every exit of this sub-step that
+    finishes such a submit must queue it itself.
+    """
+    from .entity_cleanup import queue_cleanup_flags
+
+    queue_cleanup_flags(flow.config_entry, flow.config_entry.options, data)
+    return flow.async_create_entry(title="", data=data)
+
+
 # HomeKit setup code: 8 digits, shown as XXX-XX-XXX. Accept the code with or
 # without dashes; aiohomekit's check_pin_format requires the dashed form.
 _PIN_DIGITS_RE = re.compile(r"^\d{8}$")
@@ -772,14 +809,24 @@ async def async_step_homekit_pairing(
 
     errors: dict[str, str] = {}
 
-    zones_info = flow.config_entry.runtime_data.data.get("zones_info") or []
-    if _bridgeless_home(zones_info):
+    coordinator = getattr(flow.config_entry, "runtime_data", None)
+    if coordinator is None:
+        # runtime_data is absent during a failed/retrying setup or right
+        # after unload (HA delattr's it on unload). Pairing needs a live
+        # coordinator for the bridgeless check and the post-pair mapping
+        # rebuild below, so there's no meaningful form to show without it.
+        return flow.async_abort(reason="integration_not_ready")
+
+    zones_info = coordinator.data.get("zones_info") or []
+    home_devices = coordinator.data.get("home_devices") or []
+    if _bridgeless_home(zones_info, home_devices):
         if user_input is not None:
             # Acknowledged: cancel pairing the same way an empty PIN does,
             # since there's no bridge for this home to pair with.
             if flow._pending_general_options:
                 flow._pending_general_options["homekit_enabled"] = False
-                return flow.async_create_entry(title="", data=flow._pending_general_options)
+                return _create_entry_with_cleanup(flow, flow._pending_general_options)
+            _flush_pending_advanced_options(flow)
             return await flow.async_step_init()
         return flow.async_show_form(
             step_id="homekit_pairing",
@@ -794,7 +841,8 @@ async def async_step_homekit_pairing(
             # flag so the options form reflects the actual state.
             if flow._pending_general_options:
                 flow._pending_general_options["homekit_enabled"] = False
-                return flow.async_create_entry(title="", data=flow._pending_general_options)
+                return _create_entry_with_cleanup(flow, flow._pending_general_options)
+            _flush_pending_advanced_options(flow)
             return await flow.async_step_init()
 
         pin = _normalise_homekit_pin(raw)
@@ -812,7 +860,12 @@ async def async_step_homekit_pairing(
                 try:
                     await client.async_pair(pin)
 
-                    zones_info = flow.config_entry.runtime_data.data.get("zones_info") or []
+                    # Reuse the coordinator captured at the top of this
+                    # function rather than re-reading runtime_data: a
+                    # successful pair here would otherwise race an unload
+                    # that clears runtime_data mid-pair and get reported as
+                    # a pairing failure despite having succeeded.
+                    zones_info = coordinator.data.get("zones_info") or []
                     await async_rebuild_and_save_mapping(
                         flow.hass, client, home_id, zones_info,
                     )
@@ -830,18 +883,18 @@ async def async_step_homekit_pairing(
                 if flow._pending_general_options:
                     # First enable: writing the options flips homekit_enabled,
                     # and the update listener reloads the entry for us.
-                    return flow.async_create_entry(title="", data=flow._pending_general_options)
+                    return _create_entry_with_cleanup(flow, flow._pending_general_options)
 
                 # Re-pair: pairing happened on a throwaway client, so the
                 # entry's live client still holds whatever state it had, and
                 # after a pairing-invalid teardown that state is permanently
-                # inert (`_closing` latched, no pairing). This route returns to
-                # the menu without writing options, so no update listener fires;
-                # reload explicitly or the user keeps cloud-only state despite
-                # valid new credentials.
-                flow.hass.config_entries.async_schedule_reload(
-                    flow.config_entry.entry_id,
-                )
+                # inert (`_closing` latched, no pairing). Reload explicitly,
+                # unless the flush above already did (writing changed
+                # options triggers its own).
+                if not _flush_pending_advanced_options(flow):
+                    flow.hass.config_entries.async_schedule_reload(
+                        flow.config_entry.entry_id,
+                    )
                 return await flow.async_step_init()
 
             except AuthenticationError:
@@ -879,7 +932,7 @@ async def async_step_homekit_pairing(
         data_schema=vol.Schema(
             {
                 vol.Required("homekit_pin"): TextSelector(
-                    TextSelectorConfig(type=TextSelectorType.TEXT),
+                    TextSelectorConfig(type=TextSelectorType.PASSWORD),
                 ),
             },
         ),
@@ -922,11 +975,22 @@ async def async_step_homekit_unpair(
             _LOGGER.debug("HomeKit: unpair error details", exc_info=True)
 
         new_options = dict(flow.config_entry.options)
+        new_options.update(flow._pending_advanced_options)
         new_options["homekit_enabled"] = False
 
-        coordinator = flow.config_entry.runtime_data
-        if coordinator and hasattr(coordinator, "_pending_cleanup"):
+        # Unpair itself is the recovery path for an offline bridge, and local
+        # credentials are already cleared above by this point, so a missing
+        # runtime_data here must not abort: only log that the entities won't
+        # be auto-cleaned up until the next successful reload.
+        coordinator = getattr(flow.config_entry, "runtime_data", None)
+        if coordinator is not None and hasattr(coordinator, "_pending_cleanup"):
             coordinator._pending_cleanup.setdefault(flow.config_entry.entry_id, {})["_cleanup_homekit"] = True
+        elif coordinator is None:
+            _LOGGER.warning(
+                "HomeKit: unpair completed but the integration isn't loaded, "
+                "so the HomeKit entities won't be cleaned up until the next "
+                "successful reload",
+            )
 
         return flow.async_create_entry(title="", data=new_options)
 

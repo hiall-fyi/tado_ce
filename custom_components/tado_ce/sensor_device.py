@@ -45,7 +45,6 @@ class TadoBatterySensor(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataU
         device: dict[str, Any],
         zones_info: list[dict[str, Any]] | None = None,
     ) -> None:
-        """Initialize the Battery Sensor."""
         super().__init__(coordinator)
         self._zone_id = zone_id
         self._zone_name = zone_name

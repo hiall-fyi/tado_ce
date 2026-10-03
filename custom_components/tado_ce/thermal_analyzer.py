@@ -64,11 +64,6 @@ class ThermalAnalyzer:
     """
 
     def __init__(self, min_cycles: int = 3) -> None:
-        """Initialize analyzer.
-
-        Args:
-            min_cycles: Minimum completed cycles required for analysis
-        """
         self._min_cycles = min_cycles
 
     def calculate_acceleration(
@@ -289,7 +284,7 @@ class ThermalAnalyzer:
         """Calculate approach factor using hybrid industrial standard method.
 
         Primary method: Normalized Rate Ratio (first-half vs second-half average rate)
-        - Robust to sensor noise and quantization effects
+        - Not thrown off by sensor noise or quantization effects
         - Uses temperature-based splitting, not time-based
 
         Validation: Exponential curve fitting (when data quality is high)
@@ -362,8 +357,8 @@ class ThermalAnalyzer:
         """Calculate approach factor using first-half vs second-half rate ratio.
 
         Industrial standard method: Compare average heating rate in first half
-        of temperature rise vs second half. This is robust to sensor noise
-        and quantization effects.
+        of temperature rise vs second half. Not thrown off by sensor noise
+        or quantization effects.
 
         Args:
             cycle: The heating cycle
@@ -439,7 +434,7 @@ class ThermalAnalyzer:
     ) -> float | None:
         """Calculate average heating rate over a set of readings.
 
-        Uses total temperature change / total time for robustness.
+        Uses total temperature change / total time so a single noisy reading can't skew it.
 
         Args:
             readings: List of temperature readings (must be sorted by time)

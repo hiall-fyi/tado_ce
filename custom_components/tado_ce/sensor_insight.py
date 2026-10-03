@@ -129,7 +129,6 @@ class TadoHomeInsightsSensor(PerEntityAvailabilityMixin, CoordinatorEntity["Tado
     _attr_has_entity_name = True
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the Home Insights Sensor."""
         super().__init__(coordinator)
         _meta = ENTITY_REGISTRY["sensor_home_insights"]
         self._attr_translation_key = _meta.translation_key
@@ -292,7 +291,6 @@ class TadoZoneInsightsSensor(PerEntityAvailabilityMixin, CoordinatorEntity["Tado
     _attr_has_entity_name = True
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str) -> None:
-        """Initialize the Zone Insights Sensor."""
         super().__init__(coordinator)
         self._zone_id = zone_id
         self._zone_name = zone_name

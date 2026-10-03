@@ -79,7 +79,7 @@
         }
       },
       "bridge_connected": {
-        "name": "Pont"
+        "name": "Connexion"
       },
       "connection": {
         "name": "Connexion",
@@ -1008,6 +1008,23 @@
       },
       "homekit_writes_saved": {
         "name": "HomeKit écrit sauvegardé"
+      },
+      "absolute_humidity": {
+        "name": "Humidité absolue",
+        "state_attributes": {
+          "room_temperature": {
+            "name": "Température ambiante"
+          },
+          "humidity": {
+            "name": "Humidité"
+          },
+          "calculation_method": {
+            "name": "Méthode de calcul"
+          },
+          "zone_type": {
+            "name": "Type de zone"
+          }
+        }
       }
     },
     "select": {
@@ -1426,6 +1443,36 @@
     },
     "rate_limited": {
       "message": "L'API Tado est soumise à une limite de requêtes. Veuillez réessayer dans {retry_after_minutes} minutes."
+    },
+    "ac_set_temperature_failed": {
+      "message": "{zone_name} de la climatisation : échec du réglage de la température"
+    },
+    "ac_set_hvac_mode_failed": {
+      "message": "{zone_name} AC : échec de la configuration du mode « {hvac_mode} »"
+    },
+    "ac_set_fan_mode_failed": {
+      "message": "{zone_name} de la climatisation : échec de la configuration du mode ventilateur"
+    },
+    "ac_set_swing_mode_failed": {
+      "message": "{zone_name} de la climatisation : échec de la configuration du mode « swing »"
+    },
+    "presence_mode_set_failed": {
+      "message": "Échec de la configuration du mode de présence sur « {option} »"
+    },
+    "early_start_queue_full": {
+      "message": "{zone_name} « Early Start » : file d'attente de synchronisation des appareils pleine"
+    },
+    "child_lock_queue_full": {
+      "message": "{zone_name} relative au verrouillage parental : file d'attente de synchronisation des appareils pleine"
+    },
+    "water_heater_set_mode_failed": {
+      "message": "Eau chaude pour l'{zone_name} : l'{operation_mode}n de la configuration a échoué après {attempts} tentatives"
+    },
+    "bridge_client_not_available": {
+      "message": "Client API Bridge indisponible"
+    },
+    "boiler_max_output_temp_failed": {
+      "message": "Impossible de régler la température maximale de sortie de la chaudière"
     }
   },
   "issues": {
@@ -1535,7 +1582,7 @@
     "step": {
       "init": {
         "title": "Options Tado CE",
-        "description": "Personnalisez votre expérience Tado - construit par la communauté, pour la communauté.",
+        "description": "Configurez Tado CE comme vous le souhaitez : conçu par la communauté, pour la communauté.",
         "menu_options": {
           "zone_config": "Configuration des zones",
           "general_settings": "Paramètres généraux",
@@ -1746,8 +1793,8 @@
               "mobile_devices_min_refresh_minutes": "Intervalle de rafraîchissement du suivi des appareils mobiles"
             },
             "data_description": {
-              "day_start_hour": "Lorsque l'interrogation de jour commence (0-23, par défaut : 7)",
-              "night_start_hour": "Quand les sondages nocturnes commencent - les sondages sont moins fréquents la nuit (0-23, valeur par défaut : 23)",
+              "day_start_hour": "Au début de la collecte de données en journée (0–23, valeur par défaut : 7). Si les « heures calmes » d'Offset Sync sont activées, c'est également à ce moment-là que la sauvegarde des corrections nocturnes reprend.",
+              "night_start_hour": "Lorsque l'interrogation nocturne commence — les interrogations sont moins fréquentes la nuit (0–23, valeur par défaut : 23). Si les « heures calmes » d'Offset Sync sont activées, c'est également à ce moment-là que le système cesse d'enregistrer les corrections nocturnes.",
               "custom_day_interval": "Remplacer l'interrogation automatique en journée par un intervalle fixe. Laisser ce champ vide pour permettre à Tado CE d'ajuster la fréquence d'interrogation en fonction de votre quota API. (1 à 1 440 min)",
               "custom_night_interval": "Remplacer l'interrogation automatique nocturne par un intervalle fixe. Laisser ce champ vide pour laisser Tado CE ajuster la fréquence d'interrogation en fonction de votre quota API. (1 à 1 440 min)",
               "refresh_debounce_seconds": "Attendre ce temps après un changement avant de récupérer de nouvelles données de Tado (1-60s)",
@@ -1803,17 +1850,17 @@
               "wc_hysteresis": "Modifier l'hystérésis"
             },
             "data_description": {
-              "wc_slope": "À quelle vitesse la température de départ augmente-t-elle lorsque la température extérieure baisse ? Plus la valeur est élevée, plus le chauffage est intense (0,3–3,0). Réglage automatique en fonction du préréglage du système de chauffage indiqué ci-dessus.",
+              "wc_slope": "C'est la pente de la courbe de température de départ en fonction de la baisse de la température extérieure. Plus la valeur est élevée, plus le chauffage est intense (0,3–3,0). Ce paramètre n'est utilisé que lorsque le réglage du système de chauffage ci-dessus est défini sur « Personnalisé » ; sinon, il est calculé à partir des valeurs de débit max./min., de coupure et de température extérieure de référence.",
               "wc_design_outdoor_temp": "La température la plus froide à laquelle vous vous attendez dans votre région (-30 à 10°C)",
-              "wc_max_flow_temp": "Température maximale de départ que votre chaudière doit atteindre lorsque la température extérieure est la plus basse (25–80 °C). Réglage automatique en fonction des paramètres prédéfinis ci-dessus pour le système de chauffage.",
-              "wc_min_flow_temp": "Température minimale de départ — également utilisée lorsque le chauffage s'arrête (25–60 °C). Réglage automatique en fonction du préréglage du système de chauffage indiqué ci-dessus.",
+              "wc_max_flow_temp": "Température maximale de départ que votre chaudière doit atteindre lorsque la température extérieure est la plus basse (25–80 °C). Ce paramètre sert de base au calcul automatique de la pente, sauf si le paramètre défini ci-dessus est « Personnalisé ».",
+              "wc_min_flow_temp": "Température minimale de départ — également utilisée lorsque le chauffage s'arrête (25–60 °C). Elle sert de base au calcul automatique de la pente, sauf si le paramètre défini ci-dessus est « Personnalisé ».",
               "wc_shutoff_temp": "Arrêt du chauffage lorsque la température extérieure dépasse ce seuil (5-30°C)",
               "wc_smoothing_method": "Comment la moyenne des relevés de température extérieure est calculée pour éviter les changements soudains ?",
               "wc_smoothing_window": "Durée de la moyenne de la température extérieure (15-1440 min)",
               "wc_room_compensation_factor": "De combien ajuster la température de départ lorsqu'une pièce est plus froide ou plus chaude que sa cible (1.0-5.0)",
               "wc_step_size": "Arrondir la température de départ à cette taille de pas - des pas plus grands signifient moins de réglages de la chaudière (0,5-2,0°C).",
               "wc_hysteresis": "N'envoyer une nouvelle température de départ que si elle diffère de la précédente d'au moins cette valeur (0,5-3,0 °C).",
-              "wc_heating_system_preset": "La sélection d'un préréglage définit les valeurs par défaut recommandées pour les températures de pente et de débit. Choisissez « Personnalisé » pour régler chaque champ manuellement.",
+              "wc_heating_system_preset": "L'option « Personnalisé » vous permet de définir votre propre pente ; les autres options la calculent automatiquement à partir des champs « Débit max./min. », « Coupure » et « Température extérieure de référence » ci-dessus.",
               "wc_room_compensation_enabled": "Ajustez la température de départ à la hausse ou à la baisse lorsqu'une pièce est plus froide ou plus chaude que la température de consigne, en complément de la courbe de température extérieure."
             }
           },
@@ -1830,11 +1877,13 @@
             "name": "Capteurs d'extérieur",
             "data": {
               "use_outdoor_temp_entity": "Utiliser l'entité « Température extérieure »",
-              "outdoor_temp_entity": "Entité « Température extérieure »"
+              "outdoor_temp_entity": "Entité « Température extérieure »",
+              "boiler_flow_temp_entity": "Entité « Température de départ de la chaudière »"
             },
             "data_description": {
               "use_outdoor_temp_entity": "Désactivez cette option pour désactiver les fonctionnalités qui nécessitent la température extérieure (détection des fenêtres, évaluation du confort, risque de moisissure)",
-              "outdoor_temp_entity": "Capteur indiquant la température extérieure (par exemple, weather.home ou un capteur local)"
+              "outdoor_temp_entity": "Capteur indiquant la température extérieure (par exemple, weather.home ou un capteur local)",
+              "boiler_flow_temp_entity": "Capteur de température de départ de chaudière tiers (ebusd, OpenTherm Gateway, myVaillant) destiné aux foyers ne disposant pas d'un Tado Internet Bridge. Il transmet les données du capteur de température de départ de la chaudière ainsi que les informations relatives à son rendement."
             }
           }
         }
@@ -1888,7 +1937,8 @@
       }
     },
     "abort": {
-      "no_zones": "Aucune zone n'est disponible pour la configuration."
+      "no_zones": "Aucune zone n'est disponible pour la configuration.",
+      "integration_not_ready": "Le chargement de Tado CE n'est pas encore terminé. Veuillez patienter un instant, puis réessayez."
     },
     "error": {
       "interval_out_of_range": "L'intervalle d'interrogation doit être compris entre 1 et 1440 minutes.",

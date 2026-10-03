@@ -316,33 +316,43 @@ async def async_activate_homekit(
 def register_bridge_devices(
     hass: HomeAssistant,
     entry_id: str,
+    home_id: str,
     zones_info: list[dict[str, Any]],
+    home_devices: list[dict[str, Any]] | None = None,
 ) -> None:
-    """Pre-register Tado bridge devices so zone devices can reference them via_device (HA registry contract)."""
+    """Pre-register each Tado bridge as its own device-registry entry, nested under the hub.
+
+    Checks `home_devices` too: a relay-only zone never lists the bridge
+    among its own devices, only at the home level. Call after
+    `register_hub_device` so the hub's cached device id exists for
+    `via_device_id` parenting.
+    """
     from homeassistant.helpers import device_registry as dr
 
-    from .const import DOMAIN, TADO_BRIDGE_MODELS
+    from .const import TADO_BRIDGE_MODELS
+    from .device_manager import get_bridge_device_info
 
     device_registry = dr.async_get(hass)
     seen_serials: set[str] = set()
+
+    def _register(device_type: str, serial: str, device: dict[str, Any]) -> None:
+        if device_type in TADO_BRIDGE_MODELS and serial and serial.upper() not in seen_serials:
+            seen_serials.add(serial.upper())
+            device_info = get_bridge_device_info(serial, home_id)
+            device_info["model"] = device_type
+            device_info["sw_version"] = device.get("currentFwVersion")
+            device_registry.async_get_or_create(config_entry_id=entry_id, **device_info)
+            _LOGGER.debug(
+                "Setup: pre-registered Tado bridge %s (%s)",
+                mask_serial(serial), device_type,
+            )
+
     for zone in zones_info:
         for device in zone.get("devices") or []:
-            device_type = device.get("deviceType", "")
-            serial = device.get("shortSerialNo", "")
-            if device_type in TADO_BRIDGE_MODELS and serial and serial not in seen_serials:
-                seen_serials.add(serial)
-                device_registry.async_get_or_create(
-                    config_entry_id=entry_id,
-                    identifiers={(DOMAIN, serial)},
-                    manufacturer="Tado",
-                    model=device_type,
-                    name=device.get("serialNo", serial),
-                    sw_version=device.get("currentFwVersion"),
-                )
-                _LOGGER.debug(
-                    "Setup: pre-registered Tado bridge %s (%s)",
-                    mask_serial(serial), device_type,
-                )
+            _register(device.get("deviceType", ""), device.get("shortSerialNo", ""), device)
+    for device in home_devices or []:
+        if isinstance(device, dict):
+            _register(device.get("deviceType", ""), device.get("shortSerialNo", ""), device)
 
 
 def register_hub_device(hass: HomeAssistant, entry_id: str, home_id: str) -> None:

@@ -145,6 +145,44 @@ def zone_confirmed_on(coordinator: TadoDataUpdateCoordinator, zone_id: str) -> b
     return setting.get("power") == "ON"
 
 
+def resolve_boiler_flow_temperature(
+    coordinator: TadoDataUpdateCoordinator,
+) -> tuple[float | None, str | None]:
+    """Boiler flow temp: cloud data first, external binding as fallback, so the sensor and insight can't disagree.
+
+    Returns (value, source): "zone:<id>", "external", or (None, None).
+
+    The cloud side is picked on presence alone, not age. If Tado kept serving a stale flow value
+    while the bridge was offline, it would still beat a fresh external reading. No captured payload
+    shows whether `boilerFlowTemperature` carries a timestamp the way `heatingPower` does, so there
+    is nothing verified to check against yet.
+    """
+    zone_states = get_zone_states(coordinator.data)
+    for zone_id, zone_data in zone_states.items():
+        activity_data = zone_data.get("activityDataPoints") or {}
+        flow_temp = (activity_data.get("boilerFlowTemperature") or {}).get("celsius")
+        if flow_temp is not None:
+            return flow_temp, f"zone:{zone_id}"
+
+    entity_id = coordinator.config_manager.get_boiler_flow_temp_entity()
+    if not entity_id:
+        return None, None
+
+    state = coordinator.hass.states.get(entity_id)
+    if state is None or state.state in ("unknown", "unavailable", ""):
+        return None, None
+
+    try:
+        return float(state.state), "external"
+    except (ValueError, TypeError):
+        _LOGGER.debug(
+            "Helpers: boiler flow entity %s has non-numeric state %r, ignoring",
+            entity_id,
+            state.state,
+        )
+        return None, None
+
+
 def merge_homekit_into_zone_data(
     zone_data: dict[str, Any],
     zone_id: str,
@@ -472,9 +510,9 @@ def get_overlay_termination(hass: HomeAssistant, entry_id: str | None = None) ->
 def get_zone_overlay_termination(hass: HomeAssistant, zone_id: str, entry_id: str | None = None) -> dict[str, Any]:
     """Get the termination dict for overlay API calls with per-zone support.
 
-    Priority:
-    1. Per-zone overlay_mode (if zone_config_manager available and zone has override)
-    2. Global overlay_mode (from coordinator)
+    Uses the per-zone overlay_mode (defaults merged in, so it's always present)
+    unless it's TADO_MODE, in which case it falls through to the global
+    overlay_mode instead.
 
     Args:
         hass: Home Assistant instance

@@ -39,7 +39,6 @@ class TadoWeatherCompensationTargetSensor(
     _attr_suggested_display_precision = 1
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the TadoWeatherCompensationTargetSensor."""
         super().__init__(coordinator)
         meta = get_meta("sensor_wc_target_flow_temp")
         self._attr_device_info = get_hub_device_info(coordinator.home_id)
@@ -90,7 +89,6 @@ class TadoWeatherCompensationStatusSensor(
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the TadoWeatherCompensationStatusSensor."""
         super().__init__(coordinator)
         meta = get_meta("sensor_wc_status")
         self._attr_device_info = get_hub_device_info(coordinator.home_id)

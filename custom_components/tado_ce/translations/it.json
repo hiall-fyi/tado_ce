@@ -79,7 +79,7 @@
         }
       },
       "bridge_connected": {
-        "name": "Ponte"
+        "name": "Connessione"
       },
       "connection": {
         "name": "Connessione",
@@ -1008,6 +1008,23 @@
       },
       "homekit_writes_saved": {
         "name": "HomeKit scrive salvato"
+      },
+      "absolute_humidity": {
+        "name": "Umidità assoluta",
+        "state_attributes": {
+          "room_temperature": {
+            "name": "Temperatura ambiente"
+          },
+          "humidity": {
+            "name": "Umidità"
+          },
+          "calculation_method": {
+            "name": "Metodo di calcolo"
+          },
+          "zone_type": {
+            "name": "Tipo di zona"
+          }
+        }
       }
     },
     "select": {
@@ -1426,6 +1443,36 @@
     },
     "rate_limited": {
       "message": "L'API di Tado ha raggiunto il limite di richieste. Riprova tra un{retry_after_minutes}i."
+    },
+    "ac_set_temperature_failed": {
+      "message": "{zone_name} AC: impossibile impostare la temperatura"
+    },
+    "ac_set_hvac_mode_failed": {
+      "message": "{zone_name} di AC: impossibile impostare la modalità \"{hvac_mode}\""
+    },
+    "ac_set_fan_mode_failed": {
+      "message": "{zone_name} AC: impossibile impostare la modalità ventola"
+    },
+    "ac_set_swing_mode_failed": {
+      "message": "{zone_name} AC: impossibile impostare la modalità oscillazione"
+    },
+    "presence_mode_set_failed": {
+      "message": "Impossibile impostare la modalità di presenza su “{option}”"
+    },
+    "early_start_queue_full": {
+      "message": "{zone_name} \"Early Start\": coda di sincronizzazione dei dispositivi piena"
+    },
+    "child_lock_queue_full": {
+      "message": "{zone_name} del blocco bambini: coda di sincronizzazione del dispositivo piena"
+    },
+    "water_heater_set_mode_failed": {
+      "message": "Acqua calda per \"{zone_name}\": l'impostazione di \"{operation_mode}\" non è andata a buon fine dopo \"{attempts}\" tentativi"
+    },
+    "bridge_client_not_available": {
+      "message": "Client API Bridge non disponibile"
+    },
+    "boiler_max_output_temp_failed": {
+      "message": "Impossibile impostare la temperatura massima di uscita della caldaia"
     }
   },
   "issues": {
@@ -1535,7 +1582,7 @@
     "step": {
       "init": {
         "title": "Opzioni Tado CE",
-        "description": "Personalizzate la vostra esperienza Tado - costruita dalla comunità, per la comunità.",
+        "description": "Configura Tado CE come preferisci: creato dalla comunità, per la comunità.",
         "menu_options": {
           "zone_config": "Configurazione della zona",
           "general_settings": "Impostazioni generali",
@@ -1746,8 +1793,8 @@
               "mobile_devices_min_refresh_minutes": "Intervallo di aggiornamento del tracciamento dei dispositivi mobili"
             },
             "data_description": {
-              "day_start_hour": "Quando inizia il polling diurno (0-23, valore predefinito: 7)",
-              "night_start_hour": "Quando inizia il polling notturno - polling meno frequente di notte (0-23, default: 23)",
+              "day_start_hour": "Quando inizia il rilevamento diurno (0–23, impostazione predefinita: 7). Se la funzione \"Ore di silenzio\" di Offset Sync è attiva, questo è anche il momento in cui riprende la registrazione delle correzioni notturne.",
+              "night_start_hour": "Quando inizia il polling notturno — la frequenza dei polling è inferiore durante la notte (0–23, impostazione predefinita: 23). Se è attiva la funzione “ore di silenzio” di Offset Sync, è anche in questo momento che smette di applicare le correzioni notturne.",
               "custom_day_interval": "Sovrascrivi l'interrogazione automatica diurna con un intervallo fisso. Lascia il campo vuoto per consentire a Tado CE di regolare l'interrogazione in base alla tua quota API. (1–1440 min)",
               "custom_night_interval": "Sostituisci l'interrogazione automatica notturna con un intervallo fisso. Lascia il campo vuoto per consentire a Tado CE di regolare l'interrogazione in base alla tua quota API. (1–1440 min)",
               "refresh_debounce_seconds": "Attendere questo tempo dopo una modifica prima di recuperare nuovi dati da Tado (1-60s)",
@@ -1803,17 +1850,17 @@
               "wc_hysteresis": "Modifica dell'isteresi"
             },
             "data_description": {
-              "wc_slope": "Quanto rapidamente aumenta la temperatura di mandata quando fuori fa più freddo. Valori più alti indicano un riscaldamento più intenso (0,3–3,0). Regolazione automatica in base alle impostazioni predefinite dell'impianto di riscaldamento sopra indicate.",
+              "wc_slope": "Indica quanto rapidamente aumenta la temperatura di mandata man mano che la temperatura esterna si abbassa. Un valore più alto indica un riscaldamento più intenso (0,3–3,0). Viene utilizzato solo quando l’impostazione predefinita dell’impianto di riscaldamento sopra indicata è “Personalizzata”; in caso contrario, viene calcolato in base ai valori di portata massima/minima, chiusura e temperatura esterna di progetto.",
               "wc_design_outdoor_temp": "La temperatura più fredda prevista nella vostra zona (da -30 a 10°C)",
-              "wc_max_flow_temp": "Temperatura massima di mandata che la caldaia dovrebbe raggiungere alla temperatura esterna più bassa (25–80 °C). Regolazione automatica in base alle impostazioni dell'impianto di riscaldamento sopra indicate.",
-              "wc_min_flow_temp": "Temperatura minima del flusso — utilizzata anche quando il riscaldamento si spegne (25–60 °C). Regolazione automatica in base all'impostazione predefinita dell'impianto di riscaldamento sopra indicata.",
+              "wc_max_flow_temp": "Temperatura massima di mandata che la caldaia dovrebbe raggiungere alla temperatura esterna più bassa (25–80 °C). Viene utilizzata per il calcolo automatico della pendenza, a meno che l’impostazione sopra indicata non sia “Personalizzata”.",
+              "wc_min_flow_temp": "Temperatura di mandata minima — utilizzata anche quando il riscaldamento si spegne (25–60 °C). Serve per il calcolo automatico della pendenza, a meno che l’impostazione predefinita sopra indicata non sia “Personalizzata”.",
               "wc_shutoff_temp": "Interrompere il riscaldamento quando la temperatura esterna supera questo valore (5-30°C).",
               "wc_smoothing_method": "Come vengono mediate le letture della temperatura esterna per evitare variazioni improvvise",
               "wc_smoothing_window": "Per quanto tempo calcolare la media della temperatura esterna (15-1440 min)",
               "wc_room_compensation_factor": "Di quanto regolare la temperatura di mandata quando una stanza è più fredda o più calda del suo target (1,0-5,0)",
               "wc_step_size": "Arrotondare la temperatura di mandata a questa dimensione di passo - passi più grandi significano meno regolazioni della caldaia (0,5-2,0°C)",
               "wc_hysteresis": "Inviare una nuova temperatura di mandata solo se differisce dall'ultima di almeno questo valore (0,5-3,0°C).",
-              "wc_heating_system_preset": "Selezionando un'impostazione predefinita si applicano i valori predefiniti consigliati per la pendenza e le temperature di mandata. Scegliere \"Personalizza\" per regolare manualmente ogni campo.",
+              "wc_heating_system_preset": "L'opzione \"Personalizzata\" ti permette di impostare la pendenza che preferisci; le altre opzioni la calcolano automaticamente in base ai campi \"Portata massima/minima\", \"Chiusura\" e \"Temperatura esterna di progetto\" sopra indicati.",
               "wc_room_compensation_enabled": "Regolare la temperatura di mandata verso l'alto o verso il basso quando una stanza è più fredda o più calda rispetto al valore di riferimento, in aggiunta alla curva climatica esterna."
             }
           },
@@ -1830,11 +1877,13 @@
             "name": "Sensori per esterni",
             "data": {
               "use_outdoor_temp_entity": "Utilizza l'entità \"Temperatura esterna\"",
-              "outdoor_temp_entity": "Entità \"Temperatura esterna\""
+              "outdoor_temp_entity": "Entità \"Temperatura esterna\"",
+              "boiler_flow_temp_entity": "Entità \"Temperatura di mandata della caldaia\""
             },
             "data_description": {
               "use_outdoor_temp_entity": "Disattivare per disabilitare le funzioni che richiedono la temperatura esterna (rilevamento delle finestre, valutazione del comfort, rischio di muffa)",
-              "outdoor_temp_entity": "Sensore che rileva la temperatura esterna (ad esempio, weather.home o un sensore locale)"
+              "outdoor_temp_entity": "Sensore che rileva la temperatura esterna (ad esempio, weather.home o un sensore locale)",
+              "boiler_flow_temp_entity": "Sensore di temperatura di mandata della caldaia di terze parti (ebusd, OpenTherm Gateway, myVaillant) per abitazioni prive di Tado Internet Bridge. Fornisce i dati relativi alla temperatura di mandata della caldaia e informazioni sulla sua efficienza."
             }
           }
         }
@@ -1888,7 +1937,8 @@
       }
     },
     "abort": {
-      "no_zones": "Nessuna zona disponibile per la configurazione."
+      "no_zones": "Nessuna zona disponibile per la configurazione.",
+      "integration_not_ready": "Tado CE non ha ancora completato il caricamento. Attendi un attimo e riprova."
     },
     "error": {
       "interval_out_of_range": "L'intervallo di polling deve essere compreso tra 1 e 1440 minuti.",

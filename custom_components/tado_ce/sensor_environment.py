@@ -9,7 +9,7 @@ from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorStateClass,
 )
-from homeassistant.const import UnitOfTemperature
+from homeassistant.const import UnitOfDensity, UnitOfTemperature
 from homeassistant.core import callback
 from homeassistant.util import dt as dt_util
 
@@ -19,6 +19,9 @@ from .calculations import (
     classify_condensation_risk,
     classify_heat_risk_level,
     classify_mold_risk_by_margin,
+)
+from .calculations import (
+    calculate_absolute_humidity as _calculate_absolute_humidity,
 )
 from .calculations import (
     calculate_dew_point as _calculate_dew_point,
@@ -58,6 +61,7 @@ from .insights_environment import (
     calculate_mold_risk_recommendation,
 )
 from .sensor_helpers import get_effective_temperature as _get_effective_temp
+from .sensor_helpers import get_outdoor_humidity as _get_outdoor_humidity
 from .sensor_helpers import get_outdoor_temperature as _get_outdoor_temp
 from .sensor_zone import TadoZoneSensor
 
@@ -137,7 +141,6 @@ class TadoMoldRiskSensor(TadoZoneSensor):
     def __init__(
         self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
     ) -> None:
-        """Initialize the Mold Risk Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
         _meta = ENTITY_REGISTRY["sensor_mold_risk"]
         self._attr_translation_key = _meta.translation_key
@@ -263,7 +266,6 @@ class TadoMoldRiskPercentageSensor(TadoZoneSensor):
     def __init__(
         self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
     ) -> None:
-        """Initialize the Mold Risk Percentage Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
         _meta = ENTITY_REGISTRY["sensor_mold_risk_pct"]
         self._attr_translation_key = _meta.translation_key
@@ -375,7 +377,6 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
     def __init__(
         self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "AIR_CONDITIONING",
     ) -> None:
-        """Initialize the Condensation Risk Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
         _meta = ENTITY_REGISTRY["sensor_condensation_risk"]
         self._attr_translation_key = _meta.translation_key
@@ -582,7 +583,7 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
             return
 
         # Get outdoor humidity (from weather entity)
-        self._outdoor_humidity = self._get_outdoor_humidity(outdoor_entity)
+        self._outdoor_humidity = _get_outdoor_humidity(self.hass, outdoor_entity)
         if self._outdoor_humidity is None:
             self._data_present = False
             return
@@ -620,49 +621,6 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
 
         self._data_present = True
 
-    def _get_outdoor_humidity(self, entity_id: str) -> float | None:
-        """Read outdoor humidity from a weather entity or companion sensor."""
-        if not self.hass or not entity_id:
-            return None
-
-        try:
-            state = self.hass.states.get(entity_id)
-            if state is None or state.state in ("unknown", "unavailable"):
-                return None
-
-            if entity_id.startswith("weather."):
-                humidity = state.attributes.get("humidity")
-                if humidity is not None:
-                    return float(humidity)
-
-            # For non-weather entities, try to find a companion humidity sensor
-            # e.g., sensor.outdoor_temperature -> sensor.outdoor_humidity
-            if entity_id.startswith("sensor.") and "temperature" in entity_id.lower():
-                humidity_entity = entity_id.lower().replace("temperature", "humidity")
-                humidity_state = self.hass.states.get(humidity_entity)
-                if humidity_state and humidity_state.state not in ("unknown", "unavailable"):
-                    try:
-                        return float(humidity_state.state)
-                    except (ValueError, TypeError):
-                        pass
-
-        except Exception as e:
-            _LOGGER.debug(
-                "Environment Sensor: could not read outdoor humidity "
-                "from %s (%s), condensation risk falls back to "
-                "indoor-only data",
-                entity_id, e,
-            )
-            return None
-
-        _LOGGER.debug(
-            "Environment Sensor: no outdoor humidity available for "
-            "%s, set a weather.* entity or pair the outdoor "
-            "temperature sensor with a sensor.*_humidity sibling",
-            entity_id,
-        )
-        return None
-
 
 class TadoSurfaceTemperatureSensor(TadoZoneSensor):
     """Surface temperature sensor for calibration workflows (laser thermometer cross-check)."""
@@ -672,7 +630,6 @@ class TadoSurfaceTemperatureSensor(TadoZoneSensor):
     def __init__(
         self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
     ) -> None:
-        """Initialize the Surface Temperature Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
         _meta = ENTITY_REGISTRY["sensor_surface_temp"]
         self._attr_translation_key = _meta.translation_key
@@ -806,7 +763,6 @@ class TadoDewPointSensor(TadoZoneSensor):
     def __init__(
         self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
     ) -> None:
-        """Initialize the Dew Point Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
         _meta = ENTITY_REGISTRY["sensor_dew_point"]
         self._attr_translation_key = _meta.translation_key
@@ -869,6 +825,76 @@ class TadoDewPointSensor(TadoZoneSensor):
             self._data_present = False
 
 
+class TadoAbsoluteHumiditySensor(TadoZoneSensor):
+    """Absolute humidity sensor (Magnus-Tetens, g/m³, for automation workflows)."""
+
+    _attr_has_entity_name = True
+
+    def __init__(
+        self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
+    ) -> None:
+        super().__init__(coordinator, zone_id, zone_name, zone_type)
+        _meta = ENTITY_REGISTRY["sensor_absolute_humidity"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
+        self._attr_icon = _meta.icon
+        self._attr_entity_category = get_entity_category(_meta)
+        self._attr_device_class = SensorDeviceClass.ABSOLUTE_HUMIDITY
+        self._attr_native_unit_of_measurement = UnitOfDensity.GRAMS_PER_CUBIC_METER
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_suggested_display_precision = 1
+
+        # Attributes
+        self._room_temp: float | None = None
+        self._humidity: float | None = None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return extra state attributes."""
+        return {
+            "room_temperature": self._room_temp,
+            "humidity": self._humidity,
+            "calculation_method": "Magnus-Tetens",
+            **self._base_zone_attributes,
+        }
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        self.update()
+        self.async_write_ha_state()
+
+    @callback
+    def update(self) -> None:
+        """Update absolute humidity based on room temperature and relative humidity."""
+        try:
+            zone_data = self._get_zone_data()
+            if not zone_data:
+                self._data_present = False
+                return
+
+            sensor_data = zone_data.get("sensorDataPoints") or {}
+            self._room_temp = (sensor_data.get("insideTemperature") or {}).get("celsius")
+            self._humidity = (sensor_data.get("humidity") or {}).get("percentage")
+
+            if self._room_temp is None or self._humidity is None:
+                self._data_present = False
+                return
+
+            self._attr_native_value = round(
+                _calculate_absolute_humidity(self._room_temp, self._humidity), 1,
+            )
+            self._data_present = True
+
+        except Exception as e:
+            _LOGGER.debug(
+                "Environment Sensor: zone %s absolute humidity update failed "
+                "(%s), marking unavailable until the next poll",
+                self._zone_id, e,
+            )
+            self._data_present = False
+
+
 class TadoComfortLevelSensor(TadoZoneSensor):
     """Comfort level sensor using ASHRAE 55 adaptive comfort (with humidity suffix).
 
@@ -882,7 +908,6 @@ class TadoComfortLevelSensor(TadoZoneSensor):
     def __init__(
         self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
     ) -> None:
-        """Initialize the Comfort Level Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
         _meta = ENTITY_REGISTRY["sensor_comfort_level"]
         self._attr_translation_key = _meta.translation_key

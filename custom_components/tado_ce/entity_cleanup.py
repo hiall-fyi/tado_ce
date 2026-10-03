@@ -8,13 +8,14 @@ import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from typing import Any
 
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
     from homeassistant.helpers.entity_registry import EntityRegistry
 
-    from .coordinator import TadoDataUpdateCoordinator
+    from .coordinator import TadoConfigEntry, TadoDataUpdateCoordinator
 
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -124,10 +125,12 @@ FEATURE_GROUP_CONTEXTS: tuple[FeatureGroupContext, ...] = (
     ),
     FeatureGroupContext(
         cleanup_flag="_cleanup_bridge",
+        # No toggle_option: bridge_enabled's real default isn't False, so it's handled separately below.
         feature_group="bridge",
         label="Bridge",
         legacy_suffixes=("_bridge_", "_boiler_"),
         match_mode="contains",
+        exclude_suffixes=("boiler_flow_temp",),
     ),
     FeatureGroupContext(
         cleanup_flag="_cleanup_weather_compensation",
@@ -150,6 +153,13 @@ FEATURE_GROUP_CONTEXTS: tuple[FeatureGroupContext, ...] = (
         label="Heating Circuit",
         legacy_suffixes=(),
         platform_filter="select",
+    ),
+    FeatureGroupContext(
+        cleanup_flag="_cleanup_boiler_flow",
+        # No toggle_option: fired when the boiler flow entity binding is cleared, see below.
+        feature_group="boiler_flow",
+        label="Boiler Flow Temperature",
+        legacy_suffixes=(),
     ),
 )
 
@@ -210,6 +220,8 @@ def match_entity_for_cleanup(
         return False
 
     if match_mode == "contains":
+        if exclude_patterns and any(p.search(unique_id) for p in exclude_patterns):
+            return False
         return any(sub in unique_id for sub in contains_substrings)
 
     # suffix mode: check excludes first
@@ -279,7 +291,7 @@ def cleanup_orphan_devices(
     hub_identifier = _hub_identifier(str(coordinator.home_id))
 
     removed = 0
-    for device_entry in list(device_registry.devices.values()):
+    for device_entry in list(device_registry.devices):
         if entry.entry_id not in device_entry.config_entries:
             continue
 
@@ -336,7 +348,62 @@ def detect_cleanup_flags(
             "entity removal scheduled for next reload",
         )
 
+    # Bridge toggle disabled (independent of credential presence, checked above).
+    # Not in FEATURE_CLEANUP_MAP: that loop's default is always False, which is
+    # wrong for bridge_enabled (its real default is credential presence).
+    was_bridge_enabled = prev_options.get("bridge_enabled", had_bridge)
+    now_bridge_enabled = new_options.get("bridge_enabled", has_bridge)
+    if was_bridge_enabled and not now_bridge_enabled:
+        flags["_cleanup_bridge"] = True
+        _LOGGER.info(
+            "Entity Cleanup: bridge disabled, entity removal "
+            "scheduled for next reload",
+        )
+
+    # Boiler flow binding cleared. Removal is safe even when a zone still reports
+    # flow temperature: setup re-creates the sensor and HA restores its entity_id.
+    if prev_options.get("boiler_flow_temp_entity") and not new_options.get("boiler_flow_temp_entity"):
+        flags["_cleanup_boiler_flow"] = True
+        _LOGGER.info(
+            "Entity Cleanup: boiler flow temperature entity unbound, sensor "
+            "removal scheduled for next reload",
+        )
+
     return flags
+
+
+def queue_cleanup_flags(
+    entry: ConfigEntry,
+    prev_options: Mapping[str, Any],
+    new_options: dict[str, Any],
+) -> None:
+    """Queue cleanup for whatever an options save just disabled, for the next reload."""
+    cleanup_flags = detect_cleanup_flags(dict(prev_options), new_options)
+    if not cleanup_flags:
+        return
+    coordinator = getattr(entry, "runtime_data", None)
+    if coordinator is not None:
+        coordinator._pending_cleanup.setdefault(entry.entry_id, {}).update(cleanup_flags)
+        return
+    # No coordinator to queue onto; log so this doesn't fail silently.
+    _LOGGER.warning(
+        "Options: disabled feature(s) %s while the integration wasn't "
+        "ready; their entities won't clean up until this feature is "
+        "toggled off again once the integration is running normally",
+        ", ".join(sorted(cleanup_flags)),
+    )
+
+
+def _entry_entities(
+    entity_registry: EntityRegistry,
+    entry: ConfigEntry,
+) -> list[tuple[str, er.RegistryEntry]]:
+    """List this config entry's own tado_ce entities, so one home's cleanup never touches another's."""
+    return [
+        (entity_id, entity_entry)
+        for entity_id, entity_entry in entity_registry.entities.items()
+        if entity_entry.platform == DOMAIN and entity_entry.config_entry_id == entry.entry_id
+    ]
 
 
 def _apply_cleanup_context(
@@ -358,9 +425,7 @@ def _apply_cleanup_context(
             suffix_to_pattern(s) for s in ctx.exclude_suffixes
         )
 
-    for entity_id, entity_entry in list(entity_registry.entities.items()):
-        if entity_entry.platform != DOMAIN:
-            continue
+    for entity_id, entity_entry in _entry_entities(entity_registry, entry):
         unique_id = entity_entry.unique_id or ""
         if match_entity_for_cleanup(
             unique_id=unique_id,
@@ -385,9 +450,7 @@ def _apply_cleanup_context(
         zone_only_patterns = frozenset(
             suffix_to_pattern(s) for s in ctx.zone_only_suffixes
         )
-        for entity_id, entity_entry in list(entity_registry.entities.items()):
-            if entity_entry.platform != DOMAIN:
-                continue
+        for entity_id, entity_entry in _entry_entities(entity_registry, entry):
             unique_id = entity_entry.unique_id or ""
             if match_zone_only_suffix(unique_id, zone_only_patterns):
                 _LOGGER.debug(
@@ -406,7 +469,7 @@ def _apply_cleanup_context(
 
 def cleanup_disabled_feature_entities(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: TadoConfigEntry,
 ) -> int:
     """Run every pending cleanup pass and sweep orphan devices afterwards."""
     entity_registry = er.async_get(hass)

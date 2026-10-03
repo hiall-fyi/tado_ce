@@ -55,7 +55,8 @@ FIELD_ENRICHMENT: dict[str, FieldEnrichment] = {
     "bridgeConnected": FieldEnrichment(
         icon="mdi:lan-connect",
         entity_category="diagnostic",
-        translation_key="bridge_connected_state",
+        # No entity is built from this path (sensor.py's skip_paths): the
+        # registry's binary_sensor_bridge_connected already serves this fact.
         value_formatter="format_boolean_connected",
     ),
     "hotWaterZonePresent": FieldEnrichment(

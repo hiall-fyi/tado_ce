@@ -125,7 +125,6 @@ class TadoHubSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntity
     _attr_has_entity_name = True
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator, registry_key: str) -> None:
-        """Initialize hub sensor with metadata from entity registry."""
         super().__init__(coordinator)
         _meta = ENTITY_REGISTRY[registry_key]
         self._attr_translation_key = _meta.translation_key
@@ -154,7 +153,6 @@ class TadoHomeIdSensor(PerEntityAvailabilityMixin, TadoHubSensor):
     """Sensor showing Tado Home ID."""
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the TadoHomeIdSensor."""
         super().__init__(coordinator, "sensor_home_id")
 
     @callback
@@ -181,7 +179,6 @@ class TadoApiUsageSensor(PerEntityAvailabilityMixin, TadoHubSensor):
     """Sensor for Tado API usage tracking."""
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the TadoApiUsageSensor."""
         super().__init__(coordinator, "sensor_api_usage")
         self._attr_native_unit_of_measurement = "calls"
         self._attr_state_class = SensorStateClass.MEASUREMENT
@@ -297,7 +294,6 @@ class TadoApiResetSensor(PerEntityAvailabilityMixin, TadoHubSensor):
     """Sensor showing API rate limit reset time."""
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the TadoApiResetSensor."""
         super().__init__(coordinator, "sensor_api_reset")
         self._attr_device_class = SensorDeviceClass.TIMESTAMP
         self._reset_human: str | None = None
@@ -420,7 +416,6 @@ class TadoApiLimitSensor(PerEntityAvailabilityMixin, TadoHubSensor):
     """Sensor showing Tado API daily limit."""
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the TadoApiLimitSensor."""
         super().__init__(coordinator, "sensor_api_limit")
         self._attr_native_unit_of_measurement = "calls"
         self._attr_extra_state_attributes: dict[str, Any] = {}
@@ -508,7 +503,6 @@ class TadoApiStatusSensor(TadoHubSensor):
     """Sensor showing Tado API status."""
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the TadoApiStatusSensor."""
         super().__init__(coordinator, "sensor_api_status")
         self._remaining_calls: int | None = None
         self._total_calls: int | None = None
@@ -566,7 +560,6 @@ class TadoTokenStatusSensor(TadoHubSensor):
     """Sensor showing Tado token status."""
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the TadoTokenStatusSensor."""
         super().__init__(coordinator, "sensor_token_status")
 
     @property
@@ -598,7 +591,6 @@ class TadoZoneCountSensor(PerEntityAvailabilityMixin, TadoHubSensor):
     """Sensor showing number of Tado zones."""
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the TadoZoneCountSensor."""
         super().__init__(coordinator, "sensor_zone_count")
         self._attr_native_unit_of_measurement = "zones"
         self._heating_zones = 0
@@ -640,7 +632,6 @@ class TadoLastSyncSensor(PerEntityAvailabilityMixin, TadoHubSensor):
     """Sensor showing last sync time."""
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the TadoLastSyncSensor."""
         super().__init__(coordinator, "sensor_last_sync")
         self._attr_device_class = SensorDeviceClass.TIMESTAMP
 
@@ -674,7 +665,6 @@ class TadoNextSyncSensor(PerEntityAvailabilityMixin, TadoHubSensor):
     """Sensor showing next API sync time."""
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the TadoNextSyncSensor."""
         super().__init__(coordinator, "sensor_next_sync")
         self._attr_device_class = SensorDeviceClass.TIMESTAMP
         self._countdown: str | None = None
@@ -778,7 +768,6 @@ class TadoPollingIntervalSensor(PerEntityAvailabilityMixin, TadoHubSensor):
     """Sensor showing current polling interval."""
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the TadoPollingIntervalSensor."""
         super().__init__(coordinator, "sensor_polling_interval")
         self._attr_native_unit_of_measurement = "min"
         self._attr_state_class = SensorStateClass.MEASUREMENT
@@ -885,7 +874,6 @@ class TadoApiHistorySensor(TadoHubSensor):
     """Sensor showing API call history."""
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the TadoApiHistorySensor."""
         super().__init__(coordinator, "sensor_call_history")
         self._attr_native_unit_of_measurement = "calls"
         self._attr_state_class = SensorStateClass.MEASUREMENT
@@ -961,7 +949,6 @@ class TadoApiBreakdownSensor(TadoHubSensor):
     """Sensor showing API call breakdown by type."""
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the TadoApiBreakdownSensor."""
         super().__init__(coordinator, "sensor_api_breakdown")
         self._breakdown_24h: dict[str, int] = {}
         self._breakdown_today: dict[str, int] = {}
@@ -1062,7 +1049,6 @@ class TadoHomekitReadsSavedSensor(PerEntityAvailabilityMixin, TadoHubSensor):
     """Sensor for HomeKit reads saved today."""
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the TadoHomekitReadsSavedSensor."""
         super().__init__(coordinator, "sensor_homekit_reads_saved")
         self._attr_native_unit_of_measurement = "reads"
         self._attr_state_class = SensorStateClass.TOTAL_INCREASING
@@ -1078,7 +1064,6 @@ class TadoHomekitWritesSavedSensor(PerEntityAvailabilityMixin, TadoHubSensor):
     """Sensor for HomeKit writes saved today."""
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the TadoHomekitWritesSavedSensor."""
         super().__init__(coordinator, "sensor_homekit_writes_saved")
         self._attr_native_unit_of_measurement = "writes"
         self._attr_state_class = SensorStateClass.TOTAL_INCREASING

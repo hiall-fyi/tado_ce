@@ -556,11 +556,11 @@ class SmartValveController:
         if desired_target is None:
             if not self._no_target_warned:
                 _LOGGER.warning(
-                    "Smart Valve: zone %s has no target to work from, so it "
-                    "stays idle: no manual override is active and no schedule "
-                    "has been fetched for this zone. Turn on Schedule Calendar "
-                    "(Settings → Tado CE → Configure → Schedule Calendar) and "
-                    "restart HA to give it the zone's schedule.",
+                    "Smart Valve: zone %s has no target to work from yet, so "
+                    "it stays idle: no manual override is active and this "
+                    "zone's schedule hasn't been fetched. It fetches "
+                    "automatically on the next full sync, so this should "
+                    "clear on its own.",
                     self._zone_id,
                 )
                 self._no_target_warned = True

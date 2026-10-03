@@ -75,11 +75,11 @@ class TadoBridgeApiClient:
             return await async_retry_with_backoff(
                 _do_get,
                 no_retry_exceptions=(TadoBridgeApiError,),
-                retryable_exceptions=(aiohttp.ClientError,),
+                retryable_exceptions=(aiohttp.ClientError, TimeoutError),
             )
-        except aiohttp.ClientError as err:
+        except (aiohttp.ClientError, TimeoutError) as err:
             msg = "Bridge API network error: %s"
-            raise TadoBridgeApiError(msg % err) from err
+            raise TadoBridgeApiError(msg % (str(err) or type(err).__name__)) from err
 
     async def async_set_max_output_temperature(self, celsius: float) -> bool:
         """Set the boiler max output temperature on the bridge (idempotent PUT)."""
@@ -99,12 +99,12 @@ class TadoBridgeApiClient:
             return await async_retry_with_backoff(
                 _do_put,
                 no_retry_exceptions=(TadoBridgeApiError,),
-                retryable_exceptions=(aiohttp.ClientError,),
+                retryable_exceptions=(aiohttp.ClientError, TimeoutError),
             )
-        except aiohttp.ClientError as err:
+        except (aiohttp.ClientError, TimeoutError) as err:
             msg = "Bridge API network error: %s"
             _LOGGER.debug("Bridge: PUT max-temp network error: %s", err)
-            raise TadoBridgeApiError(msg % err) from err
+            raise TadoBridgeApiError(msg % (str(err) or type(err).__name__)) from err
 
     async def async_validate_credentials(self) -> bool:
         """Probe the bridge with a wiring-state read to confirm the auth key works."""

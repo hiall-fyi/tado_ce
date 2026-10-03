@@ -87,12 +87,19 @@ def calculate_boiler_flow_anomaly_insight(
     flow_temp: float | None = None,
     heating_power_pct: float | None = None,
     zone_name: str = "",
+    hot_water_on: bool = False,
 ) -> Insight | None:
     """Detect boiler flow temperature anomaly relative to heating demand."""
     if flow_temp is None or heating_power_pct is None:
         return None
 
-    if flow_temp > BOILER_FLOW_HIGH_TEMP and heating_power_pct < BOILER_FLOW_LOW_DEMAND:
+    # A cylinder reheat runs the boiler hot with no zone calling for heat, and Tado doesn't
+    # say whether the cylinder is actually calling, so "too hot" can't be told apart from it.
+    if (
+        flow_temp > BOILER_FLOW_HIGH_TEMP
+        and heating_power_pct < BOILER_FLOW_LOW_DEMAND
+        and not hot_water_on
+    ):
         rec = (
             f"Boiler flow temp is {flow_temp:.0f}\u00b0C but heating demand "
             f"is only {heating_power_pct:.0f}% \u2014 flow temperature may be "

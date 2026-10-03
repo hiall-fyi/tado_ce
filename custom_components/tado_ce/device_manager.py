@@ -80,9 +80,9 @@ def hub_parent_kwargs(home_id: str) -> DeviceInfo:
         if hub_device_id:
             parent = {"via_device_id": hub_device_id}
     else:
-        # Will fail mypy --strict (typeddict-unknown-key) once installed HA hits 2026.9 and
-        # drops `via_device` from DeviceInfo; expected, keep the branch for the 2025.11 floor.
-        parent = {"via_device": (DOMAIN, _hub_identifier(home_id))}
+        # via_device is dropped from DeviceInfo on HA 2026.9+'s stub, but this
+        # branch only runs on the older floor that still needs it.
+        parent = {"via_device": (DOMAIN, _hub_identifier(home_id))}  # type: ignore[typeddict-unknown-key]
     return parent
 
 
@@ -116,6 +116,29 @@ def get_zone_device_info(zone_id: str, zone_name: str, zone_type: str, home_id: 
         manufacturer=MANUFACTURER,
         model=model,
         suggested_area=zone_name,
+        **parent,
+    )
+
+
+def get_bridge_device_info(serial: str, home_id: str) -> DeviceInfo:
+    """Build the Internet Bridge `DeviceInfo`, parented to the home's hub.
+
+    `register_bridge_devices` builds on this and adds the model/firmware
+    read from Tado's cloud; entities omit those fields so they never
+    overwrite them with nothing when an entity sets up first.
+
+    The serial is upper-cased because it reaches here from two sources,
+    the user-typed option and the cloud's `shortSerialNo`, and a case
+    difference between them would otherwise split one bridge into two
+    devices.
+    """
+    parent = hub_parent_kwargs(home_id)
+
+    return DeviceInfo(
+        configuration_url="https://app.tado.com",
+        identifiers={(DOMAIN, serial.upper())},
+        name="Internet Bridge",
+        manufacturer=MANUFACTURER,
         **parent,
     )
 

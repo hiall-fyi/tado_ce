@@ -35,7 +35,6 @@ _OUTDOOR_TEMP_GRACE_SECONDS: float = 1800.0
 class WeatherCompensationConfig:
     """Configuration parameters for weather compensation."""
 
-    enabled: bool = False
     heating_system_preset: str = "radiators_standard"
     slope: float = 1.5
     design_outdoor_temp: float = -5.0
@@ -269,7 +268,6 @@ def evaluate(
     outdoor_temp_raw: float | None,
     indoor_temp: float | None,
     target_temp: float | None,
-    _current_flow_temp: float | None,
     now_mono: float,
     poll_interval_minutes: float,
 ) -> WeatherCompensationResult:
@@ -289,10 +287,6 @@ def evaluate(
         room_compensation_offset=0.0,
         heating_system_preset=config.heating_system_preset,
     )
-
-    if not config.enabled:
-        state.status = "disabled"
-        return base
 
     # --- Step 1: outdoor temp availability ---
     if outdoor_temp_raw is None:
@@ -395,7 +389,6 @@ def _build_wc_config(cm: ConfigurationManager) -> WeatherCompensationConfig:
         slope = calculate_auto_slope(max_flow, min_flow, shutoff, design)
 
     return WeatherCompensationConfig(
-        enabled=True,
         heating_system_preset=preset,
         slope=slope,
         design_outdoor_temp=design,
@@ -478,7 +471,6 @@ async def async_run_wc_cycle(
     weather_data: dict[str, Any] | None,
     zone_data: dict[str, Any] | None,
     update_interval: timedelta | None,
-    bridge_data: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """Run one weather-compensation cycle, sending flow temp to the bridge if needed.
 
@@ -504,12 +496,6 @@ async def async_run_wc_cycle(
     if config.room_compensation_enabled:
         indoor_temp, target_temp = _resolve_indoor_temps(zone_data)
 
-    current_flow: float | None = None
-    if bridge_data:
-        raw_flow = bridge_data.get("boilerMaxOutputTemperatureInCelsius")
-        if raw_flow is not None:
-            current_flow = float(raw_flow)
-
     poll_min = 5.0
     if update_interval is not None:
         poll_min = update_interval.total_seconds() / 60.0
@@ -520,7 +506,6 @@ async def async_run_wc_cycle(
         outdoor_temp,
         indoor_temp,
         target_temp,
-        current_flow,
         time.monotonic(),
         poll_min,
     )

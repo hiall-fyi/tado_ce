@@ -167,9 +167,11 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Insight collector mutable state, owned by coordinator so duration
         # tracking survives individual sensor entities being disabled by the user.
         # anomaly_start_times drives "heating anomaly for N minutes"; humidity
-        # histories drive humidity-trend insights.
+        # histories drive humidity-trend insights; ventilation_diff_history
+        # drives the ventilation-opportunity insight.
         self._insight_anomaly_start_times: dict[str, datetime] = {}
         self._insight_humidity_histories: dict[str, list[Any]] = {}
+        self._insight_ventilation_diff_history: list[Any] = []
 
         self._last_full_sync: datetime | None = None
         self._cached_ratelimit: dict[str, Any] | None = None
@@ -225,6 +227,9 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.state_reconciler: StateReconciler | None = None
 
         self._last_cloud_zone_fetch: datetime | None = None
+        # Start time of the newest zone-states fetch attempt, published before
+        # the request so a write mid-sync snapshots it (see zone_fetch_epoch_for_write).
+        self._zone_fetch_started_at: datetime | None = None
         self._last_weather_fetch: datetime | None = None
         self._last_home_state_fetch: datetime | None = None
         self._last_mobile_devices_fetch: datetime | None = None
@@ -356,6 +361,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _async_post_sync_processing(
         self, zone_data: dict[str, Any] | list[Any] | None, weather_data: dict[str, Any] | list[Any] | None,
+        *, zone_fetch_started: datetime | None = None,
     ) -> dict[str, Any]:
         """Run post-sync processing: history detection, cache reads, bridge, WC."""
         # Dismiss unconditionally (idempotent): reaching here already means
@@ -442,7 +448,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         _zone_dict = zone_data if isinstance(zone_data, dict) else None
         _weather_dict = weather_data if isinstance(weather_data, dict) else None
         wc_data = await self._async_run_weather_compensation(
-            bridge_data, _zone_dict, _weather_dict,
+            _zone_dict, _weather_dict,
         )
         if wc_data is not None:
             self.data_loader.save_wc_state(self._wc_state.to_dict())
@@ -480,7 +486,10 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         previous_data = self.data
         self.data = result
         try:
-            from .sensor_insight_collector import collect_zone_insights
+            from .sensor_insight_collector import (
+                advance_ventilation_diff_history,
+                collect_zone_insights,
+            )
 
             zone_insights = collect_zone_insights(
                 self.hass, self,
@@ -488,18 +497,27 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._insight_humidity_histories,
             )
             result["zone_insights"] = zone_insights
+            advance_ventilation_diff_history(self)
 
             all_insights: list[Any] = []
             for insights_list in zone_insights.values():
                 all_insights.extend(insights_list)
             self.insight_history.update(all_insights, dt_util.utcnow())
-            # Persist insight runtime state (anomaly timers + humidity history)
+            # Persist insight runtime state (anomaly timers, humidity + ventilation history)
             # so dashboard duration counters survive HA restarts.
             self._save_insight_runtime_state()
         finally:
             self.data = previous_data
 
         await self._handle_state_restore_updates(home_state_data, result)
+
+        # The framework only assigns self.data = result once this call
+        # returns, so the loops below would otherwise see last cycle's data.
+        self.data = result
+        # Epoch advances with the data it describes. Stamped earlier, a bridge
+        # listener update during the awaits above could pair it with old zones.
+        if zone_fetch_started is not None:
+            self._last_cloud_zone_fetch = zone_fetch_started
 
         for controller in self.valve_controllers.values():
             try:
@@ -626,13 +644,22 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return dt_util.utcnow() < until
 
     def last_zone_fetch_ts(self) -> datetime | None:
-        """Return the UTC time zone-states were last actually fetched.
+        """Return the start time of the zone-states fetch `self.data` currently carries.
 
-        Marks when every zone's insideTemperature last refreshed from cloud
-        (one zone-states payload carries all zones). The Offset Sync
-        settling-gate reads this to know its last write has been reflected.
+        Advances in the same step that publishes that payload as `self.data`,
+        so a reader never sees a newer epoch alongside older zone data. The
+        freshness gates compare it against `zone_fetch_epoch_for_write()`.
         """
         return self._last_cloud_zone_fetch
+
+    def zone_fetch_epoch_for_write(self) -> datetime | None:
+        """Return the epoch a write should record for later freshness checks.
+
+        Set before the zone-states request goes out, so a write landing while a
+        sync is in flight records that sync's epoch: its payload may predate
+        the write, so it must not count as fresher once it lands.
+        """
+        return self._zone_fetch_started_at
 
     def request_forced_fetch(self, fetch_type: str) -> None:
         """Force the next poll to bypass the floor for one slow-data type."""
@@ -743,6 +770,10 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.zone_config_manager, self.hass,
         )
 
+        zone_fetch_started = None if skip_zone_states else dt_util.utcnow()
+        if zone_fetch_started is not None:
+            self._zone_fetch_started_at = zone_fetch_started
+
         try:
             await self.api_client.async_sync(
                 quick=not do_full_sync,
@@ -827,9 +858,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._save_homekit_savings()
             self._prev_savings_remaining = current_remaining
 
-        if not skip_zone_states:
-            self._last_cloud_zone_fetch = dt_util.utcnow()
-        else:
+        if skip_zone_states:
             self.record_homekit_read_saved()
 
         if not skip_weather and cm.get_weather_enabled() and not zone_only:
@@ -893,7 +922,9 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self._prune_zone_type_change_schedules()
         await self._prune_reassigned_zones()
 
-        return await self._async_post_sync_processing(zone_data, weather_data)
+        return await self._async_post_sync_processing(
+            zone_data, weather_data, zone_fetch_started=zone_fetch_started,
+        )
 
     async def _maybe_resync_offsets(
         self,
@@ -1178,7 +1209,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         bridge_serial = options.get("bridge_serial", "")
         bridge_auth_key = options.get("bridge_auth_key", "")
 
-        if not bridge_serial or not bridge_auth_key:
+        if not bridge_serial or not bridge_auth_key or not self.config_manager.get_bridge_enabled():
             self.bridge_api_client = None
             self.bridge_health_tracker = None
             return None
@@ -1236,12 +1267,14 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return None
 
     def _ensure_bridge_poll_running(self) -> None:
-        """Start the independent bridge poll loop if credentials are present.
+        """Start the independent bridge poll loop if enabled and credentials are present.
 
         Bridge API uses its own auth key and does NOT count toward the
         Tado cloud API quota, so it runs on a fixed interval independent
         of the main coordinator polling cycle.
         """
+        if not self.config_manager.get_bridge_enabled():
+            return
         if self._bridge_poll_task is not None and not self._bridge_poll_task.done():
             return  # already running
         options = self.config_entry.options
@@ -1275,8 +1308,13 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             try:
                 await self._run_one_bridge_poll()
             except Exception:
-                _LOGGER.debug(
-                    "Bridge: poll failed, will retry on the next cycle",
+                # Broad on purpose: an escaping error would end this task, and
+                # bridge polling would stop until the next cloud poll re-arms it.
+                # Bridge API failures never reach here (the fetch records them on
+                # the health tracker), so anything caught is unexpected.
+                _LOGGER.warning(
+                    "Bridge: unexpected error during poll, will retry on the next cycle",
+                    exc_info=True,
                 )
             await asyncio.sleep(BRIDGE_POLL_INTERVAL_SECONDS)
 
@@ -1297,7 +1335,6 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _async_run_weather_compensation(
         self,
-        bridge_data: dict[str, object] | None,
         zone_data: dict[str, Any] | None,
         weather_data: dict[str, Any] | None,
     ) -> dict[str, Any] | None:
@@ -1329,7 +1366,6 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 weather_data=weather_data,
                 zone_data=zone_data,
                 update_interval=self.update_interval,
-                bridge_data=bridge_data,
             )
         except (TadoAuthError, TadoRateLimitError, TadoSyncError):
             raise
@@ -1490,6 +1526,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 zone_id: list(samples)
                 for zone_id, samples in self._insight_humidity_histories.items()
             },
+            "ventilation_diff_history": list(self._insight_ventilation_diff_history),
         }
 
     def _save_insight_runtime_state(self) -> None:
@@ -1567,11 +1604,21 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         if isinstance(s, (int, float))
                     ]
 
+        # Restore ventilation differential history
+        raw_diff_history = data.get("ventilation_diff_history") or []
+        if isinstance(raw_diff_history, list):
+            self._insight_ventilation_diff_history = [
+                float(s) for s in raw_diff_history
+                if isinstance(s, (int, float))
+            ]
+
         _LOGGER.debug(
             "Coordinator: restored insight runtime state: %d anomaly "
-            "timer(s), %d humidity history(ies)",
+            "timer(s), %d humidity history(ies), %d ventilation "
+            "differential sample(s)",
             len(self._insight_anomaly_start_times),
             len(self._insight_humidity_histories),
+            len(self._insight_ventilation_diff_history),
         )
 
     # ------------------------------------------------------------------

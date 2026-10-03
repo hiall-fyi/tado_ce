@@ -6,7 +6,7 @@
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.11%2B-blue?style=for-the-badge&logo=home-assistant) ![Python](https://img.shields.io/badge/Python-3.13%2B-blue?style=for-the-badge&logo=python&logoColor=white) ![Tado](https://img.shields.io/badge/Tado-V2%2FV3%2FV3%2B-1E3A8A?style=for-the-badge) ![HACS](https://img.shields.io/badge/HACS-Default-41BDF5?style=for-the-badge)
 
 <!-- Status -->
-![Stable](https://img.shields.io/badge/Stable-4.4.1-brightgreen?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-lightgrey?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-94%25-green?style=for-the-badge)
+![Stable](https://img.shields.io/badge/Stable-4.5.0-brightgreen?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-lightgrey?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-94%25-green?style=for-the-badge)
 
 <!-- Community -->
 ![GitHub stars](https://img.shields.io/github/stars/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub issues](https://img.shields.io/github/issues/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub Release Date](https://img.shields.io/github/release-date/hiall-fyi/tado_ce?style=for-the-badge&logo=github)
@@ -35,10 +35,15 @@ Developed independently of Tado. Targets Tado V2, V3, and V3+ hardware.
 Three situations where it's worth considering:
 
 1. **You've hit the Tado API quota.** From 2025, Tado limits most households to 100 API calls per day. The official integration is cloud-polling only, so dashboards lag 15–20 minutes once the quota tightens. Pair your Internet Bridge V3+ via HomeKit and Tado CE reads temperature, humidity, and heating state locally — updates arrive in around 2 seconds and don't count against the quota. On a nine-zone test home, daily API usage dropped from ~394 calls to under 80 once HomeKit local control was active.
+   [Learn more: Smart Polling & API Management →](FEATURES_GUIDE.md#-smart-polling)
 2. **Your TRV reads run hot, your room never reaches target.** Radiator TRVs sit on the radiator and read warmer than the room, so Tado closes the valve before the room is up to temperature. Smart Valve Control compensates with an external sensor — either by writing a temperature offset Tado's own algorithm sees (Offset Sync) or by directly overriding the setpoint (Valve Target). Came from [@Si-Hill's Discussion #231](https://github.com/hiall-fyi/tado_ce/discussions/231) and three months of debugging across the beta cycle.
+   [Learn more: Smart Valve Control →](FEATURES_GUIDE.md#-smart-valve-control)
 3. **You need a feature the official integration doesn't have.** Multi-home support, OpenTherm-aware Weather Compensation, Actionable Insights, mould-risk monitoring, thermal analytics, schedule-as-calendar entity, hot-water timer service, per-zone external sensor override — see the table below.
+   [Learn more: Advanced Analytics, Automation & Integration →](FEATURES_GUIDE.md#-thermal-analytics)
 
 If none of those apply, the official Tado integration is fine — Tado CE isn't positioned as a replacement for healthy installs, but as the option when a specific need arises.
+
+Pick the guide that fits: [Quick Start](#quick-start) if you're new, [Feature Comparison](#feature-comparison) if you're comparing, or [FEATURES_GUIDE](FEATURES_GUIDE.md) if you want the full picture.
 
 ---
 
@@ -57,11 +62,14 @@ If none of those apply, the official Tado integration is fine — Tado CE isn't 
 | **Thermal analytics / preheat advisor**         |       ❌      |    ✅    |
 | **Mould-risk monitoring**                       |       ❌      |    ✅    |
 | **Schedule calendar entity**                    |       ❌      |    ✅    |
-| **Adaptive polling** (API-quota aware)          |       ❌      |    ✅    |
+| **Adaptive polling** (API-quota aware)          |  ✅ (basic)   | ✅ (day/night + per-type + reserve tiers) |
+| **Heating Circuit Control** (residual-heat exploitation) | ✅ (always fetched) | ✅ (opt-in, zero cost unless enabled) |
 | **Hot water timer** (down to 1 minute)          |       ❌      |    ✅    |
-| Tado X series (Matter / Thread)                 |       ✅      |    ❌    |
+| Tado X series (Matter / Thread)                 |       ❌      |    ❌    |
 
-Tado X is intentionally out of scope — those devices are Matter-over-Thread and handled best by Home Assistant's native Matter integration. A short migration note is in the [FAQ](#faq).
+Tado X is intentionally out of scope for both integrations — those devices are Matter-over-Thread, a different protocol from the classic cloud API either integration talks to, and are handled best by Home Assistant's native Matter integration instead. A short migration note is in the [FAQ](#faq).
+
+Two of the checkmarks above are newer than they look. HA Core has since added its own quota-aware polling and a heating-circuit select, so the difference now is depth, not presence: Core's polling runs one interval formula, tado_ce adds day/night scheduling, per-type refresh floors, and quota-reserve tiers on top ([Smart Polling](FEATURES_GUIDE.md#-smart-polling)); Core fetches heating circuits unconditionally on every heating-zone install, tado_ce only when you turn the option on ([Enhanced Controls](FEATURES_GUIDE.md#-enhanced-controls)).
 
 ---
 
@@ -74,7 +82,7 @@ Tado X is intentionally out of scope — those devices are Matter-over-Thread an
 - Tado V2, V3, or V3+ hardware (see [Supported devices](#supported-devices))
 - Optional but recommended: an Internet Bridge V3+ for HomeKit local control
 
-> **Heads up if you're on v4.0.x or older.** v5.0.0 drops the code that reads the pre-v4.1 data format, so it needs you to be on **v4.1.0 or later** first. If you're on v3.x or v4.0.x, install v4.3.x before moving to v5.0.0 (your settings carry over automatically). Going straight to v5.0.0 from older than v4.1.0 won't work: it refuses to load and tells you what to do rather than failing quietly. Anyone already on v4.1.0 or later has nothing to do.
+**Upgrading from v3.x or v4.0.x?** See [ROADMAP.md - Upgrade Paths](ROADMAP.md#upgrade-paths) for version compatibility and migration steps.
 
 ### 1. Install via HACS
 
@@ -122,11 +130,15 @@ If you have an Internet Bridge V3 or V3+, pair it directly with Tado CE:
 
 Tado CE drives the pairing itself, so don't add the bridge through Home Assistant's standard **HomeKit Device** integration first. The Tado bridge only allows one HomeKit controller at a time, and a pre-existing pairing will block Tado CE. If you've already paired the bridge with Apple Home or HomeKit Device, unpair there before enabling local control here.
 
-Temperature and humidity entities will then show `data_source: homekit` when values arrive locally. See [FEATURES_GUIDE.md](FEATURES_GUIDE.md#homekit-local-control) for details.
+Temperature and humidity entities will then show `data_source: homekit` when values arrive locally. See [FEATURES_GUIDE.md](FEATURES_GUIDE.md#-homekit-local-control) for details.
 
 ### 5. Configure
 
 Open the gear icon on the Tado CE integration card. Settings take effect immediately — no restart needed. Start with **General Settings** to enable the features you want; **Advanced Settings** only exposes tuning parameters for features you've enabled.
+
+---
+
+**Next step:** [Explore FEATURES_GUIDE](FEATURES_GUIDE.md) to discover advanced features like HomeKit local control, Smart Valve Control, and multi-home support.
 
 ---
 
@@ -140,7 +152,7 @@ Full Home Assistant `climate.*`, `water_heater.*`, `sensor.*`, and `binary_senso
 
 With an Internet Bridge V3+ paired, Tado CE uses HomeKit for temperature reads, humidity reads, target-temperature writes, and HVAC-mode writes on heating zones. Updates arrive in around 2 seconds over your LAN; cloud-only mode is bound by your polling interval, typically 5–30 minutes. The cloud API is used for features HomeKit doesn't expose (schedules, geofencing, the Tado app's calibration engine) and for everything Smart AC Control V3+ does — those units are standalone WiFi accessories with their own HomeKit pairing, separate from the bridge, and Tado CE doesn't currently handle that pairing flow.
 
-When the bridge is unreachable — including at HA startup — everything falls back to cloud automatically and local control resumes as soon as the bridge is reachable again, with no reload needed. If the bridge is factory-reset (which issues a new HomeKit identity), Tado CE raises a Home Assistant Repairs notification and stops retrying until you re-pair from Settings → Tado CE → Configure. A `data_source` attribute on each temperature sensor reports whether the current value came from HomeKit or cloud, and the HomeKit Connected sensor tracks how many API calls local control has saved you. One edge case worth knowing: if a single TRV drops off the bridge's radio while the bridge itself stays connected, its room temperature can sit on the last reading for a few minutes before falling back to cloud (see [FEATURES_GUIDE.md](FEATURES_GUIDE.md#-homekit-local-control) for why).
+When the bridge is unreachable — including at HA startup — everything falls back to cloud automatically and local control resumes as soon as the bridge is reachable again, with no reload needed. If the bridge is factory-reset (which issues a new HomeKit identity), Tado CE raises a Home Assistant Repairs notification and stops retrying until you re-pair from Settings → Tado CE → Configure. A `data_source` attribute on each temperature sensor reports whether the current value came from HomeKit or cloud, and the HomeKit Connected sensor tracks how many API calls local control has saved you. (One quiet-TRV edge case is covered under [Known Limitations](#known-limitations) below.)
 
 ### Smart Valve Control
 
@@ -193,12 +205,12 @@ All settings live under **Settings → Devices & Services → Tado CE → gear i
 
 | Section | Purpose |
 | --- | --- |
-| **General Settings** | Enable/disable features. Organised by origin: Tado Features (Home Presence, Weather Data, Mobile Tracking, Schedule Calendar, Device Offsets), Hardware Connections (Internet Bridge, HomeKit), Smart Automations (Smart Comfort, Thermal Analytics, Adaptive Preheat, Weather Compensation), Advanced (Per-Zone Configuration). |
+| **General Settings** | Enable/disable features. Organised by origin: Tado Features (Home Presence, Weather Data, Mobile Tracking, Schedule Calendar, Device Offsets, Heating Circuit Control), Hardware Connections (Internet Bridge, HomeKit), Smart Automations (Smart Comfort, Thermal Analytics, Adaptive Preheat, Weather Compensation), Advanced (Per-Zone Configuration). |
 | **Advanced Settings** | Tuning parameters for enabled features. Polling intervals, HomeKit cloud-sync frequency, Smart Comfort preheat ceiling, Weather Compensation curves, and similar. |
 | **Zone Configuration** | Per-zone: manual-override behaviour, temperature limits, heating type, external sensors, window detection, preheat mode, Smart Valve Control mode. |
 | **Reset to Defaults** | Reset per feature or everything at once, without affecting your Tado account or bridge pairing. |
 
-For usage scenarios (low-quota setup, high-quota setup, mixed zones, OpenTherm boiler), see [FEATURES_GUIDE.md](FEATURES_GUIDE.md#configuration-scenarios).
+For usage scenarios (low-quota setup, high-quota setup, mixed zones, OpenTherm boiler), see [FEATURES_GUIDE.md](FEATURES_GUIDE.md#-configuration-scenarios).
 
 ---
 
@@ -222,7 +234,7 @@ Highlights:
 
 ## Services
 
-Tado CE exposes services for climate control, hot water timers, open-window mode, temperature offsets, restoring previous state, and more. All services appear under **Developer Tools → Services** with parameter documentation. See [FEATURES_GUIDE.md](FEATURES_GUIDE.md#services) for full details and examples.
+Tado CE exposes services for climate control, hot water timers, open-window mode, temperature offsets, restoring previous state, and more. All services appear under **Developer Tools → Services** with parameter documentation. See [FEATURES_GUIDE.md](FEATURES_GUIDE.md#-enhanced-controls) for full details and examples.
 
 Automations that need to act on Tado CE entities right after Home Assistant starts can listen for the `tado_ce_ready` event instead of guessing timing with delays. The event fires once all climate entities have real data and Home Assistant itself has finished starting, so boot-time automation triggers are guaranteed to be listening when it lands. Payload carries `home_id`, `entry_id`, and `zone_count`.
 
@@ -250,17 +262,18 @@ These are how the integration or the underlying protocol works today, not bugs. 
 
 | Limitation | Detail |
 |---|---|
-| HomeKit humidity is fallback-only | Cloud data drives it by default (finer resolution, updates every poll). HomeKit's own humidity reading only takes over if cloud is unavailable. Temperature uses HomeKit first. See [HomeKit Local Control](FEATURES_GUIDE.md#homekit-local-control). |
+| HomeKit humidity is fallback-only | Cloud data drives it by default (finer resolution, updates every poll). HomeKit's own humidity reading only takes over if cloud is unavailable. Temperature uses HomeKit first. See [HomeKit Local Control](FEATURES_GUIDE.md#-homekit-local-control). |
 | Some data is cloud-only | Heating power, battery status, schedules, hot water, and geofencing don't have a HomeKit equivalent, so they always come from Tado's cloud regardless of local control. |
-| A change made outside Home Assistant can take a while to show up | Writes from Home Assistant reach Tado in seconds either way. A change made in the Tado app or on the thermostat itself is only picked up on the next Cloud Sync Interval (default 30 minutes, adjustable 5–120 under Advanced Settings → HomeKit), even with HomeKit connected, since Tado CE trusts HomeKit's own reading for temperature rather than polling the cloud that often. See [HomeKit Local Control](FEATURES_GUIDE.md#homekit-local-control). |
+| A change made outside Home Assistant can take a while to show up | Writes from Home Assistant reach Tado in seconds either way. A change made in the Tado app or on the thermostat itself is only picked up on the next Cloud Sync Interval (default 30 minutes, adjustable 5–120 under Advanced Settings → HomeKit), even with HomeKit connected, since Tado CE trusts HomeKit's own reading for temperature rather than polling the cloud that often. See [HomeKit Local Control](FEATURES_GUIDE.md#-homekit-local-control). |
 | Single HomeKit pairing | The bridge pairs with one HomeKit controller at a time. Pairing with Tado CE means unpairing it from Apple Home or anywhere else first. |
 | A quiet TRV can hold a stale reading briefly | If a TRV drops off the bridge's radio while the bridge itself stays connected, its temperature can sit on the last reading for a few minutes before falling back to cloud. HomeKit has no "last heard from" signal that would let this integration catch it sooner. |
 | Wireless Temp Sensors (ST01) | Not exposed over HomeKit at all; their readings always come from the cloud. |
 | External sensors don't drive the valve | Binding an external sensor changes what the dashboard shows, not what the TRV heats to. Enable Smart Valve Control on that zone to have the TRV actually compensate. |
 | No TRV LED feedback on local writes | A HomeKit-routed temperature change updates the TRV silently, unlike a change made in the Tado app. Press the device's Identify button, or call `tado_ce.identify_device`, for a flash to confirm you're at the right one. |
-| Smart Valve Control is heating-only | AC zones aren't supported. Schedule resume through it is cloud-only, and it inherits HomeKit's 0.1°C rounding where the cloud API would accept 0.01°C. See [Smart Valve Control](FEATURES_GUIDE.md#smart-valve-control). |
-| Smart AC Control V3+ has no standalone local pairing | These units pair with HomeKit separately from the Internet Bridge, and this integration only handles the bridge's pairing today, so AC zones use the cloud path regardless. See [HomeKit Local Control](FEATURES_GUIDE.md#homekit-local-control). |
-| V2 Internet Bridges (`GW` serial) | Not supported by the Bridge API. See [Bridge API Integration](FEATURES_GUIDE.md#bridge-api-integration). |
+| Smart Valve Control is heating-only | AC zones aren't supported. Schedule resume through it is cloud-only, and it inherits HomeKit's 0.1°C rounding where the cloud API would accept 0.01°C. See [Smart Valve Control](FEATURES_GUIDE.md#-smart-valve-control). |
+| Offset Sync pauses if the TRV goes quiet for a long stretch | A zone left off for weeks or months can reach a point where its TRV stops reporting a fresh reading at all. Offset Sync pauses corrections rather than compute against a stale number, and resumes automatically once the TRV reports something different. See [Smart Valve Control](FEATURES_GUIDE.md#-smart-valve-control). |
+| Smart AC Control V3+ has no standalone local pairing | These units pair with HomeKit separately from the Internet Bridge, and this integration only handles the bridge's pairing today, so AC zones use the cloud path regardless. See [HomeKit Local Control](FEATURES_GUIDE.md#-homekit-local-control). |
+| V2 Internet Bridges (`GW` serial) | Not supported by the Bridge API. See [Bridge API Integration](FEATURES_GUIDE.md#-bridge-api-integration). |
 
 ---
 

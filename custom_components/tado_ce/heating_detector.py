@@ -19,7 +19,6 @@ class HeatingCycleDetector:
     """Detect heating cycle start, end, and interruptions for a single zone."""
 
     def __init__(self, zone_id: str, config: HeatingCycleConfig) -> None:
-        """Initialize detector for a specific zone."""
         self._zone_id = zone_id
         self._config = config
         self._active_cycle: HeatingCycle | None = None

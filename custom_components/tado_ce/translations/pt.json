@@ -79,7 +79,7 @@
         }
       },
       "bridge_connected": {
-        "name": "Ponte"
+        "name": "Ligação"
       },
       "connection": {
         "name": "Ligação",
@@ -968,10 +968,10 @@
         "name": "Temperatura de saída da caldeira - Tempo"
       },
       "bridge_boiler_flow_temp": {
-        "name": "Temperatura de saída da caldeira"
+        "name": "Temperatura de caudal da caldeira"
       },
       "bridge_boiler_flow_temp_time": {
-        "name": "Tempo de temperatura de saída da caldeira"
+        "name": "Hora da temperatura de caudal da caldeira"
       },
       "bridge_boiler_max_output_temp": {
         "name": "Temperatura máxima de saída da caldeira"
@@ -1008,6 +1008,23 @@
       },
       "homekit_writes_saved": {
         "name": "HomeKit escreve guardado"
+      },
+      "absolute_humidity": {
+        "name": "Humidade absoluta",
+        "state_attributes": {
+          "room_temperature": {
+            "name": "Temperatura ambiente"
+          },
+          "humidity": {
+            "name": "Humidade"
+          },
+          "calculation_method": {
+            "name": "Método de cálculo"
+          },
+          "zone_type": {
+            "name": "Tipo de zona"
+          }
+        }
       }
     },
     "select": {
@@ -1426,6 +1443,36 @@
     },
     "rate_limited": {
       "message": "A API do Tado está sujeita a limites de requisições. Tente novamente daqui a {retry_after_minutes} minutos."
+    },
+    "ac_set_temperature_failed": {
+      "message": "{zone_name} do ar condicionado: falha na definição da temperatura"
+    },
+    "ac_set_hvac_mode_failed": {
+      "message": "{zone_name} AC: falha ao definir o modo «{hvac_mode}»"
+    },
+    "ac_set_fan_mode_failed": {
+      "message": "{zone_name} do ar condicionado: falha na definição do modo do ventilador"
+    },
+    "ac_set_swing_mode_failed": {
+      "message": "{zone_name} do ar condicionado: falha na definição do modo de oscilação"
+    },
+    "presence_mode_set_failed": {
+      "message": "Falha ao definir o modo de presença para «{option}»"
+    },
+    "early_start_queue_full": {
+      "message": "{zone_name} do Early Start: fila de sincronização de dispositivos cheia"
+    },
+    "child_lock_queue_full": {
+      "message": "Bloqueio parental {zone_name}: fila de sincronização do dispositivo cheia"
+    },
+    "water_heater_set_mode_failed": {
+      "message": "Água quente para «{zone_name}»: a configuração de «{operation_mode}» falhou após «{attempts}» tentativas"
+    },
+    "bridge_client_not_available": {
+      "message": "Cliente da API Bridge indisponível"
+    },
+    "boiler_max_output_temp_failed": {
+      "message": "Não foi possível definir a temperatura máxima de saída da caldeira"
     }
   },
   "issues": {
@@ -1535,7 +1582,7 @@
     "step": {
       "init": {
         "title": "Opções Tado CE",
-        "description": "Personalize a sua experiência Tado - criada pela comunidade, para a comunidade.",
+        "description": "Configure o Tado CE como quiser: criado pela comunidade, para a comunidade.",
         "menu_options": {
           "zone_config": "Configuração de zonas",
           "general_settings": "Definições gerais",
@@ -1746,8 +1793,8 @@
               "mobile_devices_min_refresh_minutes": "Intervalo de atualização do rastreio de dispositivos móveis"
             },
             "data_description": {
-              "day_start_hour": "Quando se inicia a sondagem diurna (0-23, pré-definição: 7)",
-              "night_start_hour": "Quando começa a sondagem nocturna - sondagens menos frequentes à noite (0-23, predefinição: 23)",
+              "day_start_hour": "Quando começa a recolha de dados durante o dia (0–23, valor predefinido: 7). Se o modo «horário de silêncio» do Offset Sync estiver ativado, é também nesta altura que este retoma a gravação das correções noturnas.",
+              "night_start_hour": "Quando a recolha de dados noturna começa — a recolha é efetuada com menor frequência durante a noite (0–23, valor predefinido: 23). Se o modo de horas tranquilas do Offset Sync estiver ativado, é também nesta altura que este deixa de registar correções durante a noite.",
               "custom_day_interval": "Substitua a sondagem automática diurna por um intervalo fixo. Deixe em branco para permitir que o Tado CE ajuste a sondagem com base na sua quota de API. (1–1440 min)",
               "custom_night_interval": "Substitua a consulta automática noturna por um intervalo fixo. Deixe em branco para permitir que o Tado CE ajuste a frequência das consultas com base na sua quota de API. (1–1440 min)",
               "refresh_debounce_seconds": "Esperar este tempo após uma alteração antes de ir buscar novos dados ao Tado (1-60s)",
@@ -1803,17 +1850,17 @@
               "wc_hysteresis": "Alterar histerese"
             },
             "data_description": {
-              "wc_slope": "A intensidade com que a temperatura do fluxo aumenta à medida que a temperatura exterior desce. Quanto mais alto o valor, mais intenso é o aquecimento (0,3–3,0). Ajustado automaticamente de acordo com a predefinição do sistema de aquecimento acima.",
+              "wc_slope": "Indica a rapidez com que a temperatura de fluxo aumenta à medida que a temperatura exterior arrefece. Quanto mais elevado for o valor, mais intenso será o aquecimento (0,3–3,0). Utiliza-se apenas quando a predefinição do sistema de aquecimento acima for «Personalizada»; caso contrário, é calculado com base nos valores de fluxo máximo/mínimo, corte de fluxo e temperatura exterior de projeto.",
               "wc_design_outdoor_temp": "A temperatura mais fria que espera na sua região (-30 a 10°C)",
-              "wc_max_flow_temp": "Temperatura máxima de saída que a sua caldeira deve atingir na temperatura exterior mais baixa (25–80 °C). Ajustada automaticamente de acordo com a predefinição do sistema de aquecimento acima.",
-              "wc_min_flow_temp": "Temperatura mínima do fluxo — também utilizada quando o aquecimento é desligado (25–60 °C). Ajustada automaticamente pela predefinição do sistema de aquecimento acima.",
+              "wc_max_flow_temp": "Temperatura máxima de saída que a sua caldeira deve atingir na temperatura exterior mais baixa (25–80 °C). Esta valor é utilizado no cálculo automático da inclinação, a menos que a predefinição acima seja «Personalizada».",
+              "wc_min_flow_temp": "Temperatura mínima do fluxo — também utilizada quando o aquecimento é desligado (25–60 °C). Serve de base para o cálculo automático da inclinação, a menos que a predefinição acima seja «Personalizada».",
               "wc_shutoff_temp": "Parar o aquecimento quando a temperatura exterior subir acima deste valor (5-30°C)",
               "wc_smoothing_method": "Como se calcula a média das leituras da temperatura exterior para evitar alterações súbitas",
               "wc_smoothing_window": "Quanto tempo para calcular a média da temperatura exterior (15-1440 min)",
               "wc_room_compensation_factor": "Quanto ajustar a temperatura do fluxo quando uma divisão está mais fria ou mais quente do que o seu objetivo (1,0-5,0)",
               "wc_step_size": "Arredondar a temperatura do caudal para este tamanho de passo - passos maiores significam menos ajustes da caldeira (0,5-2,0°C)",
               "wc_hysteresis": "Só envia uma nova temperatura de fluxo quando esta difere da última em pelo menos este valor (0,5-3,0°C)",
-              "wc_heating_system_preset": "Ao selecionar uma predefinição, são definidas as configurações padrão recomendadas para as temperaturas de inclinação e de fluxo. Escolha «Personalizar» para ajustar cada campo manualmente.",
+              "wc_heating_system_preset": "A opção «Personalizada» permite-lhe definir a sua própria inclinação; as outras opções calculam-na automaticamente a partir dos campos «Caudal Máx./Mín.», «Corte» e «Temperatura exterior de projeto» acima indicados.",
               "wc_room_compensation_enabled": "Ajuste a temperatura de saída para cima ou para baixo quando uma divisão estiver mais fria ou mais quente do que o valor pretendido, para além da curva meteorológica exterior."
             }
           },
@@ -1830,11 +1877,13 @@
             "name": "Sensores para o exterior",
             "data": {
               "use_outdoor_temp_entity": "Utilizar a entidade «Temperatura exterior»",
-              "outdoor_temp_entity": "Entidade «Temperatura exterior»"
+              "outdoor_temp_entity": "Entidade «Temperatura exterior»",
+              "boiler_flow_temp_entity": "Entidade «Temperatura de saída da caldeira»"
             },
             "data_description": {
               "use_outdoor_temp_entity": "Desative esta opção para desativar as funcionalidades que requerem a temperatura exterior (detecção de janelas, avaliação do conforto, risco de bolor)",
-              "outdoor_temp_entity": "Sensor que fornece a temperatura exterior (por exemplo, o «weather.home» ou um sensor local)"
+              "outdoor_temp_entity": "Sensor que fornece a temperatura exterior (por exemplo, o «weather.home» ou um sensor local)",
+              "boiler_flow_temp_entity": "Sensor de temperatura de fluxo da caldeira de terceiros (ebusd, OpenTherm Gateway, myVaillant) para residências sem uma Tado Internet Bridge. Fornece dados ao sensor de temperatura de fluxo da caldeira e informações sobre a sua eficiência."
             }
           }
         }
@@ -1888,7 +1937,8 @@
       }
     },
     "abort": {
-      "no_zones": "Não há zonas disponíveis para configuração."
+      "no_zones": "Não há zonas disponíveis para configuração.",
+      "integration_not_ready": "O Tado CE ainda não terminou de carregar. Aguarde um momento e tente novamente."
     },
     "error": {
       "interval_out_of_range": "O intervalo de sondagem deve situar-se entre 1 e 1440 minutos",

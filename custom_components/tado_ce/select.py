@@ -110,7 +110,6 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
     _attr_translation_key = "presence_mode"
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator, home_id: str) -> None:
-        """Initialize."""
         super().__init__(coordinator)
         _meta = ENTITY_REGISTRY["select_presence_mode"]
         self._entry_id = coordinator.config_entry.entry_id
@@ -260,6 +259,8 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
             raise HomeAssistantError(
                 f"Set presence mode to {option} failed",
                 translation_domain=DOMAIN,
+                translation_key="presence_mode_set_failed",
+                translation_placeholders={"option": option},
             )
 
 
@@ -277,7 +278,6 @@ class TadoOverlayModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sele
     _attr_translation_key = "overlay_mode"
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator, home_id: str) -> None:
-        """Initialize."""
         super().__init__(coordinator)
         _meta = ENTITY_REGISTRY["select_overlay_mode"]
         self._entry_id = coordinator.config_entry.entry_id
@@ -354,7 +354,6 @@ class TadoTimerDurationSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Se
     _attr_translation_key = "timer_duration"
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator, home_id: str) -> None:
-        """Initialize."""
         super().__init__(coordinator)
         _meta = ENTITY_REGISTRY["select_timer_duration"]
         self._entry_id = coordinator.config_entry.entry_id
@@ -441,7 +440,6 @@ class TadoHeatingCircuitSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], S
         zone_type: str,
         home_id: str,
     ) -> None:
-        """Initialize the per-zone heating-circuit select."""
         super().__init__(coordinator)
         _meta = ENTITY_REGISTRY["select_heating_circuit"]
         self._zone_id = zone_id

@@ -9,6 +9,8 @@ from .insights_models import (
     HOME_COLD_MIN_DEFICIT,
     SCHEDULE_GAP_MIN_DEFICIT,
     SCHEDULE_GAP_MIN_OFF_HOURS,
+    VENTILATION_OPPORTUNITY_MIN_RISE,
+    VENTILATION_OPPORTUNITY_MIN_SAMPLES,
     WEATHER_COLD_SNAP_DELTA,
     WEATHER_SEVERE_COLD_SNAP_DELTA,
     Insight,
@@ -178,5 +180,35 @@ def calculate_frost_risk_insight(
         priority=priority,
         recommendation=rec,
         insight_type="frost_risk",
+        zone_name=None,
+    )
+
+
+def calculate_ventilation_opportunity_insight(
+    current_differential: float | None = None,
+    differential_history: list[Any] | None = None,
+    zone_name: str = "",
+) -> Insight | None:
+    """Detect when the wettest zone's air is unusually wetter than outside, vs this home's own recent norm."""
+    if current_differential is None or not differential_history:
+        return None
+    if len(differential_history) < VENTILATION_OPPORTUNITY_MIN_SAMPLES:
+        return None
+
+    avg_history = sum(differential_history) / len(differential_history)
+    rise = current_differential - avg_history
+    if rise < VENTILATION_OPPORTUNITY_MIN_RISE:
+        return None
+
+    rec = (
+        f"{zone_name}: air is {current_differential:.1f} g/m³ more humid than "
+        f"outside, well above this home's recent average gap of {avg_history:.1f} "
+        f"— open a window to dry it out efficiently"
+    )
+
+    return Insight(
+        priority=InsightPriority.LOW,
+        recommendation=rec,
+        insight_type="ventilation_opportunity",
         zone_name=None,
     )

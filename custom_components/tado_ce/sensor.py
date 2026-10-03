@@ -19,6 +19,7 @@ from .sensor_device import (
     TadoBatterySensor,
 )
 from .sensor_environment import (
+    TadoAbsoluteHumiditySensor,
     TadoComfortLevelSensor,
     TadoCondensationRiskSensor,
     TadoDewPointSensor,
@@ -104,6 +105,7 @@ def _create_common_zone_sensors(
             TadoCondensationRiskSensor(coordinator, zone_id, zone_name, zone_type),
             TadoSurfaceTemperatureSensor(coordinator, zone_id, zone_name, zone_type),
             TadoDewPointSensor(coordinator, zone_id, zone_name, zone_type),
+            TadoAbsoluteHumiditySensor(coordinator, zone_id, zone_name, zone_type),
         ],
     )
     if config_manager.get_smart_comfort_enabled():
@@ -281,6 +283,7 @@ def _create_device_sensors(
 def _create_bridge_sensors(
     coordinator: TadoDataUpdateCoordinator,
     bridge_data: dict[str, Any] | None,
+    bridge_serial: str,
     sensors: list[SensorEntity],
 ) -> None:
     """Create bridge dynamic discovery sensors and meta sensors."""
@@ -296,7 +299,7 @@ def _create_bridge_sensors(
         bridge_sensor_count = 0
         for entity in resolved:
             if entity.platform == "sensor":
-                sensors.append(TadoDynamicBridgeSensor(coordinator, entity))
+                sensors.append(TadoDynamicBridgeSensor(coordinator, entity, bridge_serial))
                 bridge_sensor_count += 1
         _LOGGER.info(
             "Sensor: discovered %d bridge sensor(s) from %d bridge fields",
@@ -311,8 +314,8 @@ def _create_bridge_sensors(
         TadoBridgeSchemaVersionSensor,
     )
 
-    sensors.append(TadoBridgeCapabilitiesSensor(coordinator))
-    sensors.append(TadoBridgeSchemaVersionSensor(coordinator))
+    sensors.append(TadoBridgeCapabilitiesSensor(coordinator, bridge_serial))
+    sensors.append(TadoBridgeSchemaVersionSensor(coordinator, bridge_serial))
     _LOGGER.debug(
         "Sensor: bridge meta sensors created (capabilities + schema version)",
     )
@@ -355,7 +358,7 @@ async def async_setup_entry(
     sensors.append(TadoApiBreakdownSensor(coordinator))
     sensors.append(TadoHomeInsightsSensor(coordinator))
 
-    if await hass.async_add_executor_job(_has_boiler_flow_temperature_data, data_loader):
+    if await hass.async_add_executor_job(_has_boiler_flow_temperature_data, data_loader, config_manager):
         _LOGGER.debug(
             "Sensor: boiler flow temperature available, creating "
             "TadoBoilerFlowTemperatureSensor",
@@ -405,9 +408,9 @@ async def async_setup_entry(
     # Bridge sensors (dynamic discovery)
     bridge_serial = entry.options.get("bridge_serial")
     bridge_auth_key = entry.options.get("bridge_auth_key")
-    if bridge_serial and bridge_auth_key:
+    if bridge_serial and bridge_auth_key and config_manager.get_bridge_enabled():
         bridge_data = coordinator.data.get("bridge")
-        _create_bridge_sensors(coordinator, bridge_data, sensors)
+        _create_bridge_sensors(coordinator, bridge_data, bridge_serial, sensors)
 
     # Weather Compensation sensors (requires bridge + wc_enabled)
     if config_manager.get_wc_enabled() and coordinator.bridge_api_client:
@@ -426,8 +429,13 @@ async def async_setup_entry(
     _LOGGER.info("Sensor: created %d sensor entity(ies)", len(sensors))
 
 
-def _has_boiler_flow_temperature_data(data_loader: DataLoader) -> bool:
-    """Return True when at least one zone reports boilerFlowTemperature."""
+def _has_boiler_flow_temperature_data(
+    data_loader: DataLoader, config_manager: ConfigurationManager,
+) -> bool:
+    """Return True when a zone reports boilerFlowTemperature, or an external entity is bound."""
+    if config_manager.get_boiler_flow_temp_entity():
+        return True
+
     try:
         data = data_loader.load_zones_file()
         if not data:

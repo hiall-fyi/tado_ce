@@ -124,7 +124,6 @@ class TadoResumeAllSchedulesButton(CoordinatorEntity[TadoDataUpdateCoordinator],
     _attr_has_entity_name = True
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator, home_id: str) -> None:
-        """Initialize the TadoResumeAllSchedulesButton."""
         super().__init__(coordinator)
         _meta = ENTITY_REGISTRY["button_resume_all"]
         # Convenience alias for entry identification
@@ -227,7 +226,6 @@ class TadoRefreshACCapabilitiesButton(CoordinatorEntity[TadoDataUpdateCoordinato
     _attr_has_entity_name = True
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator, home_id: str) -> None:
-        """Initialize the TadoRefreshACCapabilitiesButton."""
         super().__init__(coordinator)
         _meta = ENTITY_REGISTRY["button_refresh_ac"]
         self._entry_id = coordinator.config_entry.entry_id
@@ -477,7 +475,6 @@ class TadoBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonEntity
     _attr_has_entity_name = True
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, home_id: str) -> None:
-        """Initialize the TadoBoostButton."""
         super().__init__(coordinator)
         _meta = ENTITY_REGISTRY["button_boost"]
         self._entry_id = coordinator.config_entry.entry_id
@@ -541,7 +538,6 @@ class TadoSmartBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonE
     _attr_has_entity_name = True
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, home_id: str) -> None:
-        """Initialize the TadoSmartBoostButton."""
         super().__init__(coordinator)
         _meta = ENTITY_REGISTRY["button_smart_boost"]
         self._entry_id = coordinator.config_entry.entry_id
@@ -716,7 +712,6 @@ class TadoIdentifyButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonEnt
         device: dict[str, Any],
         zones_info: list[dict[str, Any]] | None = None,
     ) -> None:
-        """Initialize the TadoIdentifyButton for one physical device."""
         super().__init__(coordinator)
         self._zone_id = zone_id
         self._zone_name = zone_name

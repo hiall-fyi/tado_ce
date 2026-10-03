@@ -52,7 +52,6 @@ class TadoScheduleDeviationSensor(TadoZoneSensor):
     def __init__(
         self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
     ) -> None:
-        """Initialize the Schedule Deviation Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
         _meta = ENTITY_REGISTRY["sensor_schedule_deviation"]
         self._attr_translation_key = _meta.translation_key
@@ -167,7 +166,6 @@ class TadoNextScheduleTimeSensor(TadoZoneSensor):
     def __init__(
         self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
     ) -> None:
-        """Initialize the Next Schedule Time Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
         _meta = ENTITY_REGISTRY["sensor_next_schedule"]
         self._attr_translation_key = _meta.translation_key
@@ -252,7 +250,6 @@ class TadoNextScheduleTempSensor(TadoZoneSensor):
     def __init__(
         self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
     ) -> None:
-        """Initialize the Next Schedule Temp Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
         _meta = ENTITY_REGISTRY["sensor_next_sched_temp"]
         self._attr_translation_key = _meta.translation_key
@@ -361,7 +358,6 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
     def __init__(
         self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
     ) -> None:
-        """Initialize the Preheat Advisor Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
         _meta = ENTITY_REGISTRY["sensor_preheat_advisor"]
         self._attr_translation_key = _meta.translation_key
@@ -821,7 +817,6 @@ class TadoSmartComfortTargetSensor(TadoZoneSensor):
     def __init__(
         self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
     ) -> None:
-        """Initialize the Smart Comfort Target Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
         _meta = ENTITY_REGISTRY["sensor_comfort_target"]
         self._attr_translation_key = _meta.translation_key

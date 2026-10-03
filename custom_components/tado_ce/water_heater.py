@@ -101,7 +101,6 @@ class TadoWaterHeater(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpd
     _attr_has_entity_name = True
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, home_id: str) -> None:
-        """Initialize."""
         super().__init__(coordinator)
         self._zone_id = zone_id
         self._zone_name = zone_name
@@ -424,6 +423,12 @@ class TadoWaterHeater(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpd
             raise HomeAssistantError(
                 f"Hot water {self._zone_name}: Set {operation_mode} failed after {MAX_RETRY_ATTEMPTS} attempts",
                 translation_domain=DOMAIN,
+                translation_key="water_heater_set_mode_failed",
+                translation_placeholders={
+                    "zone_name": self._zone_name,
+                    "operation_mode": operation_mode,
+                    "attempts": str(MAX_RETRY_ATTEMPTS),
+                },
             )
 
     def set_operation_mode(self, operation_mode: str) -> None:

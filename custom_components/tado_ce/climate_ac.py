@@ -336,7 +336,6 @@ class TadoACClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdat
         capabilities: dict[str, Any],
         home_id: str,
     ) -> None:
-        """Initialize."""
         super().__init__(coordinator)
         self._zone_id = zone_id
         self._zone_name = zone_name
@@ -376,6 +375,8 @@ class TadoACClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdat
         self._external_temp_sensor = ""
         self._external_humidity_sensor = ""
         self._last_write_source = ""
+        # Last HomeKit temp write, outside _OPTIMISTIC_FIELDS for EXPIRED-retry use.
+        self._last_homekit_write_target_temp: float | None = None
 
         self._optimistic_set_at: float | None = None
         self._optimistic_sequence: int | None = None
@@ -599,40 +600,12 @@ class TadoACClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdat
 
     @callback
     def _update_temp_limits(self) -> None:
-        """Apply user-set min/max overrides on top of capability limits.
-
-        Falling back to capability limits for un-overridden values is
-        deliberate: `DEFAULT_ZONE_CONFIG` caps at 25°C, which would
-        clip ACs that support up to 30°C.
-        """
+        """Resolve min/max temp via ZoneConfigManager: user override clamped to the AC's real hardware limits."""
         zone_config_manager = self.coordinator.zone_config_manager
         if zone_config_manager:
-            caps_min = self._get_capabilities_temp_limit("min", 16)
-            caps_max = self._get_capabilities_temp_limit("max", 30)
-
-            if zone_config_manager.has_zone_override(self._zone_id, "min_temp"):
-                # User explicitly set min_temp, clamp to hardware minimum
-                user_min = zone_config_manager.get_zone_value(self._zone_id, "min_temp", caps_min)
-                self._attr_min_temp = max(float(user_min), caps_min)
-            else:
-                self._attr_min_temp = caps_min
-
-            if zone_config_manager.has_zone_override(self._zone_id, "max_temp"):
-                # User explicitly set max_temp, clamp to hardware maximum
-                user_max = zone_config_manager.get_zone_value(self._zone_id, "max_temp", caps_max)
-                self._attr_max_temp = min(float(user_max), caps_max)
-            else:
-                self._attr_max_temp = caps_max
-
-    def _get_capabilities_temp_limit(self, limit_type: str, default: float) -> float:
-        """Read `min` / `max` temperature for the first mode that exposes one."""
-        ac_caps = self._capabilities.get("ac_capabilities") or {}
-        for mode in ["COOL", "HEAT", "AUTO", "DRY"]:
-            if mode in ac_caps and "temperatures" in ac_caps[mode]:
-                temp_caps = ac_caps[mode]["temperatures"].get("celsius") or {}
-                if limit_type in temp_caps:
-                    return temp_caps[limit_type]  # type: ignore[no-any-return]
-        return default
+            ac_caps = self._capabilities.get("ac_capabilities") or {}
+            self._attr_min_temp = zone_config_manager.get_effective_min_temp(self._zone_id, ac_caps)
+            self._attr_max_temp = zone_config_manager.get_effective_max_temp(self._zone_id, ac_caps)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
@@ -755,10 +728,14 @@ class TadoACClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdat
 
         Mirrors the heating-side helper. `_last_write_source` is
         cleared straight after so the next poll can't double-count
-        the same write.
+        the same write. On EXPIRED, also retries the write via cloud PUT:
+        the local write may well have succeeded, the bridge→cloud sync
+        just hasn't caught up within the window.
         """
         if self._last_write_source != "homekit":
             return
+        pending_target = self._last_homekit_write_target_temp
+        self._last_homekit_write_target_temp = None
         write_tracker = self.coordinator.write_health_tracker
         if write_tracker is None:
             self._last_write_source = ""
@@ -774,6 +751,10 @@ class TadoACClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdat
             )
             write_tracker.record_failure()
             self._last_write_source = ""
+            if pending_target is not None:
+                self.hass.async_create_task(
+                    self._retry_expired_temp_via_cloud(pending_target),
+                )
 
     def _handle_ac_off_state(self) -> None:
         """Resolve API-reported OFF against any in-flight optimistic write."""
@@ -1068,6 +1049,7 @@ class TadoACClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdat
         if local_success:
             self.coordinator.record_homekit_write_saved(self._zone_id)
             self._last_write_source = "homekit"
+            self._last_homekit_write_target_temp = temperature
             # Unstamped, a replayed bridge target overwrites this write.
             if self.coordinator.state_reconciler:
                 self.coordinator.state_reconciler.record_local_write(self._zone_id)
@@ -1127,6 +1109,8 @@ class TadoACClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdat
                 raise HomeAssistantError(
                     f"AC {self._zone_name}: Set temperature failed",
                     translation_domain=DOMAIN,
+                    translation_key="ac_set_temperature_failed",
+                    translation_placeholders={"zone_name": self._zone_name},
                 )
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
@@ -1260,6 +1244,11 @@ class TadoACClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdat
                 raise HomeAssistantError(
                     f"AC {self._zone_name}: Set {hvac_mode} mode failed",
                     translation_domain=DOMAIN,
+                    translation_key="ac_set_hvac_mode_failed",
+                    translation_placeholders={
+                        "zone_name": self._zone_name,
+                        "hvac_mode": str(hvac_mode),
+                    },
                 )
 
     async def async_set_fan_mode(self, fan_mode: str) -> None:
@@ -1349,6 +1338,8 @@ class TadoACClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdat
             raise HomeAssistantError(
                 f"AC {self._zone_name}: Set fan mode failed",
                 translation_domain=DOMAIN,
+                translation_key="ac_set_fan_mode_failed",
+                translation_placeholders={"zone_name": self._zone_name},
             )
 
     async def async_set_swing_mode(self, swing_mode: str) -> None:
@@ -1493,6 +1484,8 @@ class TadoACClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdat
         raise HomeAssistantError(
             f"AC {self._zone_name}: Set swing mode failed",
             translation_domain=DOMAIN,
+            translation_key="ac_set_swing_mode_failed",
+            translation_placeholders={"zone_name": self._zone_name},
         )
 
     def _migrate_legacy_swing_mode(self, swing_mode: str) -> tuple[str, str] | None:
@@ -1582,6 +1575,46 @@ class TadoACClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdat
         if self._attr_hvac_mode and self._attr_hvac_mode not in (HVACMode.OFF, HVACMode.AUTO):
             return HA_TO_TADO_HVAC_MODE.get(self._attr_hvac_mode, "COOL")
         return "COOL"
+
+    async def _write_via_cloud(self, temperature: float, reason: str) -> bool:
+        """Write a temperature-only AC overlay via the cloud API, with optimistic rollback.
+
+        Used only by `_retry_expired_temp_via_cloud`: AC's regular
+        cloud-fallback write (`_execute_ac_temp_api`) does its own manual
+        rollback and isn't routed through this helper, since that's an
+        existing, separately-working path this change doesn't touch.
+        """
+        client = self.coordinator.api_client
+        setting = self._build_ac_setting(temperature, None, None, None, None)
+        termination = get_zone_overlay_termination(self.hass, self._zone_id, entry_id=self._entry_id)
+        written_temp = (setting.get("temperature") or {}).get("celsius")
+        hvac_mode = self._attr_hvac_mode if self._attr_hvac_mode not in (None, HVACMode.OFF, HVACMode.AUTO) else HVACMode.COOL
+
+        await api_call_with_rollback(
+            self,
+            client.set_zone_overlay(self._zone_id, setting, termination),
+            hvac_mode=hvac_mode,
+            hvac_action=self._calculate_hvac_action(hvac_mode=hvac_mode),
+            target_temp=written_temp,
+            reason=reason,
+            capture_source="set_temperature",
+        )
+        self._last_write_source = "cloud"
+        return True
+
+    async def _retry_expired_temp_via_cloud(self, target_temp: float) -> None:
+        # Retry a HomeKit temperature write via cloud PUT after optimistic window expired.
+        try:
+            await self._write_via_cloud(
+                target_temp,
+                reason="HomeKit write confirmation expired, retrying via cloud",
+            )
+        except HomeAssistantError:
+            _LOGGER.debug(
+                "Climate AC: %s EXPIRED-retry cloud write failed, staying "
+                "on Tado's reported state",
+                self._zone_name,
+            )
 
     def _build_ac_setting(
         self,
