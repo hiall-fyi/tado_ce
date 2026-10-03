@@ -11,7 +11,7 @@ mypy==2.3.1
 
 # The test suite is not part of this repository either; these are here so a
 # fresh clone can set up the same local environment.
-pytest==9.0.3
+pytest==9.1.1
 pytest-asyncio==1.4.0
 pytest-homeassistant-custom-component==0.13.367
 hypothesis==6.152.4
