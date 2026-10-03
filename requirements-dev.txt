@@ -5,7 +5,7 @@
 # live in pyproject.toml, which is not part of this repository, so a CI runner
 # would silently check against tool defaults instead. Home Assistant is here
 # because the mypy settings are tuned against its type stubs.
-homeassistant==2026.9.0
+homeassistant==2026.9.4
 ruff==0.15.12
 mypy==2.3.1
 
