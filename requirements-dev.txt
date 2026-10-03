@@ -7,7 +7,7 @@
 # because the mypy settings are tuned against its type stubs.
 homeassistant==2026.9.0
 ruff==0.15.12
-mypy==2.0.0
+mypy==2.3.1
 
 # The test suite is not part of this repository either; these are here so a
 # fresh clone can set up the same local environment.
