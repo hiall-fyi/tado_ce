@@ -6,7 +6,7 @@
 # would silently check against tool defaults instead. Home Assistant is here
 # because the mypy settings are tuned against its type stubs.
 homeassistant==2026.9.4
-ruff==0.15.12
+ruff==0.16.9
 mypy==2.3.1
 
 # The test suite is not part of this repository either; these are here so a
