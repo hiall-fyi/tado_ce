@@ -16,7 +16,7 @@ pytest-asyncio==1.4.0
 pytest-homeassistant-custom-component==0.13.367
 hypothesis==6.168.3
 freezegun==1.5.5
-asyncssh==2.24.0
+asyncssh==2.24.1
 
 # Mutation testing (pyproject.toml [tool.mutmut]).
 mutmut==3.8.0
