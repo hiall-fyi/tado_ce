@@ -14,7 +14,7 @@ mypy==2.3.1
 pytest==9.0.3
 pytest-asyncio==1.4.0
 pytest-homeassistant-custom-component==0.13.367
-hypothesis==6.168.3
+hypothesis==6.168.5
 freezegun==1.5.5
 asyncssh==2.24.0
 
