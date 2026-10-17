@@ -4,8 +4,20 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # One PR a week; homeassistant and pytest-homeassistant-custom-component must move together.
+    groups:
+      dev-dependencies:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      # Pinned to the lowest version manifest.json allows; it changes together with manifest.json.
+      - dependency-name: "aiohomekit"
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      actions:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]

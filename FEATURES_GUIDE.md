@@ -2,69 +2,50 @@
 
 Complete guide to all Tado CE exclusive features, configurations, and usage scenarios.
 
-> **Entity ID note:** Examples on this page use **v2.3.1-style entity_ids** (e.g. `sensor.tado_ce_api_usage`, `sensor.lounge_thermal_inertia`) because HA preserves entity_ids across upgrades, so these slugs stay stable for anyone who installed Tado CE before v3.0.0. If you installed fresh on v3.0.0 or later, **hub-level** entities pick up a device-prefixed shape (`sensor.tado_ce_hub_api_usage`); **zone-level** entities use the same `sensor.<zone>_<feature>` shape across both classes. [ENTITIES.md](ENTITIES.md) lists every entity with the v2.3.1, v3.0+ fresh, and v4.0.1+ fresh entity_id side by side — check there before copying examples into your dashboard or automations.
->
-> **v5.0.0 upgrade path note (forward-looking):** v5.0.0 will drop the in-place migration code that upgrades v3.x option keys, entity IDs, and storage layouts. v3.x installs should upgrade to v4.x first (any release; settings carry over automatically), then to v5.0.0 once it ships. v3.x to v5.0.0 in a single jump won't be supported. See [ROADMAP.md](ROADMAP.md#v500--legacy-cleanup) for the full removals list. No timeline yet.
+> **Entity ID note:** Examples on this page use the older entity_id style (e.g. `sensor.tado_ce_api_usage`, `sensor.lounge_thermal_inertia`), because HA preserves entity_ids across upgrades, so these slugs stay stable for longstanding installs. On a fresh install, **hub-level** entities pick up a device-prefixed shape (`sensor.tado_ce_hub_api_usage`); **zone-level** entities use the same `sensor.<zone>_<feature>` shape either way. [ENTITIES.md](ENTITIES.md) lists every entity with its older and fresh-install entity_id side by side. Check there before copying examples into your dashboard or automations.
 
-## 📑 Table of Contents
+## Table of Contents
 
-<!-- STRUCTURE (Phase 1, docs-refresh plan Task 2 Step 3): target TOC — 7 thematic categories + Glossary + Troubleshooting.
-     Category anchors below don't resolve yet — the 24 topics keep their current headers/order until Phase 2 regroups them.
-     See the "Current sections" list right after this block for the working links in the meantime. -->
-
-1. [📖 Glossary](#-glossary)
-   - Quota & API Limits
-   - HomeKit Local Control
-   - Smart Valve Control
-   - Heating Circuit
-   - Other Key Terms
-2. 🎯 Core Control
-3. ⚡ Quota & Performance
-4. 📡 Local Control
-5. 📊 Advanced Analytics
-6. 🧠 Smart Features
-7. 🏠 Multi-Home & Configuration
-8. ⚙️ Automation & Integration
-9. 🔧 Troubleshooting
-
-<!-- Current sections (unreorganized — working links until Phase 2 regroups these into the 7 categories above) -->
-
-1. [Multi-Home Support](#-multi-home-support) → *Multi-Home & Configuration*
-2. [API Management](#-api-management) → *Quota & Performance*
-3. [Smart Polling](#-smart-polling) → *Quota & Performance*
-4. [API Write Optimization](#-api-write-optimization) → *Quota & Performance*
-5. [Thermal Analytics](#-thermal-analytics) → *Advanced Analytics*
-6. [Smart Comfort Analytics](#-smart-comfort-analytics) → *Advanced Analytics*
-7. [Enhanced Mold Risk Assessment](#-enhanced-mold-risk-assessment) → *Advanced Analytics*
-8. [Heating Cycle Detection](#-heating-cycle-detection) → *Advanced Analytics*
-9. [Enhanced Controls](#-enhanced-controls) → *Multi-Home & Configuration*
-10. [Bridge API Integration](#-bridge-api-integration) → *Local Control*
-11. [HomeKit Local Control](#-homekit-local-control) → *Local Control*
-12. [Weather Compensation](#-weather-compensation) → *Smart Features*
-13. [Smart Valve Control](#-smart-valve-control) → *Smart Features*
-14. [Optional Features](#-optional-features) → *Automation & Integration*
-15. [Automation Events](#-automation-events) → *Automation & Integration*
-16. [Multi-TRV Zones](#-multi-trv-zones) → *Core Control*
-17. [Per-Zone Configuration](#-per-zone-configuration) → *Multi-Home & Configuration*
-18. [Per-Zone Entity Types](#-per-zone-entity-types) → *Multi-Home & Configuration*
-19. [Reset to Defaults](#-reset-to-defaults) → *Multi-Home & Configuration*
-20. [Configuration Scenarios](#-configuration-scenarios) → *Multi-Home & Configuration*
-21. [Actionable Insights](#-actionable-insights) → *Smart Features*
-22. [Settings Configured in the Tado App, Not Tado CE](#️-settings-configured-in-the-tado-app-not-tado-ce) → *Troubleshooting*
-23. [Troubleshooting](#-troubleshooting) → *Troubleshooting*
-24. [What's New in 4.x](#-whats-new-in-4x) → *(reference table, not a category)*
+1. [Glossary](#glossary)
+   - [Quota & API Limits](#quota--api-limits)
+   - [HomeKit Local Control](#homekit-terms)
+   - [Smart Valve Control](#smart-valve-control-terms)
+   - [Heating Circuit](#heating-circuit)
+   - [Other Key Terms](#other-key-terms)
+2. [Multi-Home Support](#multi-home-support)
+3. [API Management](#api-management)
+4. [Smart Polling](#smart-polling)
+5. [API Write Optimization](#api-write-optimization)
+6. [Thermal Analytics](#thermal-analytics)
+7. [Smart Comfort Analytics](#smart-comfort-analytics)
+8. [Enhanced Mold Risk Assessment](#enhanced-mold-risk-assessment)
+9. [Heating Cycle Detection](#heating-cycle-detection)
+10. [Enhanced Controls](#enhanced-controls)
+11. [Bridge API Integration](#bridge-api-integration)
+12. [HomeKit Local Control](#homekit-local-control)
+13. [Weather Compensation](#weather-compensation)
+14. [Smart Valve Control](#smart-valve-control)
+15. [Optional Features](#optional-features)
+16. [Automation Events](#automation-events)
+17. [Multi-TRV Zones](#multi-trv-zones)
+18. [Per-Zone Configuration](#per-zone-configuration)
+19. [Per-Zone Entity Types](#per-zone-entity-types)
+20. [Reset to Defaults](#reset-to-defaults)
+21. [Configuration Scenarios](#configuration-scenarios)
+22. [Actionable Insights](#actionable-insights)
+23. [Settings Configured in the Tado App, Not Tado CE](#settings-configured-in-the-tado-app-not-tado-ce)
+24. [Troubleshooting](#troubleshooting)
+25. [What's New in 4.x](#whats-new-in-4x)
 
 ---
 
-## 📖 Glossary
+## Glossary
 
-<!-- ADD (Phase 1 skeleton, docs-refresh plan Task 2 Step 4): section headers only, content filled in Phase 2 Task 5 -->
-
-**Upgrading from v3.x or v4.0.x?** See [ROADMAP - Upgrade Paths](ROADMAP.md#upgrade-paths) for version compatibility and migration steps. <!-- ADD (Phase 2, Task 12 Step 1) -->
+**Upgrading from v4.0.x?** See [ROADMAP - Upgrade Paths](ROADMAP.md#upgrade-paths) for version compatibility and migration steps.
 
 ### Quota & API Limits
 
-**Definition:** Tado enforces daily API call limits (100–20,000 depending on plan). The official HA integration polls cloud every 15–20 minutes, consuming ~300+ calls/day on multi-zone homes.
+**Definition:** Tado enforces daily API call limits (100–20,000 depending on plan). The built-in HA integration polls cloud every 15–20 minutes, consuming ~300+ calls/day on multi-zone homes.
 
 **Why it matters:** Once you hit the limit, all API calls (including cloud reads) fail until the next day's reset.
 
@@ -73,30 +54,30 @@ Complete guide to all Tado CE exclusive features, configurations, and usage scen
 - Smart Polling adapts refresh intervals based on quota (slower polling = fewer calls)
 - HomeKit local reads (if available) bypass quota entirely, returning temperature/humidity/state in ~2 seconds without API calls
 
-### HomeKit Local Control
+### HomeKit terms
 
-**Definition:** Pairing your Internet Bridge V3+ via HomeKit (in the Home app, not Tado app) lets Tado CE read temperature, humidity, and heating/cooling state directly from the bridge over LAN. These reads don't count against the Tado API quota.
+**Definition:** Pairing your Internet Bridge V3 or V3+ via HomeKit (in the Home app, not Tado app) lets Tado CE read temperature, humidity, and heating/cooling state directly from the bridge over LAN. These reads don't count against the Tado API quota.
 
 **Prerequisites:**
 - Internet Bridge V3 or V3+
-- HomeKit enabled in Tado app (Settings → Devices → Internet Bridge → HomeKit mode)
-- Bridge paired in Home app (Home → + → Add Accessory)
+- HomeKit enabled on the bridge (see [Tado's HomeKit article](https://support.tado.com/en/articles/3387324-how-do-i-set-up-tado-with-apple-homekit))
+- Bridge not paired with Apple Home or another HomeKit controller (unpair it there first if it is). Tado CE does the pairing
 - Tado CE configured to read HomeKit (automatic on setup; configurable per-zone in Settings → Configure)
 
-**Why it matters:** Reduces API quota usage by ~80% on multi-zone homes. Temperature updates arrive in ~2 seconds vs 15–20 minutes via cloud polling.
+**Why it matters:** On a nine-zone test home, daily API usage dropped from about 394 calls to under 80 once HomeKit local control was active. Temperature updates arrive in ~2 seconds vs 15–20 minutes via cloud polling.
 
 **Limitations:**
 - HomeKit is LAN-only (must be on same network as bridge or have a home hub)
-- Bridge V2 doesn't support HomeKit mode (V3+ only)
-- Heating/cooling state from HomeKit; control (setpoint changes) still goes through API
+- Bridge V2 doesn't support HomeKit mode (V3 or V3+ only)
+- Heating/cooling state from HomeKit; target-temperature and HVAC-mode writes on heating zones also go over HomeKit (the cloud handles a zone that is off, and overlay modes other than Manual; see the HomeKit local control section of the README)
 
-### Smart Valve Control
+### Smart Valve Control terms
 
 **Definition:** Three strategies to compensate when a radiator TRV reads warmer than the room, so the valve closes before the room reaches target temperature:
 
 1. **No compensation** (default): Tado uses only the TRV sensor temperature
 2. **Offset Sync** (v4.1.0+): Write a temperature offset to Tado's override, so Tado's algorithm sees (e.g.) "room is 20°C" instead of "TRV reads 22°C". Tado handles the compensation.
-3. **Valve Target** (v4.1.0+): Override the setpoint directly, bypassing Tado's algorithm. You (or Tado CE) set "open to 60%" instead of "reach 20°C". Full control, but you handle the logic.
+3. **Valve Target** (v4.1.0+): Override the setpoint directly, bypassing Tado's algorithm. Tado CE writes the setpoint it needs for the valve to open or close (say 25°C instead of "reach 20°C"), based on your external sensor. Full control, but you handle the logic.
 
 **When to use:**
 - **No compensation:** If your TRV reads accurately or you don't have an external sensor
@@ -117,7 +98,7 @@ Complete guide to all Tado CE exclusive features, configurations, and usage scen
 ### Other Key Terms
 
 - **Thermal Inertia:** Lag between heating activation and room temperature change (minutes). Tado CE calculates this to predict preheat start times.
-- **Mold Risk Indicator:** Percentage (0–100%) representing mold risk based on humidity, temperature, and room ventilation. Triggered by prolonged high humidity.
+- **Mold Risk Indicator:** Percentage (0–100%) representing mold risk based on humidity, room and outdoor temperature, and window type. Triggered by prolonged high humidity.
 - **Dew Point:** Temperature at which air becomes saturated (humidity 100%). If room temp drops below dew point, condensation forms. Tado CE tracks this alongside absolute humidity.
 - **Absolute Humidity:** Mass of water per volume (g/m³). Unlike relative humidity, it doesn't change with temperature, so it's more useful for mold risk assessment.
 - **Weather Compensation (Boiler Flow Temp):** For OpenTherm boilers, adjust the target flow temperature based on outside weather (colder outside → hotter flow). Tado CE calculates and sends this if you have a compatible boiler and external temp sensor.
@@ -126,35 +107,36 @@ Complete guide to all Tado CE exclusive features, configurations, and usage scen
 
 ---
 
-## 🆕 What's New in 4.x
+## What's New in 4.x
 
 New user-facing features and settings added across the 4.x line. Each links to its section below; bug fixes are in [CHANGELOG.md](CHANGELOG.md).
 
 | Version | What you got | Where |
 |---------|-------------|-------|
-| v4.5.0 | Absolute Humidity sensor, per zone (g/m³, alongside the existing Dew Point sensor) | [Enhanced Mold Risk Assessment](#-enhanced-mold-risk-assessment) |
+| v4.5.1 | HomeKit pairing logs a line once every zone is mapped, and the pairing code field is marked as a one-time code | [HomeKit Local Control](#homekit-local-control) |
+| v4.5.0 | Absolute Humidity sensor, per zone (g/m³, alongside the existing Dew Point sensor) | [Enhanced Mold Risk Assessment](#enhanced-mold-risk-assessment) |
 | v4.5.0 | Bind a third-party boiler flow-temperature sensor for homes without an Internet Bridge | [Boiler Flow Temperature](#boiler-flow-temperature) |
-| v4.5.0 | Ventilation Opportunity insight — flags when a room's air is unusually wetter than outside | [Actionable Insights](#-actionable-insights) |
+| v4.5.0 | Ventilation Opportunity insight — flags when a room's air is unusually wetter than outside | [Actionable Insights](#actionable-insights) |
 | v4.4.0 | `tado_ce.refresh` gains a third option, Zone states, to force an immediate temperature/target/mode fetch past the polling floor | [Force a Refresh](#11-force-a-refresh-v430-zone-states-added-in-v440) |
 | v4.3.3 | `tado_ce.set_climate_timer` shows the timer's temperature on the card with the write, rather than after Tado's next refresh | [Climate Timer Service](#3-climate-timer-service) |
 | v4.3.0 | `tado_ce.refresh` service — force an immediate presence fetch past the polling floor | [Force a Refresh](#11-force-a-refresh-v430-zone-states-added-in-v440) |
 | v4.2.0 | Heating circuit control — per-zone boiler-circuit select, "No heating circuit" for residual-heat coasting | [Heating Circuit Control](#heating-circuit-control) |
-| v4.2.0 | Heat and cold alerts for vulnerable occupants (elderly / infant / unwell) | [Smart Comfort Analytics](#-smart-comfort-analytics) |
-| v4.1.0 | Per-zone Temperature source (Automatic / HomeKit / Cloud) | [HomeKit Local Control](#-homekit-local-control) |
-| v4.1.0 | Per-device Identify button (flashes the TRV / thermostat LED) | [Per-Zone Entity Types](#️-per-zone-entity-types) |
-| v4.1.0 | `tado_ce.set_schedule_temperature` — set a target from automations without tripping Smart Valve Control | [Smart Valve Control](#-smart-valve-control) |
-| v4.1.0 | Configurable refresh intervals for Home Presence, Weather, and Mobile Device Tracking | [Optional Features](#-optional-features) |
-| v4.1.0 | Override duration relabelled to match the Tado app (3 options, Timer cap up to 12 hours) | [Per-Zone Configuration](#-per-zone-configuration) |
-| v4.1.4 | Boiler diagnostic sensors renamed "Bridge …" → "Boiler …" (display names only) | [Bridge API Integration](#-bridge-api-integration) |
-| v4.0.1 | AC swing split into independent vertical and horizontal axes | [Enhanced Controls](#-enhanced-controls) |
-| v4.0.1 | Mold Risk % sensor renamed to Mold Risk Indicator | [Enhanced Mold Risk Assessment](#-enhanced-mold-risk-assessment) |
+| v4.2.0 | Heat and cold alerts for vulnerable occupants (elderly / infant / unwell) | [Smart Comfort Analytics](#smart-comfort-analytics) |
+| v4.1.0 | Per-zone Temperature source (Automatic / HomeKit / Cloud) | [HomeKit Local Control](#homekit-local-control) |
+| v4.1.0 | Per-device Identify button (flashes the TRV / thermostat LED) | [Per-Zone Entity Types](#per-zone-entity-types) |
+| v4.1.0 | `tado_ce.set_schedule_temperature` — set a target from automations without tripping Smart Valve Control | [Smart Valve Control](#smart-valve-control) |
+| v4.1.0 | Configurable refresh intervals for Home Presence, Weather, and Mobile Device Tracking | [Optional Features](#optional-features) |
+| v4.1.0 | Override duration relabelled to match the Tado app (3 options, Timer cap up to 12 hours) | [Per-Zone Configuration](#per-zone-configuration) |
+| v4.1.4 | Boiler diagnostic sensors renamed "Bridge …" → "Boiler …" (display names only) | [Bridge API Integration](#bridge-api-integration) |
+| v4.0.1 | AC swing split into independent vertical and horizontal axes | [Enhanced Controls](#enhanced-controls) |
+| v4.0.1 | Mold Risk % sensor renamed to Mold Risk Indicator | [Enhanced Mold Risk Assessment](#enhanced-mold-risk-assessment) |
 | v4.0.0 | HomeKit local control, Weather Compensation, Smart Valve Control, and more | across this guide |
 
 ---
 
-## 🏠 Multi-Home Support
+## Multi-Home Support
 
-**Available:** v3.0.0 | **Requirement:** Multiple Tado homes/accounts | **Automatic**
+**Requirement:** Multiple Tado homes/accounts | **Automatic**
 
 Run multiple Tado accounts or homes in a single Home Assistant instance with full data isolation.
 
@@ -175,16 +157,9 @@ All data files include `{home_id}` suffix:
 - Entity unique IDs include `{home_id}` prefix for collision avoidance
 - Each home has independent API quota tracking and adaptive polling
 
-### Migration from Single-Home
-
-If upgrading from v2.3.1 (single home), migration runs automatically:
-- Entity unique IDs updated to include `{home_id}` prefix (idempotent)
-- Refresh token copied from `config.json` to `entry.data`
-- Existing automations continue to work unchanged
-
 ---
 
-## 📊 API Management
+## API Management
 
 **Available:** v1.0.0+ | **Requirement:** None | **Always Enabled**
 
@@ -192,7 +167,7 @@ Real-time tracking of your Tado API usage, helping you avoid rate limiting and u
 
 ### Overview
 
-Tado enforces API rate limits (100–20,000 calls/day depending on your plan). The official HA integration doesn't expose usage data. Tado CE solves this by:
+Tado enforces API rate limits (100–20,000 calls/day depending on your plan). The built-in HA integration doesn't expose usage data. Tado CE solves this by:
 
 - Reading rate limit data from Tado API response headers
 - Auto-detecting your daily limit (100/1000/20000)
@@ -245,7 +220,7 @@ automation:
     action:
       - service: notify.mobile_app
         data:
-          title: "⚠️ Tado API Usage High"
+          title: "Tado API Usage High"
           message: >
             API status: {{ states('sensor.tado_ce_api_status') }}.
             Usage: {{ states('sensor.tado_ce_api_usage') }} / {{ states('sensor.tado_ce_api_limit') }}.
@@ -269,7 +244,7 @@ entities:
 
 ---
 
-## 🔄 Smart Polling
+## Smart Polling
 
 **Available:** v1.0.0+ | **Requirement:** None | **Always Enabled**
 
@@ -283,8 +258,8 @@ Smart Polling includes multiple strategies:
 - **Adaptive Polling** — auto-adjusts based on remaining quota, with a flat 5 min floor and a 120 min ceiling. The floor is the same whatever your daily call limit; a bigger quota doesn't buy a faster automatic cadence because zone temperature doesn't change any faster. Want faster than 5 min? Set a custom interval.
 - **Per-Type Refresh** — slow-changing data (weather, presence, mobile locations) refreshes on its own schedule instead of riding the zone-state cadence, so a fast poll doesn't burn quota re-reading data that hasn't changed
 - **HomeKit Defer** — when HomeKit local control is connected, the cloud cadence follows your Cloud Data Refresh dial instead of the adaptive quota maths
-- **Quota Reserve Protection** — pauses polling when quota critically low (≤5%), auto-resumes after reset
-- **Bootstrap Reserve** — hard limit of 3 API calls never used, reserved for auto-recovery after reset
+- **Quota Reserve Protection**: pauses polling before a poll would dip into the last 5 calls (or 5% of your daily limit if that is more), and resumes once the expected quota reset time has passed
+- **Bootstrap Reserve**: with Quota Reserve Protection on, the last 3 API calls are held back for auto-recovery after the reset
 - **Custom Intervals** — override with fixed intervals (1–1440 min)
 
 **Computed by:** Tado CE — the adaptive interval formula, day/night schedule, quota reserve pausing, bootstrap reserve, and per-type refresh floors are all calculated locally by the integration. Quota headroom figures come from Tado server response headers, but every scheduling decision is made by Tado CE.
@@ -299,9 +274,9 @@ Different kinds of data change at different speeds, so Tado CE refreshes them at
 | Weather | Default every 30 min (configurable 15–120 min) | Outdoor weather moves slowly |
 | Home presence (Home/Away) | Default every 5 min (configurable 1–60 min) | Changes only when you cross the geofence |
 | Mobile device locations | Default every 5 min (configurable 1–60 min, when Frequent Mobile Sync is on) | Changes only when a phone crosses the geofence |
-| Device firmware / battery / connection | Hourly (paid tier) / every 4 h (free tier) | Rarely changes |
+| Device firmware / battery / connection | About hourly (paid tier) / about every 4 h (free tier), later if the quota is nearly spent | Rarely changes |
 
-When HomeKit local control is connected, these floors widen to your **Cloud Data Refresh** dial (Settings → Tado CE → Configure → HomeKit) if that's slower.
+When HomeKit local control is connected, these floors widen to your **Cloud Data Refresh** dial (Settings → Tado CE → Configure → Advanced Settings → HomeKit) if that's slower.
 
 #### Home presence vs mobile device locations
 
@@ -347,42 +322,43 @@ That's the change [#289](https://github.com/hiall-fyi/tado_ce/issues/289) was ab
 | Option | Default | API Cost |
 |--------|---------|----------|
 | Enable Weather Sensors | Off | ~1 call per refresh (default every 30 min, configurable in Advanced Settings → Polling & API) |
-| Enable Mobile Device Tracking | Off | 1 call at startup; with Frequent Sync on, ~1 call per refresh (default every 5 min, configurable in Advanced Settings → Polling & API) |
+| Enable Mobile Device Tracking | Off | 1 call with each refresh of zone and device details (at startup, then about every hour, or about every 4 hours on the 100-call plan); with Frequent Sync on, ~1 call per refresh instead (default every 5 min, configurable in Advanced Settings → Polling & API) and that larger refresh doesn't repeat it |
 | Enable Home State Sync | Off | Required for Away Mode; ~1 call per refresh (default every 5 min, configurable in Advanced Settings → Polling & API) |
 
 ### How It Works
 
-**Adaptive Polling Formula:**
-```
-Interval = (Time Until Reset / Remaining Calls) / 0.90
-Clamped to: 5 min (floor) – 120 min (ceiling)
-```
+**Adaptive Polling:** Tado CE takes your remaining calls, keeps 10% back for manual calls and unexpected usage, takes off the 5-call reserve and the calls the larger refresh of zone and device details will need before the reset (including 2 for each room Tado reports that Tado CE has no details for yet), and divides what is left by the calls one poll costs. It spreads those polls over the day, with the night's polls set aside, and clamps the result between a 5-minute floor and a 120-minute ceiling.
 
 The adaptive floor is a flat 5 minutes whatever your daily call limit. The maths already widens the interval on its own when quota is tight, so the floor is just the fast end: the point past which a faster cadence buys you nothing because zone temperature doesn't change that quickly. A bigger quota doesn't lower the floor, so if you genuinely want faster than 5 minutes, set a custom interval and it's honoured as long as your quota can sustain it. Presence, weather, and mobile device refresh intervals are configurable separately in Advanced Settings → Polling & API (v4.1.0, each behind its own toggle; defaults unchanged).
 
-**Day/Night Aware (v2.0.1):**
+**Day/Night Aware:**
 - Night period: Fixed 120 min interval to conserve quota
 - Day period: Adaptive based on remaining quota after reserving night calls
 - If Day Start == Night Start: always uses adaptive polling (24/7 mode)
 
-**Quota Reserve (v2.0.0):**
-- Pauses polling when remaining ≤5% or ≤5 calls
+**Quota Reserve:**
+- Pauses polling when the next poll would leave fewer calls than the reserve, which is the larger of 5 calls and 5% of your daily limit. Tado CE works out what that poll costs first, so polling stops one poll early instead of spending into the reserve
+- A due refresh of zone and device details (about hourly, about every 4 hours on the 100-call plan) that wouldn't fit becomes a regular poll, and the refresh runs once the quota allows, at the latest after the reset. Battery and connection updates wait with it. The very first refresh on a new install runs regardless, because its cost isn't known yet
+- The remaining-calls count it checks includes calls made since the last poll, so a change you make by hand while polling is paused counts against the reserve straight away
+- The refresh's price includes 2 calls for each room Tado reports that Tado CE has no details for yet. A room added while Home Assistant was down is still priced 2 calls short on the first refresh after the restart, because the zone data saved before the restart doesn't show it
+- Smart Valve Control, Offset Sync and Adaptive Preheat hold their automatic cloud writes once your remaining calls are down to the reserve plus what the write costs (1 call for a valve target or a preheat start; 1 per device in the zone plus 1 for the readback for an Offset Sync write), until the quota is expected to reset. Handing a zone back to Tado is held only at the last 3 calls (the Bootstrap Reserve), and is tried again after the expected reset. The log notes each hold once per quota day: one line for the three features, one for hand-backs. Both holds need Quota Reserve on
 - Reserves quota for manual operations (set temperature, change mode)
 - Auto-resumes when API reset time passes
-- Toggle: `switch.tado_ce_{home_id}_quota_reserve_enabled` (default on). When disabled, polling continues until quota truly runs low; the separate Bootstrap Reserve below still protects the last 3 calls so manual actions remain possible. Only disable Quota Reserve if you've sized your custom intervals against your tier's daily limit and don't want preemptive pausing.
+- With HomeKit connected, your entities stay live on HomeKit during the pause, including when Home Assistant restarts during it (Tado CE starts on the data it saved before the restart)
+- Toggle: `switch.tado_ce_{home_id}_quota_reserve_enabled` (default on). When disabled, polling and manual actions continue until the quota is used up, and the Bootstrap Reserve below is off too. Only disable Quota Reserve if you've sized your custom intervals against your tier's daily limit and don't want preemptive pausing.
 
-**Bootstrap Reserve (v2.0.1):**
-- Hard limit of 3 API calls never used, even for manual actions
+**Bootstrap Reserve:**
+- With Quota Reserve Protection on, the last 3 API calls are never used, even for manual actions, until the expected reset time has passed
 - When triggered: persistent notification "API limit reached. Use the Tado app for emergency changes."
 - Auto-dismisses when API reset detected
 
 **Reset time detection:**
 
-Tado's `X-RateLimit-Reset` header often points at midnight UTC, which isn't when your quota actually rolls over, so the integration doesn't trust it on its own. It works out the real reset time from whatever evidence it has, in order of preference: it watches for the moment your remaining-calls count jumps back up and records that as the reset; failing that it reads your own sensor history for the usage drop; then it extrapolates from your current usage rate and call history; and as a last resort it falls back to the time of your first call each day. The result is what `sensor.tado_ce_api_reset` shows, and it's what Quota Reserve waits for before resuming.
+Tado's `X-RateLimit-Reset` header often points at midnight UTC, which isn't when your quota actually rolls over, so the integration doesn't trust it on its own. It works out the real reset time from whatever evidence it has, in order of preference: it watches for the moment your remaining-calls count jumps back up and records that as the reset (a jump of more than 20 calls, or 5% of the limit on bigger plans, counts at any time, and from two hours before the expected reset time onwards (longer if the last reset was only spotted late) a rise of even one call counts, so a quiet day is caught too, at the price that a small wobble in the count just before the reset can be taken for it); failing that it reads your own sensor history for the usage drop, and uses it only when it shows a later reset than the one already recorded; then it extrapolates from your current usage rate and call history; and as a last resort it falls back to the time of your first call each day. The result is what `sensor.tado_ce_api_reset` shows, and it's what Quota Reserve waits for before resuming.
 
 **Offset Sync drift refresh (v4.0.0):**
 
-When Device Temperature Offsets is on, the integration runs a periodic drift refresh that pulls the stored device offset back from Tado, so the displayed `offset_celsius` stays close to the value Tado's adaptive calibration writes behind your back rather than freezing at the boot reading. The cadence is the larger of 30 minutes or your configured Cloud Sync Interval (the HomeKit-aware floor, see HomeKit Local Control), so on the default Cloud Sync it fires every 30 minutes, and if you've widened Cloud Sync to 60 minutes it fires every 60 minutes.
+When Device Temperature Offsets is on, the integration runs a periodic drift refresh that pulls the stored device offset back from Tado, so the displayed `offset_celsius` stays close to the value Tado's adaptive calibration writes behind your back rather than freezing at the boot reading. The cadence is the larger of 30 minutes or your configured Cloud Data Refresh (the HomeKit-aware floor, see HomeKit Local Control), so on the default setting it fires every 30 minutes, and if you've widened Cloud Data Refresh to 60 minutes it fires every 60 minutes.
 
 From v4.1.0-beta.4 the refresh visits **one zone per cycle** rather than every zone at once. Each zone still gets refreshed, just spread out: with N zones the cycle rotates through them, so any one zone is re-read every N cycles. That turns the old all-at-once burst into a steady **1 cloud call per cycle**, whatever your zone count.
 
@@ -406,9 +382,9 @@ Offset Sync: drift refresh complete — zone 5 reconciled with Tado, 1 cloud cal
 ```
 Day Start: 7, Night Start: 23
 Custom Day Interval: 30 min, Custom Night Interval: 120 min
-Weather: Off, Mobile Tracking: Off
+Weather: Off, Mobile Tracking: Off, Home State Sync: Off
 
-Expected: Day 32 syncs × 2 = 64, Night 4 × 2 = 8, Full sync 4 × 2 = 8 → ~80 calls/day
+Expected: Day 32 polls × 1 call = 32, Night 4 polls × 1 call = 4, zone and device refresh (every 4 h on this plan) 6 × 2 extra calls = 12 → ~48 calls/day
 ```
 
 #### Scenario 2: High Quota (1000+) Adaptive
@@ -417,15 +393,15 @@ Leave custom intervals empty. Adaptive polling reads your remaining quota from T
 
 #### Scenario 3: Disable Optional Sensors to Save Calls
 
-- Weather off: saves ~144 calls/day (at 10 min intervals)
-- Mobile tracking off: saves ~4 calls/day
-- Home State Sync off: saves 1 call/sync
+- Weather off: saves up to about 36 calls a day at the default 30-minute weather refresh (a poll only fetches weather once 30 minutes have passed since the last time, so fewer if your polls are further apart than that)
+- Mobile tracking off: saves 1 call with each refresh of zone and device details (up to 24 a day, 6 on the 100-call plan). With Frequent Sync on it saves up to about 196 a day at the default 5-minute refresh instead
+- Home State Sync off: saves up to about 196 calls a day at the default 5-minute presence refresh, and fewer if your polls are further apart than that
 
 ---
 
-## ⚡ API Write Optimization
+## API Write Optimization
 
-**Available:** v3.4.0+ | **Requirement:** None | **All Enabled by Default**
+**Requirement:** None | **All Enabled by Default**
 
 Reduces unnecessary API calls when you interact with climate controls — temperature changes, mode switches, device toggles, and schedule resumes are all optimized automatically.
 
@@ -433,7 +409,9 @@ Reduces unnecessary API calls when you interact with climate controls — temper
 
 Every time you adjust a temperature slider, toggle a switch, or resume a schedule, Tado CE sends API calls to the Tado cloud. Without optimization, rapid interactions (dragging a slider, toggling multiple devices) can waste dozens of calls on intermediate or redundant values. API Write Optimization tackles this with five complementary strategies that work together transparently.
 
-**Computed by:** Tado CE — all five optimisation layers (debounce timer, action guard deduplication, device sync queue, write coalescing window, resume guard) run entirely within the integration before any call leaves for Tado's servers. The `scheduled_target_temperature` attribute is read from Tado's schedule data and cached locally by Tado CE.
+**Computed by:** Tado CE — all five optimisation layers (debounce timer, action guard deduplication, device sync queue, refresh delay, resume guard) run entirely within the integration before any call leaves for Tado's servers. The `scheduled_target_temperature` attribute is read from Tado's schedule data and cached locally by Tado CE.
+
+![What happens before a change reaches Tado. A temperature, mode, fan, swing or preset change first meets the Action Guard, which skips it with no call if the zone is already in that state. A temperature change then waits in a 3 second debounce that restarts on each new change, so only the final value is sent. Child lock, early start and Offset Sync writes go through the Device Sync Queue, one at a time and 1 second apart by default, with up to 20 waiting. A resume schedule request is skipped with no call if the zone already follows its schedule. After a change, a 15 second Refresh Delay restarts on each write, so quick changes give one refresh. Smart Valve Control and Offset Sync keep their own fixed 3 second window.](docs/images/tado-ce-fewer-api-calls.png)
 
 ### How Much Does It Save?
 
@@ -441,13 +419,13 @@ The savings depend on how you use your system:
 
 | Scenario | Without Optimization | With Optimization | Savings |
 |----------|---------------------|-------------------|---------|
-| Drag temperature slider from 18°C to 22°C | ~8 API calls (one per 0.5°C step) | 1 API call (final value only) | ~87% |
+| Drag temperature slider from 18°C to 22°C | Up to ~8 API calls if every 0.5°C step were sent | 1 API call (final value only) | Up to ~87% |
 | Set 22°C when already at 22°C | 1 API call | 0 API calls (skipped) | 100% |
-| Toggle child lock + early start quickly | 2 simultaneous calls (race condition risk) | 2 sequential calls with delay | Safer |
-| Change temp + mode + fan in quick succession | 3 refreshes | 1 coalesced refresh | ~66% fewer refreshes |
+| Toggle child lock + early start quickly | 2 calls sent at the same moment | 2 sequential calls with delay | Same number of calls, one at a time |
+| Change temp + mode + fan in quick succession | 3 refreshes | 1 refresh after the delay | ~66% fewer refreshes |
 | Resume schedule when already on schedule | 1 API call | 0 API calls (skipped) | 100% |
 
-For a typical household making 10–20 manual adjustments per day, you can expect roughly 30–50% fewer write-related API calls.
+How much this saves depends on how many of your writes are duplicates or part of a rapid burst, so it varies by household.
 
 ### Components
 
@@ -465,6 +443,8 @@ When you drag a temperature slider, each position fires a `set_temperature` call
 
 **How it works:** Each slider movement resets a per-zone timer. Only when the timer expires (no new movement for N seconds) does the API call fire. If you drag from 18°C to 22°C over 2 seconds, only one call is made for 22°C.
 
+This covers temperature changes on heating and AC zones. Smart Valve Control and Offset Sync have their own fixed 3-second window, which this setting doesn't change.
+
 #### 2. Action Guard
 
 Skips API calls when the requested state already matches the current state. If your zone is already at 22°C and you (or an automation) sets it to 22°C again, the call is silently skipped.
@@ -474,11 +454,13 @@ Skips API calls when the requested state already matches the current state. If y
 | Behaviour | Always active |
 | Covers | Temperature, HVAC mode, fan mode, vertical swing, horizontal swing, preset mode |
 
-**Checked states:** temperature, HVAC mode, fan mode, vertical swing, horizontal swing, and preset mode. Each is compared against the coordinator's cached state — no extra API call needed for the check.
+**Checked states:** temperature, HVAC mode, fan mode, vertical swing, horizontal swing, and preset mode (fan and swing on AC zones, preset on heating zones). Each is compared against the state the climate entity is showing, so the check needs no API call.
+
+Two cases are never skipped: a temperature or mode change made while an earlier change of yours is still waiting for Tado to confirm it, and switching to Auto on a zone that has an override, since that is how you hand the zone back to its schedule.
 
 #### 3. Device Sync Queue
 
-Device-level operations (child lock, early start) are queued and executed one at a time with a configurable delay between each. This prevents race conditions when you toggle multiple device settings in quick succession.
+Device-level operations (child lock, early start, and the offset writes Offset Sync makes) are queued and executed one at a time, first in first out, with a configurable delay between each. The first operation in a batch goes straight away. If the queue already holds 20 operations, a new one is refused with a warning in the log and a switch goes back to its previous position.
 
 | Setting | Value |
 |---------|-------|
@@ -488,22 +470,21 @@ Device-level operations (child lock, early start) are queued and executed one at
 
 **Where to configure:** Settings → Tado CE → Configure → Advanced Settings → Polling & API
 
-**Why it matters:** Without queuing, toggling child lock and early start simultaneously can cause the Tado API to return stale data or reject one of the calls. The queue ensures each operation completes before the next starts.
+**Why it matters:** Toggling several device settings at once would otherwise send their calls to Tado at the same moment. The queue makes each operation finish before the next one starts, and one failing doesn't stop the rest.
 
-#### 4. Write Coalescing
+#### 4. Refresh Delay After a Change
 
-When multiple state changes happen in quick succession (e.g. changing temperature, mode, and fan within a few seconds), each change would normally trigger its own coordinator refresh. Write Coalescing batches these into a single refresh after a 2-second window.
+When multiple state changes happen in quick succession (e.g. changing temperature, mode, and fan within a few seconds), each change would normally trigger its own coordinator refresh. Tado CE instead waits for the **Refresh Delay After a Change** (15 seconds by default, 1 to 60 under Configure → Advanced Settings → Polling & API) and then fetches fresh data once.
 
-| Setting | Value |
-|---------|-------|
-| Window | 2 seconds (fixed) |
-| Behaviour | Always active |
+It only merges the refreshes. Each write still goes to Tado as its own call, so a mode change and a temperature change sent back to back from an automation are two overlay writes. To send one, use a single `climate.set_temperature` call with `hvac_mode` set.
 
-Each new write resets the 2-second timer. The refresh only fires once the timer expires with no new writes. This means 3 rapid changes = 1 refresh instead of 3.
+Each new write restarts the countdown, and the refresh only fires once it runs out with no new writes. So 3 rapid changes = 1 refresh instead of 3.
+
+Only changes to climate, switch, water heater and select entities trigger a refresh. It is skipped, and the next normal poll picks the change up, when 90% or more of your daily calls are used or Tado is rate limiting you. Two refreshes are also kept at least 2 seconds apart, and that gap doubles after each failed refresh, up to 5 minutes.
 
 #### 5. Resume Guard
 
-Skips the `resume_schedule` API call if the zone is already following its schedule (no active overlay). Uses the coordinator's cached overlay state — no extra API call needed.
+Skips the `resume_schedule` API call if the zone is already following its schedule (no active overlay). It reads the overlay state Tado CE already holds, so the check costs no API call. It applies to the Resume Schedule services and buttons and to hot water, not to switching a climate entity to Auto.
 
 | Setting | Value |
 |---------|-------|
@@ -547,14 +528,14 @@ All settings are under **Settings → Tado CE → Configure → Advanced Setting
 | Smart Actions debounce window | 3s | 0–10s | Set to 0 to disable |
 | Action Guard | Always on | — | No configuration needed |
 | Device Sync delay | 1s | 0.5–5s | Lower = faster but riskier, higher = safer |
-| Write Coalescing | Always on | — | 2s fixed window, not configurable |
+| Refresh Delay After a Change | 15s | 1–60s | How long to wait before fetching fresh data after a change |
 | Resume Guard | Always on | — | No configuration needed |
 
 ---
 
-## 🔥 Thermal Analytics
+## Thermal Analytics
 
-**Available:** v2.0.0+ | **Requirement:** Zones with heatingPower data (TRV or Smart Thermostat) | **Always Enabled**
+**Requirement:** Zones with heatingPower data (TRV or Smart Thermostat) | **Toggle:** off by default on new installs, see Configuration below
 
 Real-time analysis of heating system thermal performance based on complete heating cycles.
 
@@ -582,24 +563,24 @@ Real-time analysis of heating system thermal performance based on complete heati
 - Fast (>1.8°C/h): Small room or oversized radiator
 
 **Analysis Confidence:**
-- <50%: Not enough data yet
-- 50–80%: Reasonable confidence
-- >80%: High confidence, reliable estimates
+- Below 30%: Low, it needs more complete heating cycles
+- 30–70%: Moderate, more cycles will improve preheat accuracy
+- 70% and above: Adequate
 
 **Approach Factor:**
-- <50%/h: Slow approach, multiple hours to target
-- 50–100%/h: Normal, 1–2 hours
-- >100%/h: Fast approach, less than 1 hour
+- Below 100%: Heating slows down near the setpoint (normal, controlled approach)
+- Around 100%: Constant rate, so the room may overshoot
+- Above 100%: Heating speeds up near the setpoint (unusual, may overshoot)
 
 ### Configuration
 
 **Global Toggle:** Options → General Settings → Smart Automations → Thermal Analytics
 
-**Per-Zone Control (v2.1.0+):** Options → Advanced Settings → Thermal Analytics → Thermal Analytics Zones
+**Per-Zone Control:** Options → Advanced Settings → Thermal Analytics → Thermal Analytics Zones
 - Default: All zones with heatingPower data enabled
 - Deselect zones that never call for heat (passive heating) to keep UI clean
 
-**Supported Devices (v2.0.1+):** TRV (VA01, VA02, RU01, RU02), Smart Thermostat (SU02)
+**Supported Devices:** TRV (VA01, VA02, RU01, RU02), Smart Thermostat (SU02)
 
 **Analysis Tuning:** Options → Advanced Settings → Thermal Analytics (same collapsed section as Thermal Analytics Zones)
 
@@ -631,7 +612,7 @@ automation:
           temperature: 21
 ```
 
-Wait for `_analysis_confidence` > 80% before trusting preheat estimates.
+Wait for `sensor.{zone}_confidence` to reach 70% or more before trusting preheat estimates.
 
 **Computed by:** Tado CE — derived from complete heating cycles detected locally; Tado server supplies the raw heatingPower and temperature readings.
 
@@ -640,7 +621,7 @@ Wait for `_analysis_confidence` > 80% before trusting preheat estimates.
 **Indicators:**
 - Low thermal inertia (<20 min) — heat escapes quickly
 - Low heating rate (<0.6°C/h) — struggling to heat
-- High approach factor (>150%/h) — temperature fluctuates rapidly
+- Approach factor above 100%: heating speeds up near the setpoint, so the room may overshoot
 
 **Action:** Check for drafts, verify radiator valve, check boiler flow temperature.
 
@@ -648,10 +629,10 @@ Wait for `_analysis_confidence` > 80% before trusting preheat estimates.
 
 | Room | Thermal Inertia | Heating Rate | Confidence | Status |
 |------|----------------|--------------|------------|--------|
-| Living Room | 45 min | 1.2°C/h | 95% | ✅ Normal |
-| Bedroom | 35 min | 1.5°C/h | 90% | ✅ Good |
-| Bathroom | 15 min | 0.6°C/h | 85% | ⚠️ Poor insulation |
-| Kitchen | 60 min | 0.8°C/h | 80% | ✅ High thermal mass |
+| Living Room | 45 min | 1.2°C/h | 95% | Normal |
+| Bedroom | 35 min | 1.5°C/h | 90% | Good |
+| Bathroom | 15 min | 0.6°C/h | 85% | Poor insulation |
+| Kitchen | 60 min | 0.8°C/h | 80% | High thermal mass |
 
 #### Scenario 4: Detect Radiator/Boiler Problems
 
@@ -659,7 +640,7 @@ Watch for sudden drops in heating rate or increases in preheat time. Check radia
 
 ---
 
-## 🧠 Smart Comfort Analytics
+## Smart Comfort Analytics
 
 **Available:** v1.9.0+ | **Requirement:** None | **Opt-in Configuration**
 
@@ -677,7 +658,7 @@ Learns from heating patterns and provides predictive insights.
 | `sensor.{zone}_preheat_advisor` | Preheat Advisor | minutes | Recommended preheat start time |
 | `sensor.{zone}_smart_comfort_target` | Comfort Target | °C | AI-recommended target temperature |
 
-### Preheat Cooling Rate Prediction (v3.0.0)
+### Preheat Cooling Rate Prediction
 
 The Preheat Advisor now considers cooling trends when the room is above the target temperature. Previously, if `current_temp >= target_temp`, it simply showed "Ready" — now it estimates when the temperature will drop below target and calculates a proactive preheat start time.
 
@@ -695,7 +676,7 @@ The Preheat Advisor now considers cooling trends when the room is above the targ
 | `is_cooling_prediction` | `true` when cooling prediction is active |
 | `summary` | Human-readable explanation of the prediction |
 
-### Adaptive Preheat Passive Mode (v3.3.0+)
+### Adaptive Preheat Passive Mode
 
 Preheat now has three modes per zone, configured via **Options Flow → Zone Configuration**:
 
@@ -707,13 +688,15 @@ Preheat now has three modes per zone, configured via **Options Flow → Zone Con
 
 Existing users with preheat enabled are automatically migrated to Active mode. Passive mode is useful if you frequently override temperatures manually and don't want preheat fighting your changes.
 
+**When Tado refuses the start:** Adaptive Preheat tries at most 3 times per preheat window, each retry after Tado's next zone update, then logs that the preheat is skipped. It sends one start request per zone at a time, a timer countdown on the zone's overlay doesn't cancel a start that is waiting, and a start held back by the quota reserve or a Tado Cloud backoff doesn't use up a try. A rate limit or sign-in error on the start request starts the same backoff or sign-in repair as Tado CE's other background writes.
+
 ### Configuration
 
 1. Settings → Devices & Services → Tado CE → Configure → **General Settings → Smart Automations**
 2. Enable **Smart Comfort**
 3. Open **Advanced Settings → Smart Comfort** and pick a **Smart Comfort Mode**: None / Light (recommended when first enabling) / Moderate / Aggressive
 4. Set **Temperature History days** (1–30)
-5. Optionally select an **Outdoor Temperature Entity** for weather-adjusted comfort targets
+5. Optionally bind an **Outdoor Temperature Entity** for weather-adjusted comfort targets, under **Advanced Settings → External Data Sources**
 
 **Heat and cold alerts for vulnerable occupants** (v4.2.0) live under Advanced Settings, in their own Comfort & Safety section (you don't need Smart Comfort on to use them). For homes with elderly, infant, or unwell occupants, the option raises both heat and cold warnings one level earlier, since the same temperature carries more risk. Cold alerts step up when a room with the heating off drops into a health-risk range (high below 16°C, critical below 12°C). Off by default.
 
@@ -777,9 +760,9 @@ automation:
 
 ---
 
-## 💧 Enhanced Mold Risk Assessment
+## Enhanced Mold Risk Assessment
 
-**Available:** v2.0.0+ | **Requirement:** Outdoor temperature sensor | **Always Enabled**
+**Requirement:** Outdoor temperature sensor | **Always Enabled**
 
 Uses surface temperature calculation to accurately detect cold spots where mold can grow.
 
@@ -797,7 +780,7 @@ Uses surface temperature calculation to accurately detect cold spots where mold 
 | `sensor.{zone}_absolute_humidity` | Absolute Humidity | Water vapour mass per air volume (g/m³) |
 | `sensor.{zone}_comfort_level` | Comfort Level | Overall comfort assessment |
 
-### Heat Index & Heat Risk (v3.3.0+)
+### Heat Index & Heat Risk
 
 The Comfort Level sensor now includes "feels like" temperature when it's warm (above 26.7°C), factoring in humidity using the NOAA/NWS Rothfusz regression. Risk levels appear in the sensor attributes and in comfort recommendations.
 
@@ -824,10 +807,10 @@ When heat index is active, the comfort level calculation uses the "feels like" t
 
 | Window Type | U-Value (W/m²K) | Mold Risk |
 |-------------|-----------------|-----------|
-| Single Pane | 5.0 | ⚠️ High |
-| Double Pane | 2.7 | ⚠️ Medium |
-| Triple Pane | 1.0 | ✅ Low |
-| Passive House | 0.8 | ✅ Very Low |
+| Single Pane | 5.0 | High |
+| Double Pane | 2.7 | Medium |
+| Triple Pane | 1.0 | Low |
+| Passive House | 0.8 | Very Low |
 
 ### Mold Risk Thresholds
 
@@ -842,7 +825,7 @@ When heat index is active, the comfort level calculation uses the "feels like" t
 
 1. Settings → Devices & Services → Tado CE → Configure → **Advanced Settings → Smart Comfort**
 2. Set the default **Window Type** (applies to any zone that hasn't picked its own)
-3. Set the **Outdoor Temperature Entity** (e.g., `weather.home`)
+3. Set the **Outdoor Temperature Entity** (e.g., `weather.home`) under **Advanced Settings → External Data Sources**
 
 **Per-Zone Window Type:** For per-zone overrides, enable **General Settings → Advanced → Per-Zone Configuration**, then open **Zone Configuration → (zone) → Smart Features → Window Type**.
 
@@ -862,7 +845,7 @@ automation:
     action:
       - service: notify.mobile_app
         data:
-          title: "⚠️ High Mold Risk in Bedroom"
+          title: "High Mold Risk in Bedroom"
           message: >
             Mold risk: {{ states('sensor.bedroom_mold_risk_percentage') }}%
             Surface temp: {{ state_attr('sensor.bedroom_mold_risk', 'surface_temperature') }}°C
@@ -873,11 +856,11 @@ automation:
 
 | Scenario | Indoor | Outdoor | Single Pane | Double Pane | Triple Pane |
 |----------|--------|---------|-------------|-------------|-------------|
-| Winter | 20°C | 0°C | 12.0°C (⚠️ 85% RH) | 15.4°C (⚠️ 72% RH) | 17.8°C (✅ 58% RH) |
-| Cold Day | 20°C | 5°C | 14.5°C (⚠️ 78% RH) | 16.7°C (⚠️ 65% RH) | 18.5°C (✅ 55% RH) |
-| Mild Day | 20°C | 10°C | 16.5°C (⚠️ 68% RH) | 17.8°C (✅ 58% RH) | 19.0°C (✅ 52% RH) |
+| Winter | 20°C | 0°C | 12.0°C (85% RH) | 15.4°C (72% RH) | 17.8°C (58% RH) |
+| Cold Day | 20°C | 5°C | 14.5°C (78% RH) | 16.7°C (65% RH) | 18.5°C (55% RH) |
+| Mild Day | 20°C | 10°C | 16.5°C (68% RH) | 17.8°C (58% RH) | 19.0°C (52% RH) |
 
-### Passive Window Detection (v3.3.0+)
+### Passive Window Detection
 
 Detects open windows even when your heating or AC is off. Combines temperature drop speed, humidity changes, and indoor-outdoor temperature difference to tell the difference between a natural cooldown and an open window.
 
@@ -888,11 +871,11 @@ Detects open windows even when your heating or AC is off. Combines temperature d
 | Active | Only when heating/cooling is running | Rapid temperature drop while HVAC is active |
 | Passive | Anytime, even when HVAC is off | Temperature drop rate + humidity + outdoor differential |
 
-**A known limit:** passive detection reads a room drifting towards the outside temperature as a possible open window. On a cold day, a room that has just stopped heating drifts the same way for a while as it settles, so a "check windows" reading shortly after the heating goes off can be the room cooling down rather than a window actually open. The predicted-window sensor drives the display and insights only and never a heating decision, so a false reading here doesn't affect your heating. It's slated for retirement in a future major version rather than further tuning.
+**A known limit:** passive detection reads a room drifting towards the outside temperature as a possible open window. On a cold day, a room that has just stopped heating drifts the same way for a while as it settles, so a "check windows" reading shortly after the heating goes off can be the room cooling down rather than a window actually open. Tado CE itself uses the predicted-window sensor only for the display and insights, never for a heating decision, so a false reading here doesn't change its own heating. An automation of yours that reacts to the sensor can. It's slated for retirement in a future major version rather than further tuning.
 
-### Per-Zone Sensitivity (v3.3.0+)
+### Per-Zone Sensitivity
 
-Configured via **Options Flow → Zone Configuration**. The integration runs both detection modes automatically — active when the zone is heating or cooling, passive when it's idle — so there's no per-zone mode selector to choose from. What you can configure is sensitivity:
+Configured via **Options Flow → Zone Configuration**. Each zone has a Window Detection Mode (Auto is recommended; Active and Passive pin the zone to one method) and a sensitivity:
 
 | Sensitivity | Min Readings | Temp Rate Threshold | Best For |
 |-------------|-------------|---------------------|----------|
@@ -900,7 +883,7 @@ Configured via **Options Flow → Zone Configuration**. The integration runs bot
 | Medium | 3 readings | 0.25°C/min | Most rooms (default) |
 | High | 2 readings | 0.15°C/min | Rooms where you want fast detection |
 
-### Window Detection Events (v3.3.0+)
+### Window Detection Events
 
 HA events fire when a window is detected or cleared — useful for building your own automations:
 
@@ -911,32 +894,31 @@ HA events fire when a window is detected or cleared — useful for building your
 
 The Window Predicted sensor also tracks when the last detection happened, how many times today, and which detection mode was used. Daily count resets at midnight.
 
-### Smoother Detection (v3.3.0+)
+### Smoother Detection
 
 The Window Predicted sensor no longer flickers on/off rapidly. It waits for several stable readings before clearing a detection (3 readings on Low sensitivity, 2 on Medium, 1 on High).
 
 ---
 
-## 🔄 Heating Cycle Detection
+## Heating Cycle Detection
 
-**Available:** v2.0.0+ | **Requirement:** Zones with heatingPower data | **Always Enabled**
+**Requirement:** Zones with heatingPower data | **Always Enabled**
 
 Identifies complete heating cycles (heating ON → target reached → heating OFF) for accurate thermal analysis.
 
 - Automatically detects complete heating cycles
-- Minimum cycle: 10 minutes, maximum: 4 hours
+- A cycle that runs longer than 6 hours is marked interrupted
 - No configuration needed
 
 **Monitor cycle health** via `sensor.{zone}_thermal_inertia` attributes:
 - `cycle_count`: Total cycles analyzed
-- `timeout_count`: Cycles that timed out
-- Success rate >90% = heating system working well
+- `completed_count`: Cycles used in the analysis
 
 **Computed by:** Tado CE — heatingPower state is polled from the Tado server; cycle boundaries (ON → target reached → OFF) are identified and stored locally by this integration.
 
 ---
 
-## ⚡ Enhanced Controls
+## Enhanced Controls
 
 **Available:** v1.0.0+ | **Requirement:** None | **Always Enabled**
 
@@ -957,7 +939,7 @@ Dashboard updates immediately after climate control actions. Configurable deboun
 | `button.{zone}_boost` | Boost | Quick boost: 25°C for 30 min (replicates Tado app feature) |
 | `button.{zone}_smart_boost` | Smart Boost | Intelligent duration based on thermal analytics |
 
-> ⬆ Boost replicates the Tado app's boost feature. HA official doesn't expose this.
+> Boost replicates the Tado app's boost feature. The built-in HA integration doesn't expose this.
 > Smart Boost is CE exclusive — calculates optimal duration from thermal data.
 
 #### 3. Climate Timer Service
@@ -971,7 +953,7 @@ data:
   temperature: 22
   time_period: 60
 
-# Overlay mode (v2.3.0+) — until next schedule change
+# Overlay mode — until next schedule change
 service: tado_ce.set_climate_timer
 target:
   entity_id: climate.living_room
@@ -988,7 +970,7 @@ data:
   overlay: manual
 ```
 
-> v2.3.0: `time_period` is optional when `overlay` is specified. Supported: `next_time_block`, `manual`. Both Heating and AC zones.
+> `time_period` is optional when `overlay` is specified. Supported: `next_time_block`, `manual`. Both Heating and AC zones.
 
 #### 4. Enhanced Hot Water Timer
 
@@ -1018,7 +1000,7 @@ data:
 
 Enable "Temperature Offset" in Configure to add `offset_celsius` attribute to climate entities.
 
-#### 6. Climate Group Support (v2.2.3+)
+#### 6. Climate Group Support
 
 Target climate groups with Tado CE custom services. Groups defined in `configuration.yaml` are automatically expanded.
 
@@ -1046,7 +1028,7 @@ data:
 
 Supported services: `set_climate_timer`, `set_water_heater_timer`, `resume_schedule`.
 
-#### 7. Open Window Services (v3.1.0+)
+#### 7. Open Window Services
 
 Three services for open window management, each serving a different purpose:
 
@@ -1071,7 +1053,7 @@ target:
 data:
   duration: 1800  # 30 minutes
 
-# Indefinite — stays until manually resumed (v3.2.1+)
+# Indefinite — stays until manually resumed
 service: tado_ce.set_open_window_mode
 target:
   entity_id: climate.bedroom
@@ -1110,11 +1092,11 @@ automation:
 
 `set_open_window_mode` works by writing a frost-protection overlay, so you clear it the same way you clear any overlay: `resume_schedule` (back to the schedule) or `restore_previous_state` (back to whatever the zone was doing before). `deactivate_open_window` is the wrong partner here — it only cancels Tado's own detected open-window state (what `activate_open_window` confirms), and it has nothing to act on after `set_open_window_mode`.
 
-#### 8. Restore Previous State (v3.3.0+)
+#### 8. Restore Previous State
 
-Puts a zone back to whatever it was doing before the last change. Works with heating, AC, and hot water.
+Puts a zone back to whatever it was doing before a change, or before the first of a run of changes. Works with heating, AC, and hot water.
 
-State is saved automatically the moment an overlay action lands successfully (timers, temperature changes, open window mode, preheat). If the cloud rejects or times out, nothing is saved, so a failed write can never leave a stale snapshot to replay later. If no state was ever saved for the zone, restore falls back to resuming the schedule. Saved state survives HA restarts and clears when you arrive home.
+State is saved automatically the moment an overlay action lands successfully (timers, temperature changes, open window mode, preheat). If the cloud rejects or times out, nothing is saved, so a failed write doesn't leave a stale snapshot to replay later. If the zone already has a saved state, that one is kept, so a run of changes restores to the state before the first of them. If no state was ever saved for the zone, restore falls back to resuming the schedule. Saved state survives HA restarts and clears when you arrive home.
 
 ```yaml
 # Restore a single zone
@@ -1332,7 +1314,7 @@ data:
   force_override: false      # default — see below
 ```
 
-`force_override` is off by default, so a manual override you set by hand on the slider is left alone. Turn it on when the automation should take priority even over a manual change, like a holiday schedule that must win. The main use case (a holiday or bridge-day automation) and a full example are in the [Smart Valve Control section](#-smart-valve-control) under "Holiday or Bridge-Day Automations".
+`force_override` is off by default, so a manual override you set by hand on the slider is left alone. Turn it on when the automation should take priority even over a manual change, like a holiday schedule that must win. The main use case (a holiday or bridge-day automation) and a full example are in the [Smart Valve Control section](#smart-valve-control) under "Holiday or Bridge-Day Automations".
 
 #### 17. AC swing — separate vertical and horizontal axes (v4.0.1+)
 
@@ -1342,15 +1324,15 @@ Automations calling the old unified `climate.set_swing_mode` (`off` / `vertical`
 
 ---
 
-## 🌉 Bridge API Integration
+## Bridge API Integration
 
-**Available:** v3.2.0+ | **Requirement:** Tado Internet Bridge with serial + auth key | **Opt-in Configuration**
+**Requirement:** Tado Internet Bridge with serial + auth key | **Opt-in Configuration**
 
-Direct communication with your Tado Internet Bridge for boiler flow temperature monitoring and control. Independent from the cloud API — errors never affect main polling.
+Direct communication with your Tado Internet Bridge for boiler flow temperature monitoring and control. Independent from the cloud API: bridge errors never fail the cloud poll or change its data.
 
 ### Overview
 
-The Bridge API uses the serial number and auth key printed on the bottom of your Internet Bridge to authenticate directly with `my.tado.com/api/v2/homeByBridge/{serial}/`. This is separate from the OAuth-based cloud API used for zone data.
+The Bridge API uses the serial number and auth key printed on the back of your Internet Bridge to authenticate directly with `my.tado.com/api/v2/homeByBridge/{serial}/`. This is separate from the OAuth-based cloud API used for zone data.
 
 **Computed by:** Both — boiler output temperature, wiring state, and max output temperature are raw values from the Bridge API (`my.tado.com/api/v2/homeByBridge/{serial}/`); bridge connectivity status (binary sensor) is derived by Tado CE from consecutive-failure counting (marked disconnected after 3 consecutive failures).
 
@@ -1363,7 +1345,7 @@ The Bridge API uses the serial number and auth key printed on the bottom of your
 | `sensor.tado_ce_{home_id}_boiler_output_temperature` | Boiler Output Temperature | Sensor | Real-time boiler output temperature (°C) |
 | `number.tado_ce_{home_id}_boiler_max_output_temperature` | Boiler Max Output Temperature | Number | Control max flow temperature (25–80°C, 0.5°C step) |
 
-### Bridge Connected Sensor (v3.3.0+)
+### Bridge Connected Sensor
 
 The Bridge Connected binary sensor shows whether your Internet Bridge is online, read from the bridge's own status in Tado's response. Its on/off state tracks the bridge: switch the bridge off and the sensor goes off. Availability is separate. If Tado's cloud can't be reached at all (a network drop, or the cloud rejecting the call), the sensor shows unavailable rather than a stale reading, and it tolerates brief hiccups: the cloud is only treated as unreachable after 3 consecutive failures, so a single timeout won't flip it. The `failure_count` and `last_successful_connection` attributes show what's happening on the cloud side when it does.
 
@@ -1392,9 +1374,9 @@ The Boiler Wiring State sensor includes extra state attributes from the Bridge A
 
 1. Go to **Settings → Devices & Services → Tado CE → Configure → General Settings → Hardware Connections**
 2. Enable the **Internet Bridge** toggle
-3. Enter your **Bridge Serial Number** (starts with `IB`, printed on the bottom of your Internet Bridge)
-4. Enter your **Bridge Auth Key** (also printed on the bottom)
-5. Save — credentials are validated automatically against the Bridge API
+3. Enter your **Bridge Serial Number** (starts with `IB`, printed on the back of your Internet Bridge)
+4. Enter your **Bridge Auth Key** (also printed on the back)
+5. Save. The credentials are checked against the Bridge API when you first enable the toggle; if you change them later in Advanced Settings, they are saved without a check.
 
 Turning off the Internet Bridge toggle automatically cleans up all bridge-related entities. V2 bridges (`GW` serial) aren't supported by the Bridge API.
 
@@ -1409,7 +1391,7 @@ Turning off the Internet Bridge toggle automatically cleans up all bridge-relate
 
 | Sensor | Source | Requires |
 |--------|--------|----------|
-| Boiler Flow Temp | Cloud API (`activityDataPoints.boilerFlowTemperature`), or a bound third-party boiler-gateway sensor without a bridge | OpenTherm-connected boiler, or Advanced Settings → Outdoor Sensors → Boiler Flow Temperature Entity |
+| Boiler Flow Temp | Cloud API (`activityDataPoints.boilerFlowTemperature`), or a bound third-party boiler-gateway sensor without a bridge | OpenTherm-connected boiler, or Advanced Settings → External Data Sources → Boiler Flow Temperature Entity |
 | Boiler Output Temperature | Bridge API (`boiler.outputTemperature.celsius`) | Bridge credentials |
 | Boiler Max Output Temperature | Bridge API (`boilerMaxOutputTemperature`) | Bridge credentials |
 
@@ -1479,11 +1461,11 @@ automation:
 
 ---
 
-## 🏠 HomeKit Local Control
+## HomeKit Local Control
 
-**Available:** v4.0.0+ | **Requirement:** Tado Internet Bridge v3+ | **Opt-in Configuration**
+**Available:** v4.0.0+ | **Requirement:** Tado Internet Bridge v3 or V3+ | **Opt-in Configuration**
 
-Pair your Tado bridge via HomeKit to control heating and AC directly on your local network. Temperature and humidity updates arrive in real time instead of waiting for the next cloud poll, and local commands don't count against your API quota.
+Pair your Tado bridge via HomeKit to control heating zones directly on your local network. Smart AC Control V3+ stays on the cloud API, since it pairs with HomeKit separately from the bridge. Temperature and humidity updates arrive in real time instead of waiting for the next cloud poll, and local commands don't count against your API quota.
 
 **Computed by:** Tado CE — the integration manages the HomeKit pairing, routes temperature reads (HomeKit-first with cloud fallback), tracks write attempts/successes/latency, and counts API calls saved. Raw temperature values come from the HomeKit accessory (local) or Tado cloud; all routing, fallback decisions, and counter arithmetic are done by Tado CE.
 
@@ -1502,19 +1484,26 @@ Pair your Tado bridge via HomeKit to control heating and AC directly on your loc
 Tado CE talks to your Tado two ways at once, and each reading follows the side that's right for it:
 
 - **Room temperature follows HomeKit** — instant, the moment the TRV reports a change. A new per-zone **Temperature source** setting (v4.1.0; Configure → Zone Configuration → Temperature) lets you override this per zone: Automatic prefers the fast HomeKit reading and falls back to the cloud, HomeKit always prefers local, Cloud always shows Tado's. An external temperature sensor, if you've set one, still takes precedence. This only governs what the dashboard shows; Smart Valve Control always calibrates against its own reading regardless.
-- **HVAC mode follows the cloud** — the only side that knows you're following a schedule. A mode change you make in the Apple Home or Tado app shows up in Home Assistant on the next cloud poll (up to your polling interval). That's deliberate, not a shortfall: the official HomeKit Controller integration has no concept of a schedule at all (its "auto" is just heat/cool switching), and the official Tado integration has no fast local temperature. Tado CE gives you the fast temperature and still reflects an app-side mode change on the next poll.
+- **HVAC mode follows the cloud** — the only side that knows you're following a schedule. A mode change you make in the Apple Home or Tado app shows up in Home Assistant on the next cloud poll (up to your polling interval). That's deliberate, not a shortfall: Home Assistant's built-in HomeKit Controller integration has no concept of a schedule at all (its "auto" is just heat/cool switching), and the built-in Tado integration has no fast local temperature. Tado CE gives you the fast temperature and still reflects an app-side mode change on the next poll.
+
+### Where a write goes
+
+A temperature or mode change on a heating zone goes over HomeKit only when all four checks pass. Otherwise it goes through the Tado cloud and costs one API call.
+
+![Where a write from Home Assistant goes. It goes over HomeKit, free of API calls, only if the zone was on at the last cloud poll (turning off skips this check), the overlay mode is Manual, the bridge is connected and recent HomeKit writes have been healthy. Otherwise it goes through the Tado cloud. Resume schedule and timers always use the cloud. A HomeKit write not confirmed within about 19 seconds reverts and is retried once through the cloud.](docs/images/tado-ce-where-writes-go.png)
 
 ### Known Limitations
 
 | Limitation | Detail |
 |------------|--------|
-| HomeKit humidity (fallback only) | Humidity defaults to cloud data (0.1% precision, updates every poll cycle). HomeKit humidity is only used when cloud is unavailable — it provides 1% resolution with infrequent updates due to bridge firmware behaviour. Temperature uses HomeKit first (accurate, real-time). |
+| HomeKit humidity (fallback only) | Humidity defaults to cloud data (0.1% precision, updates every poll cycle). HomeKit humidity is only used when cloud is unavailable — it provides 1% resolution with infrequent updates due to bridge firmware behaviour. Temperature uses HomeKit first (accurate, real-time). This also applies when a zone's main device has been offline for hours and Tado's cloud humidity has stopped updating. |
+| A dead sensor's last reading is hidden after four hours | When the device that supplies a zone's room temperature and humidity has been offline for four hours or more, Tado CE hides Tado's last reading instead of showing it as live, and uses the valve's HomeKit reading if there is one (a zone whose Temperature source is set to Cloud shows no temperature on its climate card instead). Tado CE finds out a device has gone offline when it next refreshes the device list, which is every hour (every 4 hours on the free 100-call plan) at the earliest, and later if the quota is nearly spent. It keeps applying the four-hour rule while polling is paused, and it trusts a returning device again as soon as Tado sends a reading stamped more than two hours after the device went offline. If you remove the dead device in the Tado app while Tado still holds its last reading, that reading shows as live again. |
 | Cloud-only data | Heating power, battery status, schedules, hot water, and geofencing are only available from Tado's cloud. HomeKit provides temperature and HVAC mode locally on heating zones. |
 | Smart AC Control V3+ | Smart AC Control units are standalone WiFi accessories with their own HomeKit pairing code, separate from the Internet Bridge. Tado CE only handles the bridge's HomeKit pairing today, so Smart AC Control units fall through to the cloud path for every operation regardless of whether the bridge is paired locally. Adding standalone-unit pairing would need parallel multi-pairing management and HAP HeaterCooler service handling on top of the existing Thermostat path; not on the roadmap until that's been scoped against real hardware. Thanks to @MacrosorcH (Discussion #271) for the correction. |
 | A TRV that goes quiet can hold a stale reading briefly | The bridge answers HomeKit on each TRV's behalf. If a TRV loses radio contact but the bridge keeps returning its last reading as if current, the room temperature can sit on that stale value for a few minutes before the freshness check gives up on it and falls back to cloud. A genuine bridge disconnect falls back to cloud right away; this only applies to the bridge staying connected while one TRV stops reporting. HomeKit exposes no per-TRV "last heard from" signal for us to catch it sooner. |
 | Wireless Temp Sensors | Standalone temperature sensors (ST01) don't appear as HomeKit accessories — their data always comes from the cloud. |
 | Single pairing | The bridge can only be paired with one HomeKit controller at a time. |
-| External sensors don't control TRV valve | Per-zone external sensors change the displayed room temperature, but the TRV still uses its own sensor to control the valve. Enable **Smart Valve Control** (Offset Sync or Valve Target) in zone settings to automatically compensate — see [Smart Valve Control](#-smart-valve-control). |
+| External sensors don't control TRV valve | Per-zone external sensors change the displayed room temperature, but the TRV still uses its own sensor to control the valve. Enable **Smart Valve Control** (Offset Sync or Valve Target) in zone settings to automatically compensate — see [Smart Valve Control](#smart-valve-control). |
 | No TRV LED feedback on local writes | When a temperature change goes through HomeKit, the TRV updates silently. There's no LED flash showing the new target the way there is when you change it in the Tado app, because the HomeKit Accessory Protocol doesn't carry a feedback channel for this. If you want a flash to confirm you're at the right device, press its Identify button or call `tado_ce.identify_device` after the write. See the workaround note below. |
 
 ### General Limitations
@@ -1542,20 +1531,20 @@ Tado CE talks to your Tado two ways at once, and each reading follows the side t
 | Setting | Location | Default | Description |
 |---------|----------|---------|-------------|
 | HomeKit Local Control | General Settings → Hardware Connections | Off | Enable/disable HomeKit pairing |
-| Cloud Sync Interval | Advanced Settings → HomeKit | 30 min | How often to fetch cloud data (humidity, heating power, overlays) when HomeKit is connected. Temperature uses HomeKit locally. **Note:** If you set a custom polling interval in Polling & API, all data refreshes at your custom rate instead — this setting only applies when using automatic polling. |
+| Cloud Data Refresh | Advanced Settings → HomeKit | 30 min | How often to fetch cloud data (humidity, heating power, overlays) when HomeKit is connected. Temperature uses HomeKit locally. **Note:** If you set a custom polling interval in Polling & API, all data refreshes at your custom rate instead — this setting only applies when using automatic polling. |
 | Unpair | Advanced Settings → HomeKit | — | Remove the HomeKit pairing without removing the integration |
 
 ### Entities
 
 | Entity | Type | Description |
 |--------|------|-------------|
-| HomeKit Connected | `binary_sensor` | Shows whether the HomeKit connection is active. Attributes include uptime, reconnect count, mapped/unmapped zones, and current write performance metrics. |
+| HomeKit | `binary_sensor` | Shows whether the HomeKit connection is active. Attributes include uptime, reconnect count, mapped/unmapped zones, and current write performance metrics. |
 | HomeKit Reads Saved | `sensor` (disabled by default) | How many cloud read calls HomeKit local control has saved you since the last API quota reset. |
 | HomeKit Writes Saved | `sensor` (disabled by default) | How many cloud write calls HomeKit local control has saved you since the last API quota reset. |
 
 Reads Saved and Writes Saved are diagnostic sensors disabled by default — enable them under **Settings → Devices → Tado CE Hub → "X entities not shown"** if you want history charts of HomeKit's API savings. The counters survive HA restarts and reset when your Tado API quota resets (typically once per day).
 
-The HomeKit Connected sensor's own attributes are connection state plus current-session write performance metrics:
+The HomeKit sensor's own attributes are connection state plus current-session write performance metrics:
 
 **Connection state:**
 
@@ -1608,7 +1597,7 @@ Even with HomeKit connected, some data only comes from Tado's servers:
 - Device firmware info
 - Everything Smart AC Control V3+ does (those units are standalone HomeKit accessories Tado CE doesn't pair with — see Smart AC Control row above)
 
-The integration handles this automatically; it fetches cloud-only data at the configured Cloud Sync Interval while using HomeKit for temperature, humidity, target temperature, and HVAC mode on heating zones.
+The integration handles this automatically; it fetches cloud-only data at the configured Cloud Data Refresh while using HomeKit for temperature, humidity, target temperature, and HVAC mode on heating zones.
 
 ### Workaround: TRV LED feedback after a local write
 
@@ -1624,9 +1613,9 @@ When the bridge is connected this flashes locally over HomeKit at no quota cost.
 
 ---
 
-## 🌡️ Weather Compensation
+## Weather Compensation
 
-**Available:** v3.3.0+ | **Requirement:** Bridge API configured OR cloud outdoor temperature | **Opt-in Configuration**
+**Requirement:** Internet Bridge enabled, and an outdoor temperature (your own sensor, or Tado's weather data) | **Opt-in Configuration**
 
 Automatically adjusts your boiler's flow temperature based on outdoor temperature, so your heating runs more efficiently in mild weather and ramps up when it's cold.
 
@@ -1634,20 +1623,15 @@ Automatically adjusts your boiler's flow temperature based on outdoor temperatur
 
 Weather compensation uses a heating curve to map outdoor temperature to a target boiler flow temperature. When it's mild outside, the boiler runs at a lower flow temperature (saving energy). When it's cold, the flow temperature increases to maintain comfort.
 
-The engine runs every coordinator update cycle. A 10-minute hold between adjustments prevents oscillation, and outdoor temperature is smoothed (EMA or rolling average) to avoid reacting to brief fluctuations.
+The engine runs every coordinator update cycle. A 10-minute hold between adjustments prevents oscillation, and outdoor temperature is smoothed (EMA or rolling average, or not at all) to avoid reacting to brief fluctuations. The outdoor reading comes from the outdoor temperature sensor you bound under Advanced Settings → External Data Sources, or from Tado's weather data if you haven't bound one.
 
 **Computed by:** Tado CE using Tado server data — outdoor temperature is fetched from Tado's cloud API, then Tado CE applies the heating curve formula (plus optional room-compensation offset and EMA/rolling-average smoothing) to derive the target boiler flow temperature. The raw reading is Tado server data; the sensor value is a Tado CE calculation.
 
 ### Heating System Presets
 
-| Preset | Max Flow Temp | Description |
-|--------|---------------|-------------|
-| Radiators Standard | 65°C | Traditional radiators |
-| Radiators Low Temp | 55°C | Modern low-temperature radiators |
-| Underfloor | 45°C | Underfloor heating systems |
-| Custom | User-defined | Full control over all parameters |
+Radiators (Standard), Radiators (Low Temperature) and Underfloor Heating all behave the same. Each works out the slope of the curve from your own Maximum Flow Temperature, Minimum Flow Temperature, Design Outdoor Temp and Shutoff Temp, and picking one doesn't fill those fields in for you. Custom is the only choice that changes anything: it uses the Slope you type in instead.
 
-Presets automatically calculate the slope from your min/max flow and design/shutoff temperatures, so the heating curve spans the full outdoor range without flat zones. Custom preset gives you full manual control over the slope.
+So set Maximum Flow Temperature to what your own system is designed for, whichever preset you pick.
 
 ### Configuration
 
@@ -1657,21 +1641,21 @@ Presets automatically calculate the slope from your min/max flow and design/shut
 4. Save, then open **Advanced Settings → Weather Compensation** to pick a **Heating System Preset** (or choose Custom for full control)
 5. Save again — the engine starts adjusting on the next update cycle
 
-**Custom parameters (when preset = Custom):**
+**Parameters** (Slope only applies when the preset is Custom, the rest apply to every preset):
 
 | Parameter | Default | Range | Description |
 |-----------|---------|-------|-------------|
-| Slope | 1.5 | 0.1–3.0 | Heating curve steepness |
+| Slope | 1.5 | 0.3–3.0 | Heating curve steepness (Custom preset only) |
 | Design Outdoor Temp | -5°C | -30 to 10°C | Coldest expected outdoor temperature |
 | Max Flow Temp | 65°C | 25–80°C | Maximum boiler flow temperature |
-| Min Flow Temp | 25°C | 20–50°C | Minimum boiler flow temperature |
-| Shutoff Temp | 18°C | 5–25°C | Outdoor temp above which heating stops |
-| Smoothing Method | EMA | EMA / Rolling Avg | How outdoor temperature is smoothed |
-| Smoothing Window | 60 min | 15–240 min | Smoothing time window |
+| Min Flow Temp | 25°C | 25–60°C | Lowest flow temperature, also the value used once the outdoor temperature reaches the shutoff |
+| Shutoff Temp | 18°C | 5–30°C | At or above this outdoor temperature the flow temperature is set to Min Flow Temp |
+| Smoothing Method | EMA | None / EMA / Rolling Average | How outdoor temperature is smoothed |
+| Smoothing Window | 60 min | 15–1440 min | Smoothing time window |
 | Room Compensation | Off | On/Off | Adjust flow temp based on room temperature |
 | Room Compensation Factor | 3.0 | 1.0–5.0 | How strongly room temp affects flow temp |
-| Step Size | 1.0°C | 0.5–5.0°C | Minimum change between adjustments |
-| Hysteresis | 1.0°C | 0.5–5.0°C | Deadband to prevent oscillation |
+| Step Size | 1.0°C | 0.5–2.0°C | The flow temperature is rounded to this step |
+| Hysteresis | 1.0°C | 0.5–3.0°C | A new value is only sent if it differs from the last one sent by more than this |
 
 ### Sensors
 
@@ -1688,41 +1672,53 @@ Presets automatically calculate the slope from your min/max flow and design/shut
 | `outdoor_temperature_raw` | Raw outdoor temperature reading |
 | `heating_system_preset` | Active preset name |
 | `room_compensation_offset` | Room feedback adjustment (°C) |
-| `smoothing_method` | EMA or rolling_avg |
+| `smoothing_method` | none, ema or rolling_average |
 | `smoothing_window` | Smoothing window in minutes |
 
 ### How the Heating Curve Works
+
+![With the default settings, the target flow temperature falls in a straight line as the smoothed outdoor temperature rises: 65°C at the design temperature of -5°C, about 47.6°C at 5°C, about 38.9°C at 10°C, and 25°C at the shutoff temperature of 18°C, staying at 25°C for anything warmer. Each cycle smooths the outdoor reading, reads the flow temperature off the curve, adds an optional room offset, rounds to the step and keeps it within the minimum and maximum, then sends it to the Internet Bridge only if at least 10 minutes have passed since the last send and it is more than the hysteresis away from the last value sent. The three radiator and underfloor presets all use the same curve; only Custom changes it.](docs/images/tado-ce-heating-curve.png)
 
 ```
 Target Flow Temp = Max Flow Temp - Slope × (Outdoor Temp - Design Outdoor Temp)
 ```
 
-For presets, the slope is automatically calculated:
+For every preset except Custom, the slope is calculated for you:
 ```
 Auto Slope = (Max Flow - Min Flow) / (Shutoff Temp - Design Outdoor Temp)
 ```
 
 This ensures the curve reaches exactly `min_flow_temp` at the shutoff temperature — no flat zones where outdoor changes have no effect.
 
-Example with Radiators Standard (max 65°C, min 25°C, design -5°C, shutoff 18°C → auto-slope 1.74):
+Example with the default values (max 65°C, min 25°C, design -5°C, shutoff 18°C → auto-slope 1.74):
 - Outdoor -5°C → Flow 65°C (full power)
 - Outdoor 5°C → Flow 47.6°C
 - Outdoor 10°C → Flow 38.9°C
-- Outdoor 18°C+ → Heating off (shutoff)
+- Outdoor 18°C or above → Flow 25°C (your Min Flow Temp, the value used from the shutoff upwards)
+
+Each cycle then goes through the same steps:
+
+1. The outdoor reading is smoothed. If it goes missing, the last smoothed value is used for up to 30 minutes, and the status shows paused after that.
+2. The curve gives the flow temperature. With Room Compensation on, the room offset is added (see below).
+3. The result is rounded to the Step Size and kept between Min and Max Flow Temp (and within the 25 to 80°C the Internet Bridge accepts).
+4. It is only sent to the bridge if at least 10 minutes have passed since the last one, and it differs from the last one sent by more than the Hysteresis. The sensor shows the latest target either way.
+5. If the bridge call fails, the next cycle sends it again.
+
+**Room offset:** Factor × (average target − average room temperature), taken over the heating zones that are heating right now and have both readings. Positive when rooms are cold, negative when they are warm.
 
 ### Usage Scenarios
 
 #### Scenario 1: Standard Radiator Setup
 
-Select "Radiators Standard" preset. The default curve works well for most homes with traditional radiators. Monitor `wc_target_flow_temp` for a few days to verify the curve matches your comfort needs.
+Keep the default "Radiators (Standard)" preset and the default flow temperatures (65°C max, 25°C min). Monitor `wc_target_flow_temp` for a few days to verify the curve matches your comfort needs.
 
 #### Scenario 2: Underfloor Heating
 
-Select "Underfloor" preset. The gentler slope (0.8) and lower max flow temp (45°C) protect UFH systems from overheating. If your floors feel cold in very cold weather, increase the slope slightly using Custom mode.
+Set Maximum Flow Temperature to what your underfloor system is designed for (ask your installer), and the curve's slope follows from it. The preset you pick makes no difference here. If your floors feel cold in very cold weather, switch to Custom and raise the slope slightly.
 
 #### Scenario 3: Fine-Tuning with Room Compensation
 
-Enable Room Compensation to let the engine adjust flow temperature based on actual room temperatures. If rooms are consistently too warm, the engine reduces flow temp. If rooms are cold, it increases. The compensation factor controls how aggressively it responds.
+Enable Room Compensation to let the engine adjust flow temperature based on actual room temperatures, using the zones that are heating at the moment. If those rooms are too warm, the engine reduces flow temp. If they are cold, it increases. The compensation factor controls how aggressively it responds. If Home Assistant restarts inside a quota pause with Room Compensation on, the status shows paused and no flow temperature is written until the first real fetch from Tado, because the saved data has no live room readings. With Room Compensation off nothing changes.
 
 #### Scenario 4: Dashboard Card
 
@@ -1739,7 +1735,9 @@ entities:
 
 ---
 
-## 🎯 Smart Valve Control
+## Smart Valve Control
+
+![Smart Valve Control compared with no compensation. Without it, the TRV on the radiator reads warm, so Tado thinks the room is already warm, closes the valve early and the room stays cooler than your target. Offset Sync, recommended, writes an offset to the TRV so Tado sees the real temperature from an external sensor and modulates the valve as normal. Valve Target, advanced, writes the setpoint it needs so the valve stays open until the room reaches your target; use it when Offset Sync is not enough. Valve Target steps aside for manual changes, carries on at the next schedule block and writes over HomeKit when available; Offset Sync writes its offset through the Tado cloud.](docs/images/tado-ce-smart-valve-control.png)
 
 **Available:** v4.0.0+ | **Requirement:** Heating zone + external temperature sensor + HomeKit (recommended for Valve Target) | **Per-Zone Opt-in**
 
@@ -1761,8 +1759,8 @@ Valve Target needs to know the zone's Tado schedule to work out what target to h
 |---|---|---|
 | **What it does** | Corrects the TRV's temperature reading so Tado sees the right number | Overrides the TRV's target temperature to force the valve open/closed |
 | **How it works** | Writes a device offset → Tado app and Tado's own algorithm both use the corrected temperature | Calculates a boosted target and writes it directly to the TRV, bypassing Tado's logic |
-| **Tado app shows** | ✅ Your external sensor's temperature (accurate) | ⚠️ An inflated target (e.g. 25°C when you want 20°C) |
-| **Home Assistant shows** | ✅ Your external sensor's temperature | ⚠️ The same inflated target, once Tado's data catches up. `desired_target` carries yours |
+| **Tado app shows** | Your external sensor's temperature (accurate) | An inflated target (e.g. 25°C when you want 20°C) |
+| **Home Assistant shows** | Your external sensor's temperature | The same inflated target, once Tado's data catches up. `desired_target` carries yours |
 | **Who decides when to heat** | Tado's built-in algorithm (using corrected data) | The integration (actively monitors and adjusts) |
 | **Best for** | Most setups — TRV reads 1-5°C off, Tado's algorithm works fine with correct data | Difficult rooms where Tado still undershoots even with correct temperature data |
 | **API cost** | 1 call per adjustment per TRV (device offset write) | 0 (HomeKit) or 1 (cloud overlay write) |
@@ -1807,6 +1805,7 @@ desired_offset = external_sensor − (TRV_reported_temp − current_offset)
 - Readback verification: after each successful write, the integration reads the offset back from Tado and only updates the local cache when the confirmed value matches. A failed write (rate limit, server error) leaves the cache unchanged rather than poisoning it with a value the TRV never received (v4.0.0+)
 - Periodic drift refresh: the integration re-reads each TRV's stored offset from Tado and reconciles the local cache. With HomeKit connected, the refresh follows your **HomeKit Cloud Refresh** setting (matching the rest of cloud sync); HomeKit-off installs run it every 30 minutes. This catches the case where Tado's own adaptive calibration (or a manual edit in the Tado app) changes the stored offset behind the integration's back, which would otherwise feed a wrong baseline into the next correction and could drift the cache to the ±10°C limit (v4.0.0+)
 - If your external sensor goes offline, the last offset is preserved (no sudden jump)
+- With Quota Reserve on, a write waits once your remaining calls are down to the reserve plus its cost (1 call for each device in the zone plus 1 to read the offset back), until the quota is expected to reset; the offset stays as it is until the next sensor change
 - Keeps correcting the device offset even while a zone is off, or your whole system is off for the season. It only recalibrates what temperature the TRV reports to Tado, so the app stays accurate for whenever heating resumes. The write goes to the TRV's temperature-offset setting, so it doesn't turn heating on or change your schedule, but a TRV can still react to a new offset with a short valve-motor movement, which is why corrections are held overnight (see below). A TRV updating its display during an off season is this working as intended (v4.4.0+)
 - Each correction depends on the TRV itself reporting a fresh reading. If a zone's been off long enough that the TRV stops reporting anything new, corrections pause rather than compute against a stale number. Resumes automatically the moment the TRV reports something different, which doesn't require heating to restart first (v4.5.0+)
 - Holds off a due correction outside your day window, so it can't move a valve overnight. Uses the same day/night hours **Smart Polling** already follows (Advanced Settings → Polling), not a separate setting; set day and night to the same hour to turn this off. This applies to every held correction regardless of size, small or large, so an offset that's drifted a long way (after a battery swap or re-pairing, for example) waits for your day window just like a routine nudge would. Only affects Offset Sync's own device-offset write, never Smart Valve Control's temperature control (v4.5.0+)
@@ -1881,18 +1880,21 @@ The controller uses a hysteresis band (±0.3°C) around the target to prevent os
 > **Important:** If your TRV has a non-zero temperature offset (from a previous automation or manual setting in the Tado app), reset it to 0 before enabling Valve Target. The controller reads the offset-adjusted temperature from the TRV, so a fixed offset would cause double compensation and overshoot. The controller warns you on startup if it detects a non-zero offset.
 
 > **The zone's schedule.** Valve Target reads the zone's Tado schedule to know
-> what target to hold. The integration fetches this automatically for any zone
-> using Valve Target, on the ordinary polling cycle, whether or not Schedule
-> Calendar is enabled. If you've just edited a schedule in the Tado app and want
-> the change reflected straight away rather than waiting for the next poll,
-> press that zone's Refresh Schedule button (see [Hub-level buttons](#12-hub-level-buttons)).
+> what target to hold. The integration fetches it for any zone using Valve
+> Target, whether or not Schedule Calendar is enabled, and then keeps what it
+> fetched instead of polling for changes. If you edit a schedule in the Tado app,
+> press that zone's Refresh Schedule button to bring the change in (see
+> [Hub-level buttons](#12-hub-level-buttons)).
 > Offset Sync doesn't read the schedule and is unaffected.
 
-### Write Path
+### Write Path (climate entities and Smart Valve Control)
 
-- **HomeKit first** — adjustments go through the local bridge with zero API cost
-- **Cloud fallback** — if HomeKit is unavailable, writes go through the Tado cloud API (rate-limited to 1 write per zone per 5 minutes to protect your quota)
-- Writes are debounced (3-second window) to batch rapid sensor updates into a single write
+- **HomeKit first:** temperature and heat-mode changes go through the local bridge with zero API cost, on zones that are on and use the default Manual overlay mode
+- **Cloud for off zones:** a temperature or heat-mode change to a zone that is off goes through the cloud, because a HomeKit setpoint only stores the number without turning the thermostat on. Turning a zone off still goes over HomeKit on Manual
+- **Cloud for other overlay modes:** On heating zones, Until next automatic change and Timer always use the cloud, since HomeKit writes don't carry their termination
+- **Smart Valve Control** valve-target writes try HomeKit first on any zone where it is active, then fall back to the cloud, limited to one cloud write per zone per 5 minutes
+- **Cloud fallback** — if HomeKit is unavailable, writes go through the Tado cloud API (Smart Valve Control writes are limited to 1 per zone per 5 minutes to protect your quota)
+- Smart Valve Control writes are debounced (3-second window) to batch rapid sensor updates into a single write
 
 ### Climate Entity Attributes
 
@@ -1998,12 +2000,12 @@ type: markdown
 content: >
   {% set c = 'climate.living_room' %}
   {% if state_attr(c, 'valve_control_active') %}
-    🔥 SVC Active — valve target {{ state_attr(c, 'valve_target') }}°C,
+    SVC Active — valve target {{ state_attr(c, 'valve_target') }}°C,
     desired {{ state_attr(c, 'desired_target') }}°C
   {% elif state_attr(c, 'valve_control_backed_off') %}
-    ⏸️ SVC Backed Off (manual override detected)
+    SVC Backed Off (manual override detected)
   {% else %}
-    ✅ SVC Idle — room at temperature
+    SVC Idle — room at temperature
   {% endif %}
 ```
 
@@ -2045,18 +2047,23 @@ Leave `force_override` off (the default) and an active manual override you set b
 | Scenario | Behaviour |
 |----------|-----------|
 | You manually change the temperature | Controller backs off until the next schedule block change or overlay change |
-| External sensor goes offline while active | Resumes Tado schedule (deletes overlay), transitions to idle |
-| TRV reading unavailable | Bang-bang fallback — sets TRV to max_temp to keep heating |
+| External sensor goes offline while active | Hands the zone back to Tado (removes the override Smart Valve Control set), transitions to idle |
+| TRV reading unavailable | While the controller is active it opens the valve fully (sets the zone's maximum temperature) to keep heating. If the reading is missing because the zone's main device has been offline for four hours or more, it hands the zone back to Tado instead |
 | Both sensors unavailable | Resumes schedule, stays idle |
 | Valve target exceeds min/max bounds | Clamped to zone's configured min_temp / max_temp, then hard-capped at 30°C |
-| HomeKit write followed by cloud check | 60-second grace period after each write before checking for manual overrides — prevents false back-offs during HomeKit-to-cloud sync |
-| HA crashes while controller is active | Stale overlay is cleaned up automatically on next startup |
+| HomeKit write followed by cloud check | After each write it waits 60 seconds, and for zone data fetched after the write, before checking for manual overrides. That prevents false back-offs while HomeKit catches up with the cloud |
+| HA crashes while controller is active | At the next startup, once the first fresh zone update from Tado has arrived, the controller hands the zone back, unless the zone now shows a setting that isn't its own. Whether it owns an override is saved the moment that changes |
+| Tado refuses or times out when the controller hands the zone back | Retries after 5 minutes, then waits twice as long after each further failure (10, 20, 40 minutes and so on), up to 6 hours. Each retry waits for the next zone update from Tado (with HomeKit connected, that is your Cloud Data Refresh). It never retries while Tado Cloud is backing off, and never deletes a setting that isn't the controller's. At the last 3 calls of the day (with Quota Reserve on) a hand-back waits for the expected quota reset instead, without counting as a failed try |
+| Your remaining calls are down to the quota reserve | The controller's automatic valve-target writes wait until the quota is expected to reset (Offset Sync and Adaptive Preheat hold their cloud writes the same way). The log notes it once per quota day |
+| A controller fails while starting or running | One warning per zone for each run of failures, the other zones carry on, and a controller that didn't start is tried again on the next poll. Offset Sync is built for a zone even while a Smart Valve Control hand-back is still being retried there |
+| You switch Smart Valve Control off, or clear its sensor, while Tado is refusing the hand-back | Keeps retrying on the same schedule, also after a restart, until the zone is back on its schedule or something else has set it. If you had already changed the zone yourself, nothing is touched |
+| A write times out | Treated as possibly applied, so the controller hands the zone back as if it had landed |
 | TRV has a non-zero temperature offset | Warning logged on startup — reset offset to 0 to avoid double compensation |
 | All Tado schedule blocks are OFF | Controller recovers from backed-off state when overlay changes (e.g. HA automation sets a new temperature) |
 
 ### State Persistence
 
-Controller state (active/idle/backed-off, last valve target, desired target, overlay ownership) persists across HA restarts. On restart, the controller recalculates before writing and cleans up any stale overlays from a previous session. If the controller was active but the desired target wasn't saved (e.g. upgrading from an older version), it resets to idle and re-captures a fresh desired target on the next heating cycle.
+Controller state (active/idle/backed-off, last valve target, desired target, overlay ownership) persists across HA restarts. On restart, the controller recalculates before writing and hands back any override it still owed from a previous session, leaving alone a setting that isn't its own. Offset Sync waits for that first update too before it writes an offset, and until it arrives the climate entity's `valve_control_active` attribute reads false. Smart Valve Control waits for the first fresh zone update from Tado before it hands anything back, retries, reads the zone's target or checks whether you changed the zone, because the zone data saved before the restart can't show what is on the zone now. If Tado can't be reached or polling is paused for the quota reserve after the restart, it waits until that has passed. Whether it owns an override is saved the moment it changes; the other fields are saved on a short delay. If the controller was active but the desired target wasn't saved (e.g. upgrading from an older version), it resets to idle and re-captures a fresh desired target on the next heating cycle.
 
 ### Limitations
 
@@ -2068,13 +2075,15 @@ Controller state (active/idle/backed-off, last valve target, desired target, ove
 
 ---
 
-## 🔧 Optional Features
+## Optional Features
 
 **Available:** Various versions | **Requirement:** Varies | **Opt-in Configuration**
 
 ### Schedule Calendar
 
 Shows heating schedules as calendar events. Enable in Configure → "Schedule Calendar".
+
+Pressing HEAT on a zone that is off under a manual override uses the zone's current schedule target when Tado CE has that schedule cached, otherwise 20°C. The cache fills from Schedule Calendar, from Smart Valve Control's Valve Target mode when the zone has an external temperature sensor, or from the zone's Refresh Schedule button.
 
 | Entity | Friendly Name |
 |--------|--------------|
@@ -2096,7 +2105,7 @@ Monitors OpenTherm boiler flow temperature. Auto-detected if available. Homes wi
 
 For homes without an Internet Bridge:
 
-1. Settings → Devices & Services → Tado CE → Configure → **Advanced Settings → Outdoor Sensors**
+1. Settings → Devices & Services → Tado CE → Configure → **Advanced Settings → External Data Sources**
 2. Set **Boiler Flow Temperature Entity** to your boiler gateway's flow-temperature sensor
 
 Tested against ebusd, OpenTherm Gateway (OTGW), and myVaillant. All three tag their flow-temperature sensor with Home Assistant's `temperature` device class, which this field filters to. Live Tado cloud data always takes priority when a bridge is present; this binding is a fallback for homes without one.
@@ -2109,7 +2118,7 @@ Tracks mobile device presence (home/away). Enable "Mobile Device Tracking" in Co
 |--------|--------------|
 | `device_tracker.tado_ce_{device_name}` | {device_name} |
 
-API usage: 1 call per full sync (full sync runs at HA startup). Enable "Sync Mobile Frequently" if you want device-tracker updates on every poll instead — useful if you build presence-driven automations.
+API usage: 1 call with each refresh of zone and device details (at startup, then about every hour, or about every 4 hours on the 100-call plan). Enable "Sync Mobile Frequently" if you want device-tracker updates on every poll instead, which is useful if you build presence-driven automations. That costs about 1 call per refresh (default every 5 minutes) and the larger refresh doesn't repeat it.
 
 **Computed by:** Tado server — mobile device presence state (home/away) fetched from the Tado cloud API.
 
@@ -2156,7 +2165,7 @@ Geofencing is a Tado account-level setting configured in the Tado app, not in th
 - **"home" or "away"**: Creates a presence lock that overrides geofencing
 - **"auto"**: Deletes the presence lock. If geofencing enabled, Tado resumes automatic control. If disabled, state stays as-is.
 
-### Multi-Language (v3.0.0)
+### Multi-Language
 
 Config flow and options UI available in 7 languages:
 
@@ -2174,15 +2183,15 @@ HA automatically selects the language based on your system locale. No configurat
 
 **Common Misconception (geofencing OFF):**
 ```
-Home → Away → Auto = Back to Home?  ❌ WRONG
-Home → Away → Auto = Stays Away     ✅ CORRECT
+Home → Away → Auto = Back to Home?  WRONG
+Home → Away → Auto = Stays Away     CORRECT
 ```
 
 When geofencing is disabled, "Auto" just removes the lock — it doesn't change state. Use "Home"/"Away" directly, or use HA automations with other presence detection.
 
 ---
 
-## 📡 Automation Events
+## Automation Events
 
 **Available:** Various versions | **Requirement:** None | **Automatic**
 
@@ -2221,7 +2230,7 @@ The event also fires after an integration reload, so your automations work corre
 
 ### Window Detection Events
 
-Fires when the passive window detection algorithm detects a temperature drop consistent with an open window, or when the detection clears. See [Window Detection Events](#window-detection-events-v330) for details.
+Fires when the passive window detection algorithm detects a temperature drop consistent with an open window, or when the detection clears. See [Window Detection Events](#window-detection-events) for details.
 
 | Event | When | Payload |
 |-------|------|---------|
@@ -2246,7 +2255,7 @@ Fires when a zone's schedule is refreshed from the Tado API (e.g. after pressing
 
 ---
 
-## 🔗 Multi-TRV Zones
+## Multi-TRV Zones
 
 **Available:** All versions | **Requirement:** Zone with 2+ TRVs | **Automatic**
 
@@ -2270,7 +2279,7 @@ If you have a room with multiple radiators, Tado lets you assign multiple TRVs t
 
 **Temperature offset readback reads from one device.** After writing an offset to all TRVs, the integration reads back the actual value from the first device to verify it was applied. The `offset_celsius` attribute on your climate entity reflects that one device's value. In practice all TRVs in a zone accept the same offset, so this matches. But if you manually set different offsets per TRV in the Tado app, only the first device's offset is shown.
 
-**HomeKit temperature shows the last reporting device.** When HomeKit is connected, temperature events from all TRVs in a zone update the same cache entry. If two TRVs report slightly different temperatures (common — they're on different radiators), the displayed value is whichever TRV reported most recently, not an average. The difference is typically small (< 0.5°C) since they're in the same room.
+**HomeKit temperature shows the last reporting device.** When HomeKit is connected, temperature events from all TRVs in a zone feed one room value. If two TRVs report slightly different temperatures (common — they're on different radiators), the displayed value is whichever TRV reported most recently, not an average. The difference is typically small (< 0.5°C) since they're in the same room. The target works differently: each device is tracked on its own, so a target change on any one device shows as the room's target within one refresh. If two devices change to different targets in the same refresh, the room shows the Tado Cloud target instead.
 
 **API cost scales with device count for offsets only.** Most operations (set temperature, set mode, resume schedule) are zone-level and cost 1 API call regardless of TRV count. The exception is `set_climate_temperature_offset`, which makes 1 call per TRV plus 1 readback. For a zone with 3 TRVs, that's 4 API calls per offset write.
 
@@ -2286,13 +2295,17 @@ If you have a room with multiple radiators, Tado lets you assign multiple TRVs t
 
 ---
 
-## 🏠 Per-Zone Configuration
+## Per-Zone Configuration
 
-**Available:** v3.1.0+ | **Requirement:** None | **Options Flow Configuration**
+**Requirement:** None | **Options Flow Configuration**
 
 Customize settings for each individual zone via **Settings → Tado CE → Configure → Zone Configuration**.
 
-> **v3.1.0 change:** All per-zone settings moved from individual HA entities to the centralised Options Flow menu. No config entities are created — settings live in the Options Flow.
+> All per-zone settings live in the centralised Options Flow menu. No config entities are created.
+
+### Adding or removing a room
+
+Tado CE updates its room list on the next full refresh after Tado adds or removes a room, and with a nearly used quota that can wait until the quota resets. Until then Zone Configuration, Turn Off All and the device services work from the last known room list. A room added since then can't be configured until that refresh. A removed room drops out of Zone Configuration and Turn Off All as soon as Tado stops listing it in the zone data, unless that data is empty, in which case every stored room is kept. Its controls stay on the entity page until Home Assistant restarts or the integration is reloaded after the refresh. A Smart Valve Control change for a room that isn't in the stored list is refused with a warning.
 
 ### Available Settings
 
@@ -2340,7 +2353,7 @@ The starting default for a new zone is "Until you resume schedule". Zones you'd 
 
 ---
 
-## 🎛️ Per-Zone Entity Types
+## Per-Zone Entity Types
 
 Each zone creates several entity types depending on the zone's capabilities and the features you've enabled. The integration creates them automatically — most are always on, one is toggleable via the Options Flow:
 
@@ -2356,11 +2369,11 @@ Each zone creates several entity types depending on the zone's capabilities and 
 
 > To hide entities you don't use, **disable the entity in HA's entity registry** (Settings → Devices & Services → Tado CE → entity → Disable). The integration continues to compute and publish them, but they won't appear on dashboards or in automations.
 
-**Device-state refresh cadence (Battery, Connection, Firmware version):** these sensors read from Tado's device-info endpoint, which the integration refreshes on a periodic schedule and whenever a Tado-side topology change is detected. The cadence depends on your daily API quota. Paid Auto-Assist accounts refresh hourly, so a controller dropping its cloud uplink (E04 errors, mains blip, Wi-Fi flap) shows up within the hour. Free-tier accounts refresh every four hours to keep the periodic cost under roughly six per cent of the daily quota. A re-pair or hardware swap triggers an immediate refresh on top of the periodic schedule.
+**Device-state refresh cadence (Battery, Connection, Firmware version):** these sensors read from Tado's device-info endpoint, which the integration refreshes on a periodic schedule and whenever a Tado-side topology change is detected. The cadence depends on your daily API quota. Paid Auto-Assist accounts refresh about every hour, so a controller dropping its cloud uplink (E04 errors, mains blip, Wi-Fi flap) shows up within roughly the hour. Free-tier accounts refresh about every four hours to keep the periodic cost under roughly six per cent of the daily quota. A refresh runs on the first poll at least that long after the previous one, so with a slower polling interval it can land later: at a 30-minute interval, an hourly refresh can be up to about 90 minutes apart. A re-pair or hardware swap triggers an immediate refresh on top of the periodic schedule.
 
 ---
 
-## 🔁 Reset to Defaults
+## Reset to Defaults
 
 Located at **Settings → Tado CE → Configure → Reset to Defaults**. Lets you revert tuning parameters without re-entering your Tado account or re-pairing hardware.
 
@@ -2368,7 +2381,8 @@ Located at **Settings → Tado CE → Configure → Reset to Defaults**. Lets yo
 
 | Scope | What resets |
 |-------|-------------|
-| Smart Comfort | Mode, feels-like toggle, window type default, history days, outdoor temperature entity |
+| Smart Comfort | Mode, feels-like toggle, window type default, history days |
+| External Data Sources | Outdoor temperature entity, boiler flow temperature entity |
 | Thermal Analytics | Zones selection, history days, minimum cycles, inertia threshold |
 | Weather Compensation | Preset, slope, design/max/min/shutoff temps, smoothing method + window, room compensation + factor, step size, hysteresis |
 | Internet Bridge | Bridge serial, bridge auth key (re-entry required to keep Bridge API / Weather Compensation working) |
@@ -2395,7 +2409,7 @@ After resetting everything, you'll need to re-enable the features you want from 
 
 ---
 
-## 🎯 Configuration Scenarios
+## Configuration Scenarios
 
 ### Scenario 1: Small Apartment (1–2 rooms, 100 calls/day)
 
@@ -2406,7 +2420,7 @@ Weather Sensors: Disabled
 Mold Risk: Enabled (important for small spaces)
 Window Type: Double Pane
 
-Expected: ~80–120 calls/day, polling ~15–20 min
+Expected: roughly 60 calls/day on the default settings (no HomeKit, nothing optional on), polling about every 13 to 38 minutes by day
 ```
 
 ### Scenario 2: Large House (5+ rooms, 1000+ calls/day)
@@ -2419,7 +2433,7 @@ Mold Risk: Enabled
 Window Type: Per-zone (mix of double/triple)
 Outdoor Temp: Weather integration
 
-Expected: ~300–800 calls/day, polling ~5–10 min
+Expected: roughly 270 calls/day for polling, the weather refresh and the refresh of zone and device details (1000-call plan, no HomeKit), polling every 5 minutes by day. Mobile tracking, Home State Sync and any manual changes come on top
 ```
 
 ### Scenario 3: Energy Optimization Focus
@@ -2450,31 +2464,36 @@ Custom Night Interval: 120 min
 Weather: Off, Mobile Tracking: Off, Home State Sync: Off
 Smart Comfort: Off, Schedule Calendar: Off
 
-Day (16h): 32 syncs × 2 = 64 calls
-Night (8h): 4 syncs × 2 = 8 calls
-Full sync (6h): 4 × 2 = 8 calls
-Total: ~80 calls/day (20% buffer)
+Day (16h): 32 polls × 1 call = 32 calls
+Night (8h): 4 polls × 1 call = 4 calls
+Zone and device refresh (about every 4h): 6 × 2 extra calls = 12 calls
+Total: ~48 calls/day (about half the quota left for manual changes)
 ```
 
 ### Scenario 6: High Quota (1000+) All Features
 
 ```yaml
 Custom Intervals: Empty (use adaptive)
-All features: On
-Sync Mobile Frequently: On
+Weather: On, Mobile Tracking: On, Sync Mobile Frequently: On, Home State Sync: On
+Device Offsets: On, 5 heating rooms
 Smart Comfort Mode: Moderate
 History Days: 30
 
-Expected: ~576 calls/day at ~5 min intervals
+Each poll: 1 call for zone states, plus presence and mobile locations (each at most every 5 minutes) and weather (at most every 30 minutes)
+Zone and device refresh (about hourly by day): 7 calls each (zones, devices, one offset call per room)
+
+Expected: roughly 730 to 770 calls/day, polling every 5 minutes by day on the 1000-call plan
 ```
+
+Smart Comfort reads its history from Home Assistant's recorder, not from Tado, so it adds no calls. On the 1000-call plan this is about three quarters of the quota. Turn Heating Circuit Control on as well (6 more calls per refresh with 5 heating rooms) and it is roughly 820 to 880 calls a day: the 1000-call plan then stretches the interval to as much as 7 minutes at times to stay inside the quota, and the 5000-call plan stays at 5 minutes.
 
 ### Scenario 7: Mixed Zone Types (Heating + AC)
 
 | Feature | Heating Zones | AC Zones |
 |---------|---------------|----------|
-| Thermal Analytics | ✅ Available | ❌ No heatingPower data |
-| Smart Comfort | ✅ Heating patterns | ✅ Cooling patterns |
-| Condensation Risk | ❌ N/A | ✅ AC-specific |
+| Thermal Analytics | Available | No heatingPower data |
+| Smart Comfort | Heating patterns | Cooling patterns |
+| Condensation Risk | N/A | AC-specific |
 | Weather Impact | Moderate | High (solar gain) |
 
 ### Scenario 8: OpenTherm Boiler
@@ -2496,19 +2515,19 @@ automation:
     action:
       - service: notify.mobile_app
         data:
-          title: "⚠️ Low Boiler Flow Temperature"
+          title: "Low Boiler Flow Temperature"
           message: "Flow temp: {{ states('sensor.tado_ce_boiler_flow_temperature') }}°C"
 ```
 
 ---
 
-## 💡 Actionable Insights
+## Actionable Insights
 
-**Available:** v2.2.0+ | **Requirement:** None | **Always Enabled**
+**Requirement:** None | **Always Enabled**
 
 Intelligent, context-aware recommendations across all zones for comfort, mold prevention, and energy optimization.
 
-### v3.0.0 Insight Enhancements
+### Insight Enhancements
 
 #### Smarter Summary
 Home insights sensor now produces action-based summaries instead of generic counts:
@@ -2603,7 +2622,7 @@ Numeric 0-100 score reflecting overall home health:
 | API Quota Planning | Medium/High | Projected exhaustion <6h before reset |
 | Weather Impact | Medium | Outdoor temp >5°C below 7-day average |
 | Boiler Flow Anomaly | Medium/High | Boiler flow temp above 60°C while no zone asks for more than 20% heat (Medium, skipped while hot water is on, since a cylinder reheat looks the same), or below 30°C while a zone asks for more than 80% (High). Uses Tado's reading when a bridge reports it, otherwise a bound external entity |
-| Ventilation Opportunity | Low | Wettest zone's absolute humidity notably above outside, and above this home's own recent average gap (requires an Outdoor Temperature Entity bound under Advanced Settings) |
+| Ventilation Opportunity | Low | Wettest zone's absolute humidity notably above outside, and above this home's own recent average gap (requires an Outdoor Temperature Entity bound under Advanced Settings → External Data Sources) |
 
 ### Recommendation Attributes
 
@@ -2649,14 +2668,14 @@ automation:
     action:
       - service: notify.mobile_app
         data:
-          title: "🚨 Critical Home Issue"
+          title: "Critical Home Issue"
           message: >
             {{ state_attr('sensor.tado_ce_home_insights', 'top_recommendation') }}
 ```
 
 ---
 
-## ⚙️ Settings Configured in the Tado App, Not Tado CE
+## Settings Configured in the Tado App, Not Tado CE
 
 Some settings that affect your heating system can only be changed in the Tado app. They are listed here because users commonly look for them in Home Assistant and cannot find them. Tado's API does not expose these as writable endpoints. Tado CE can read some of these values and use them internally, but cannot write them back.
 
@@ -2678,7 +2697,7 @@ Some settings that affect your heating system can only be changed in the Tado ap
 
 ---
 
-## 🔧 Troubleshooting
+## Troubleshooting
 
 ### Thermal Analytics Shows "Unknown"
 
@@ -2730,13 +2749,13 @@ Some settings that affect your heating system can only be changed in the Tado ap
 
 **Causes:** Boiler not OpenTherm-compatible, Tado system doesn't support OpenTherm, or no Internet Bridge to relay it to Tado's cloud.
 
-**Solution:** Verify boiler supports OpenTherm and check Tado app for flow temp data. Without a bridge, bind your boiler gateway's own flow-temperature sensor instead: Advanced Settings → Outdoor Sensors → Boiler Flow Temperature Entity.
+**Solution:** Verify boiler supports OpenTherm and check Tado app for flow temp data. Without a bridge, bind your boiler gateway's own flow-temperature sensor instead: Advanced Settings → External Data Sources → Boiler Flow Temperature Entity.
 
 ### Bridge API Sensors Showing "Unknown"
 
-**Causes:** Wrong data path (fixed in v3.2.2), bridge credentials invalid, bridge offline.
+**Causes:** Bridge credentials invalid, bridge offline.
 
-**Solution:** Update to v3.2.2+, verify credentials in Configure → Bridge Configuration, check bridge is online. Enable debug logging:
+**Solution:** Verify credentials in Configure → Bridge Configuration, check bridge is online. Enable debug logging:
 
 ```yaml
 logger:
@@ -2753,7 +2772,7 @@ Look for `Bridge API full response` in logs to verify the API is returning data.
 
 **Causes:** Not enabled, geo-tracking not enabled in Tado app, no mobile devices registered.
 
-**Solution:** Enable "Mobile Device Tracking", enable geo-tracking in Tado app, wait for next full sync (6h).
+**Solution:** Enable "Mobile Device Tracking", enable geo-tracking in Tado app, wait for the next refresh of zone and device details (about hourly, about every 4 hours on the 100-call plan).
 
 ### Temperature Offset Not Applying
 
@@ -2769,12 +2788,9 @@ Look for `Bridge API full response` in logs to verify the API is returning data.
 
 ---
 
-## 📚 Related Documentation
+## Related Documentation
 
-- [ENTITIES.md](ENTITIES.md) — Complete entity reference (87 entities)
+- [ENTITIES.md](ENTITIES.md) — Complete entity reference
 - [README.md](README.md) — Installation and setup
 - [ROADMAP.md](ROADMAP.md) — Planned features and ideas
 
----
-
-**Last Updated:** v4.0.2 (2026-06-07)

@@ -143,6 +143,9 @@ DEFAULT_NIGHT_INTERVAL = 120  # minutes (default night polling interval)
 MAX_POLLING_INTERVAL = 120  # minutes (ensure reasonable updates even with low quota)
 MAX_CUSTOM_INTERVAL = 1440  # minutes (24 hours, maximum custom polling interval)
 POLLING_SAFETY_BUFFER = 0.90  # Reserve 10% quota for manual calls and unexpected usage
+# A rise this close to the predicted reset counts as the reset: the recorded time is when the sync saw it, up to one poll gap late.
+# This is the floor; the window widens to the lag stored with the last recorded reset.
+QUOTA_RESET_EARLY_WINDOW_MINUTES: Final = MAX_POLLING_INTERVAL
 
 # Quota Reserve Protection Constants
 # When remaining quota falls below threshold, pause polling to reserve for manual operations
@@ -375,6 +378,8 @@ SMART_VALVE_CLOUD_RATE_LIMIT: Final[float] = 300.0  # seconds (5 minutes)
 SMART_VALVE_DEBOUNCE_WINDOW: Final[float] = 3.0  # seconds (ActionDebouncer window)
 ABSOLUTE_MAX_VALVE_TARGET: Final[float] = 30.0   # °C absolute upper bound for valve target
 HOMEKIT_WRITE_GRACE_SECONDS: Final[float] = 60.0  # suppress manual override detection after write
+SVC_RESUME_RETRY_SECONDS: Final[float] = 300.0  # minimum gap between retries of a failed hand-back to Tado
+SVC_RESUME_RETRY_MAX_SECONDS: Final[float] = 21600.0  # cap on the doubling retry gap (6 hours)
 
 # SVC operating mode (per-zone select, mutually exclusive)
 SVC_MODE_OFF: Final[str] = "off"
@@ -415,6 +420,8 @@ DEVICE_SYNC_QUEUE_MAX_DEPTH = 20
 # =============================================================================
 
 MAX_RETRY_ATTEMPTS: Final = 3
+# Empty zone replies needed before an empty list replaces stored zones (2 is a cautious guess, no captured blip confirms it).
+ZONE_STATES_EMPTY_CONFIRMATIONS: Final = 2
 RETRY_BASE_DELAY: Final = 2  # seconds, exponential: 2s, 4s, 8s
 MAX_RETRY_DELAY: Final = 30  # seconds, cap to prevent runaway delays
 
@@ -440,6 +447,11 @@ _RATE_LIMIT_DEFAULT_S: Final = 60  # default when no signal available
 # HomeKit cache older than this falls back to cloud
 HOMEKIT_STALENESS_THRESHOLD: Final[timedelta] = timedelta(minutes=5)
 
+# Hide a device-fed cloud reading once its device has been offline this long; healthy readings lag up to ~65 min and HomeKit cloud sync adds up to 120 min, so less would hide live ones.
+CLOUD_READING_STALE_AFTER: Final[timedelta] = timedelta(hours=4)
+# A device that came back reports a fresh reading, so one stamped later than last-seen plus this is trusted; 2 h rests on a single observed sample and is not yet verified.
+CLOUD_READING_REPORT_SLACK: Final[timedelta] = timedelta(hours=2)
+
 # Periodic poll to keep cache fresh, must be < staleness threshold
 HOMEKIT_CACHE_REFRESH_SECONDS: Final[float] = HOMEKIT_STALENESS_THRESHOLD.total_seconds() * 0.4  # 120s (2 min)
 
@@ -464,12 +476,6 @@ CACHE_REFRESH_FAILURE_THRESHOLD: Final[int] = 3
 # HomeKit mapping retry: stop retrying after this many polls with no newly
 # mapped zone (the remaining zones have no matching bridge accessory)
 MAPPING_RETRY_STALL_LIMIT: Final[int] = 3
-
-# HomeKit savings: detect API quota reset by observing a significant jump
-# in remaining calls. The jump must exceed both an absolute minimum and
-# a percentage of the total limit to avoid false positives from normal usage.
-HOMEKIT_SAVINGS_RESET_MIN_JUMP: Final[int] = 20
-HOMEKIT_SAVINGS_RESET_RATIO: Final[float] = 0.05
 
 # Former weather-skip floor when HomeKit connected; v4.0.2 replaced it with
 # the per-type WEATHER_MIN_REFRESH_MINUTES floor (applied in all cadence

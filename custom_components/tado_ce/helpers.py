@@ -14,12 +14,16 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import logging
 import random
-from typing import TYPE_CHECKING, Any
+import re
+from typing import TYPE_CHECKING, Any, Final
 
 from .const import (
+    CLIMATE_ZONE_TYPES,
+    CLOUD_READING_REPORT_SLACK,
+    CLOUD_READING_STALE_AFTER,
     MAX_RETRY_ATTEMPTS,
     MAX_RETRY_DELAY,
     OVERLAY_MODE_DEFAULT,
@@ -90,6 +94,28 @@ def mask_home_id(home_id: str | int | None) -> str:
     return s[:_HOME_ID_VISIBLE_CHARS] + "…"
 
 
+_API_URL_HOME_RE = re.compile(r"(/homes/)(\d+)")
+_API_URL_DEVICE_RE = re.compile(r"((?<![A-Za-z0-9])devices/)([A-Za-z0-9]+)")
+
+
+def mask_api_url(url: str) -> str:
+    """Mask the home ID and device serial in a Tado API URL for safe logging."""
+    url = _API_URL_HOME_RE.sub(lambda m: m.group(1) + mask_home_id(m.group(2)), url)
+    return _API_URL_DEVICE_RE.sub(lambda m: m.group(1) + mask_serial(m.group(2)), url)
+
+
+_BODY_SERIAL_RE = re.compile(r"\b[A-Z]{2}\d{8,12}\b")
+_BODY_HOME_ID_RE = re.compile(r"(home_?id[\"']?\s*[:=]\s*[\"']?)(\d+)", re.IGNORECASE)
+
+
+def mask_response_body(body: str, limit: int = 200) -> str:
+    """Mask serials and home IDs in a Tado response body, then truncate to limit."""
+    body = mask_api_url(body)
+    body = _BODY_SERIAL_RE.sub(lambda m: mask_serial(m.group(0)), body)
+    body = _BODY_HOME_ID_RE.sub(lambda m: m.group(1) + mask_home_id(m.group(2)), body)
+    return body[:limit]
+
+
 class PerEntityAvailabilityMixin(_AvailabilityHost):
     """Compose per-entity data presence with coordinator availability.
 
@@ -107,6 +133,14 @@ class PerEntityAvailabilityMixin(_AvailabilityHost):
     def available(self) -> bool:
         """Return True only if the coordinator is healthy and this entity has data."""
         return super().available and self._data_present
+
+
+def live_zones(zones_info: list[Any], coord_data: dict[str, Any] | None) -> list[Any]:
+    """Return the zones the live zone states still hold, or all of them when no states are loaded."""
+    states = get_zone_states(coord_data)
+    if not states:
+        return zones_info
+    return [z for z in zones_info if str(z.get("id")) in states]
 
 
 def get_zone_states(coord_data: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
@@ -132,6 +166,13 @@ def get_zone_state(coord_data: dict[str, Any] | None, zone_id: str) -> dict[str,
     Convenience wrapper: get_zone_states(data).get(zone_id).
     """
     return get_zone_states(coord_data).get(zone_id)
+
+
+def get_zone_state_for_control(coordinator: TadoDataUpdateCoordinator, zone_id: str) -> dict[str, Any] | None:
+    """Zone state a controller may act on: None until a real zone fetch has happened in this process."""
+    if coordinator.last_zone_fetch_ts() is None:
+        return None
+    return get_zone_state(coordinator.data, zone_id)
 
 
 def zone_confirmed_on(coordinator: TadoDataUpdateCoordinator, zone_id: str) -> bool:
@@ -188,15 +229,7 @@ def merge_homekit_into_zone_data(
     zone_id: str,
     coordinator: TadoDataUpdateCoordinator,
 ) -> dict[str, Any]:
-    """Overlay fresh HomeKit temperature onto cloud zone data.
-
-    Returns a shallow copy of zone_data with sensorDataPoints merged.
-    Temperature uses HomeKit when fresh (real-time, accurate).
-    Humidity always uses cloud (bridge humidity is stale/unreliable).
-    If HomeKit is not connected or has no fresh data, returns zone_data unchanged.
-
-    Safe to call from any entity regardless of base class.
-    """
+    """Return a shallow copy of zone_data with fresh HomeKit temperature merged in, and HomeKit humidity only when cloud has none."""
     try:
         provider = coordinator.homekit_provider
         reconciler = coordinator.state_reconciler
@@ -367,6 +400,9 @@ async def async_retry_with_backoff[T](
     Raises:
         The last exception if all attempts exhausted, or any no_retry_exception immediately.
     """
+    if max_attempts < 1:
+        msg = f"max_attempts must be >= 1, got {max_attempts}"
+        raise ValueError(msg)
     last_error: Exception | None = None
     for attempt in range(1, max_attempts + 1):
         try:
@@ -381,7 +417,8 @@ async def async_retry_with_backoff[T](
                 await on_retry(attempt, err)
             delay = retry_delay(attempt)
             await asyncio.sleep(delay)
-    raise last_error  # type: ignore[misc]
+    msg = "async_retry_with_backoff: loop exited without returning or raising"
+    raise RuntimeError(msg) from last_error
 
 
 def _get_coordinator(hass: HomeAssistant, entry_id: str) -> TadoDataUpdateCoordinator:
@@ -391,7 +428,7 @@ def _get_coordinator(hass: HomeAssistant, entry_id: str) -> TadoDataUpdateCoordi
         if entry and hasattr(entry, "runtime_data") and entry.runtime_data is not None:
             return entry.runtime_data  # type: ignore[no-any-return]
     except (AttributeError, TypeError):
-        pass
+        _LOGGER.debug("helpers: entry %s has no usable runtime_data yet", entry_id)
     return None  # type: ignore[return-value]
 
 
@@ -407,6 +444,152 @@ def parse_iso_datetime(iso_str: str) -> datetime:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=UTC)
     return dt
+
+
+def predicted_next_reset(last_reset_utc: str | None) -> datetime | None:
+    """Return the moment 24 h after `last_reset_utc`, or None when it is absent or unparseable."""
+    if not last_reset_utc:
+        return None
+    try:
+        return parse_iso_datetime(last_reset_utc) + timedelta(hours=24)
+    except (ValueError, TypeError, OverflowError):
+        # Malformed stored values must never raise in the poll path.
+        _LOGGER.debug("Helpers: could not read last_reset_utc %r", last_reset_utc)
+        return None
+
+
+def connection_value_to_bool(conn: dict[str, Any] | None) -> bool | None:
+    """Parse a Tado `connectionState` dict to True (online), False (offline) or None (unknown)."""
+    if not isinstance(conn, dict):
+        return None
+    raw = conn.get("value")
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, str):
+        text = raw.strip().upper()
+        if text in ("TRUE", "FALSE"):
+            return text == "TRUE"
+    return None
+
+
+def offline_since_date(conn: dict[str, Any] | None) -> str | None:
+    """Return the local date an offline device was last seen, else None."""
+    ts = conn.get("timestamp") if isinstance(conn, dict) else None
+    if connection_value_to_bool(conn) is False and isinstance(ts, str) and ts:
+        from homeassistant.util import dt as dt_util
+
+        try:
+            return dt_util.as_local(parse_iso_datetime(ts)).date().isoformat()
+        except (ValueError, OverflowError):
+            return None
+    return None
+
+
+# (group, key) -> zone role of the device that supplies that cloud reading; add a row to cover another reading.
+CLOUD_READING_ROLES: Final[dict[tuple[str, str], str]] = {
+    ("sensorDataPoints", "insideTemperature"): "ZONE_LEADER",
+    ("sensorDataPoints", "humidity"): "ZONE_LEADER",
+}
+_GROUP_BY_KEY: Final[dict[str, str]] = {key: group for (group, key) in CLOUD_READING_ROLES}
+
+
+def is_cloud_reading_untrusted(reading: Any, role_devices: list[Any], now: datetime) -> bool:
+    """True when a supplying device has been offline for CLOUD_READING_STALE_AFTER and the reading is no newer than its last-seen time plus CLOUD_READING_REPORT_SLACK."""
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=UTC)
+    try:
+        reading_ts = parse_iso_datetime(reading["timestamp"])
+    except (KeyError, TypeError, ValueError):
+        return False  # no usable timestamp, fail open
+    for device in role_devices:
+        conn = device.get("connectionState") if isinstance(device, dict) else None
+        if connection_value_to_bool(conn) is not False:
+            continue
+        try:
+            last_seen = parse_iso_datetime(conn["timestamp"])  # type: ignore[index]
+        except (KeyError, TypeError, ValueError):
+            continue
+        if now - last_seen >= CLOUD_READING_STALE_AFTER and reading_ts <= last_seen + CLOUD_READING_REPORT_SLACK:
+            return True
+    return False
+
+
+def _find_untrusted_readings(
+    zone_states: dict[str, Any], zones_info: list[Any], now: datetime,
+) -> frozenset[tuple[str, str]]:
+    """Return the (zone_id, key) pairs whose reading should be withheld."""
+    info_by_id = {str(z.get("id")): z for z in zones_info if isinstance(z, dict)}
+    withheld: set[tuple[str, str]] = set()
+    for zone_id, zone in zone_states.items():
+        info = info_by_id.get(str(zone_id))
+        if info is None or not isinstance(zone, dict):
+            continue
+        zone_type = info.get("type")
+        if not isinstance(zone_type, str) or zone_type not in CLIMATE_ZONE_TYPES:
+            continue
+        devices = info.get("devices")
+        for (group, key), role in CLOUD_READING_ROLES.items():
+            points = zone.get(group)
+            reading = points.get(key) if isinstance(points, dict) else None
+            role_devices = [
+                d for d in (devices if isinstance(devices, list) else [])
+                if isinstance(d, dict) and isinstance(d.get("duties"), list) and role in d["duties"]
+            ]
+            if isinstance(reading, dict) and is_cloud_reading_untrusted(reading, role_devices, now):
+                withheld.add((str(zone_id), key))
+    return frozenset(withheld)
+
+
+def _drop_readings(zone_data: dict[str, Any], withheld: frozenset[tuple[str, str]]) -> dict[str, Any]:
+    """Return a copy of zone_data without the withheld readings, rebuilding every level touched."""
+    zone_states = zone_data.get("zoneStates")
+    if not withheld or not isinstance(zone_states, dict):
+        return zone_data
+    new_states = dict(zone_states)
+    original_keys = {str(k): k for k in zone_states}
+    changed = False
+    for zone_id, key in withheld:
+        state_key = original_keys.get(zone_id)
+        zone = new_states.get(state_key)
+        group = _GROUP_BY_KEY.get(key)
+        if not isinstance(zone, dict) or group is None:
+            continue
+        points = zone.get(group)
+        if not isinstance(points, dict) or key not in points:
+            continue
+        new_zone = dict(zone)
+        new_zone[group] = {k: v for k, v in points.items() if k != key}
+        new_states[state_key] = new_zone
+        changed = True
+    if not changed:
+        return zone_data
+    new_data = dict(zone_data)
+    new_data["zoneStates"] = new_states
+    return new_data
+
+
+def apply_cloud_reading_trust(
+    zone_data: Any,
+    zones_info: Any,
+    now: datetime,
+    previous: frozenset[tuple[str, str]] = frozenset(),
+) -> tuple[Any, frozenset[tuple[str, str]]]:
+    """Return zone_data without readings from a device offline past CLOUD_READING_STALE_AFTER, plus the withheld set; never raises or mutates input."""
+    # An empty or malformed response keeps the last verdict instead of resetting it.
+    if not isinstance(zone_data, dict):
+        return zone_data, previous
+    zone_states = zone_data.get("zoneStates")
+    if not isinstance(zone_states, dict) or not zone_states:
+        return zone_data, previous
+    # zones_info is None only before any zone list was stored; keep the last verdict then.
+    withheld = _find_untrusted_readings(zone_states, zones_info, now) if isinstance(zones_info, list) else previous
+    return _drop_readings(zone_data, withheld), withheld
+
+
+def is_reading_withheld(coord_data: dict[str, Any] | None, zone_id: str, key: str) -> bool:
+    """Whether the coordinator withheld this zone's reading on the latest poll."""
+    withheld = (coord_data or {}).get("withheld_readings") or frozenset()
+    return (str(zone_id), key) in withheld
 
 
 async def async_trigger_immediate_refresh(
@@ -496,7 +679,7 @@ def get_overlay_termination(hass: HomeAssistant, entry_id: str | None = None) ->
                 mode = coordinator.overlay_mode or OVERLAY_MODE_DEFAULT
                 duration = coordinator.timer_duration or TIMER_DURATION_DEFAULT
         except (AttributeError, TypeError):
-            pass
+            _LOGGER.debug("helpers: entry %s coordinator missing overlay/timer attrs, using defaults", entry_id)
 
     # Map internal storage values to API-accepted values
     mode = _map_overlay_to_api(mode)
@@ -530,7 +713,7 @@ def get_zone_overlay_termination(hass: HomeAssistant, zone_id: str, entry_id: st
             if coordinator:
                 zone_config_manager = coordinator.zone_config_manager
         except (AttributeError, TypeError):
-            pass
+            _LOGGER.debug("helpers: entry %s coordinator has no zone_config_manager yet", entry_id)
 
     if zone_config_manager:
         # Get per-zone overlay mode (UPPERCASE values)
@@ -622,6 +805,19 @@ def low_quota_threshold(daily_limit: int | None) -> int:
     if daily_limit is None or daily_limit <= 0:
         return LOW_QUOTA_RESERVE_FLOOR
     return max(LOW_QUOTA_RESERVE_FLOOR, int(daily_limit * LOW_QUOTA_RESERVE_PERCENT))
+
+
+def full_sync_period_seconds(daily_limit: int | None) -> int:
+    """Return seconds between full syncs: the slower cadence on the free tier, hourly otherwise."""
+    from .const import (
+        ZONES_INFO_FREE_TIER_THRESHOLD,
+        ZONES_INFO_REFRESH_SECONDS_FREE,
+        ZONES_INFO_REFRESH_SECONDS_PAID,
+    )
+
+    if isinstance(daily_limit, int) and 0 < daily_limit <= ZONES_INFO_FREE_TIER_THRESHOLD:
+        return ZONES_INFO_REFRESH_SECONDS_FREE
+    return ZONES_INFO_REFRESH_SECONDS_PAID
 
 
 def hard_quota_reserve(daily_limit: int | None) -> int:

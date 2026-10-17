@@ -7,12 +7,14 @@ from datetime import datetime
 import logging
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.core import callback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
 from .heating_analyzer import HeatingCycleAnalyzer
 from .heating_detector import HeatingCycleDetector
 from .heating_storage import HeatingCycleStorage
+from .helpers import mask_home_id
 from .thermal_analyzer import ThermalAnalyzer
 
 if TYPE_CHECKING:
@@ -58,7 +60,7 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
         """Load storage, resume any active cycles, and prime per-zone metrics."""
         _LOGGER.debug(
             "Heating Cycle: setting up cycle tracker for home %s",
-            self._home_id,
+            mask_home_id(self._home_id),
         )
 
         await self._storage.async_load()
@@ -100,6 +102,8 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
         target_temp: float,
         current_temp: float,
         timestamp: datetime | None = None,
+        *,
+        source: str = "entity",
     ) -> None:
         """Atomically apply a setpoint + temperature update for one zone (single lock prevents interleaving)."""
         if timestamp is None:
@@ -115,6 +119,7 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
             "current_temp": current_temp,
             "target_temp": target_temp,
             "timestamp": timestamp,
+            "source": source,
         }
 
         self.async_set_updated_data(self._zone_data)
@@ -144,6 +149,16 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
                     zone_id,
                 )
                 await self._async_update_zone_data(zone_id)
+
+    @callback
+    def clear_zone_state(self, zone_id: str, *, source: str | None = None) -> None:
+        """Drop the cached temperatures for a zone that has no room reading, only if `source` (when given) wrote them."""
+        state = self._zone_states.get(zone_id)
+        if state is None or (source is not None and state.get("source") != source):
+            return
+        del self._zone_states[zone_id]
+        _LOGGER.debug("Heating Cycle: zone %s has no room temperature, cleared its cached reading", zone_id)
+        self.async_set_updated_data(self._zone_data)
 
     async def check_timeouts(self) -> None:
         """Time out any active cycles whose completion criteria stalled."""

@@ -26,17 +26,23 @@ DAY_TYPE_MAP = {
 def _get_day_blocks(blocks: dict[str, Any], schedule_type: str, weekday: int) -> list[Any]:
     """Get schedule blocks for a specific weekday (handles ONE_DAY / THREE_DAY / SEVEN_DAY layouts)."""
     # Tado API may return null for existing keys; 'or []' handles None correctly
-    if schedule_type == "ONE_DAY":
-        return blocks.get("MONDAY_TO_SUNDAY") or []
     if schedule_type == "THREE_DAY":
         if weekday < 5:
-            return blocks.get("MONDAY_TO_FRIDAY") or []
-        if weekday == 5:
-            return blocks.get("SATURDAY") or []
-        return blocks.get("SUNDAY") or []
-    # SEVEN_DAY
-    day_name = DAY_TYPE_MAP.get(weekday, "MONDAY")
-    return blocks.get(day_name) or []
+            day_blocks = blocks.get("MONDAY_TO_FRIDAY") or []
+        elif weekday == 5:
+            day_blocks = blocks.get("SATURDAY") or []
+        else:
+            day_blocks = blocks.get("SUNDAY") or []
+    elif schedule_type == "SEVEN_DAY":
+        day_name = DAY_TYPE_MAP.get(weekday, "MONDAY")
+        day_blocks = blocks.get(day_name) or []
+    else:
+        # ONE_DAY, or an unrecognised schedule_type: matches api_client.py and
+        # calendar.py's own fallback for an unexpected timetable type.
+        day_blocks = blocks.get("MONDAY_TO_SUNDAY") or []
+    # Both current- and next-block scans assume ascending start-time order;
+    # the Tado API response isn't guaranteed to arrive that way.
+    return sorted(day_blocks, key=lambda b: b.get("start", "00:00"))
 
 
 def _resolve_current_time(current_time: datetime | None) -> datetime:

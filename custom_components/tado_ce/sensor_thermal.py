@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.sensor import (
@@ -18,8 +17,6 @@ from .insights_heating import calculate_confidence_recommendation
 
 if TYPE_CHECKING:
     from .heating_coordinator import HeatingCycleCoordinator
-
-_LOGGER = logging.getLogger(__name__)
 
 
 class TadoThermalInertiaSensor(CoordinatorEntity["HeatingCycleCoordinator"], SensorEntity):

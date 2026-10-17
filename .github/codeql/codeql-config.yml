@@ -1,0 +1,23 @@
+name: "tado_ce CodeQL config"
+
+queries:
+  - uses: security-and-quality
+
+# Excluded: all 5 are structurally blind to conventions this codebase uses
+# throughout (TYPE_CHECKING-guarded imports, function-local deferred imports,
+# `...` Protocol stub bodies, module-level constants consumed only by other
+# files). Verified 2026-10-03: 142 cyclic-import + 87 unused-global/ineffectual
+# -statement/unused-import alerts, 100% false positive on inspection. ruff
+# already covers the genuine unused-import/unused-variable cases these rules
+# duplicate, without the same blind spot.
+query-filters:
+  - exclude:
+      id: py/cyclic-import
+  - exclude:
+      id: py/unsafe-cyclic-import
+  - exclude:
+      id: py/unused-global-variable
+  - exclude:
+      id: py/ineffectual-statement
+  - exclude:
+      id: py/unused-import

@@ -17,6 +17,7 @@ def calculate_battery_recommendation(
     battery_state: str,
     zone_name: str,
     device_type: str | None = None,
+    offline_since: str | None = None,
 ) -> str:
     """Calculate SMART recommendation for battery status."""
     if battery_state.upper() == "NORMAL":
@@ -30,8 +31,14 @@ def calculate_battery_recommendation(
         elif "thermostat" in device_lower or "su0" in device_lower:
             battery_type = "3x AAA batteries"
 
+    if offline_since and battery_state.upper() in ("LOW", "CRITICAL"):
+        return (
+            f"{zone_name}: Device offline since {offline_since}, last reported battery {battery_state.lower()}. "
+            f"Replace the {battery_type} and check the device reconnects."
+        )
+
     if battery_state.upper() == "CRITICAL":
-        return f"{zone_name}: Replace {battery_type} TODAY \u2014 device may stop working"
+        return f"{zone_name}: Replace {battery_type} TODAY, the device may stop working"
 
     if battery_state.upper() == "LOW":
         return f"{zone_name}: Replace {battery_type} within 1-2 weeks"
@@ -52,23 +59,23 @@ def calculate_connection_recommendation(
     if connection_state.upper() == "OFFLINE":
         if offline_minutes is not None:
             if offline_minutes < OFFLINE_RECENT_MINUTES:
-                return f"{zone_name}: Device offline {offline_minutes} min \u2014 may be temporary, wait 30 minutes"
+                return f"{zone_name}: Device offline {offline_minutes} min. May be temporary, wait 30 minutes"
             if offline_minutes < OFFLINE_SHORT_MINUTES:
                 return (
-                    f"{zone_name}: Device offline {offline_minutes} min "
-                    f"\u2014 check if device is within 10m of bridge"
+                    f"{zone_name}: Device offline {offline_minutes} min. "
+                    f"Check if the device is within 10m of the bridge"
                 )
             if offline_minutes < OFFLINE_DAY_MINUTES:  # 24 hours
                 hours = offline_minutes // 60
-                return f"{zone_name}: Device offline {hours}h \u2014 check batteries and bridge connection"
+                return f"{zone_name}: Device offline {hours}h. Check batteries and bridge connection"
             days = offline_minutes // 1440
-            return f"{zone_name}: Device offline {days} days \u2014 replace batteries and re-pair if needed"
+            return f"{zone_name}: Device offline {days} days. Replace batteries and re-pair if needed"
 
         if last_seen:
-            return f"{zone_name}: Device offline since {last_seen} \u2014 check batteries and bridge connection"
+            return f"{zone_name}: Device offline since {last_seen}. Check batteries and bridge connection"
 
         return (
-            f"{zone_name}: Device offline \u2014 1) Check batteries "
+            f"{zone_name}: Device offline. 1) Check batteries "
             "2) Verify bridge is online 3) Move device closer to bridge"
         )
 
@@ -88,7 +95,7 @@ def calculate_geofencing_device_offline_insight(
         return None
 
     devices_str = ", ".join(offline_devices[:3])
-    rec = f"Geofencing device(s) with location disabled: {devices_str} \u2014 home/away detection may be inaccurate"
+    rec = f"Geofencing device(s) with location disabled: {devices_str}. Home/away detection may be inaccurate"
 
     return Insight(
         priority=InsightPriority.MEDIUM,

@@ -453,9 +453,9 @@ def _resolve_indoor_temps(
         inside = (sensor_pts.get("insideTemperature") or {}).get("celsius")
         setting = (zdata.get("setting") or {}).get("temperature") or {}
         tgt = setting.get("celsius")
-        if inside is not None:
+        # Both averages cover the same zones, so a zone missing either value is skipped.
+        if inside is not None and tgt is not None:
             temps.append(float(inside))
-        if tgt is not None:
             targets.append(float(tgt))
     indoor_temp = sum(temps) / len(temps) if temps else None
     target_temp = sum(targets) / len(targets) if targets else None

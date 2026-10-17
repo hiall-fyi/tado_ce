@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.sensor import (
@@ -20,8 +19,6 @@ from .helpers import PerEntityAvailabilityMixin
 
 if TYPE_CHECKING:
     from .coordinator import TadoDataUpdateCoordinator
-
-_LOGGER = logging.getLogger(__name__)
 
 
 class TadoWeatherCompensationTargetSensor(

@@ -355,6 +355,7 @@ class TadoApiResetSensor(PerEntityAvailabilityMixin, TadoHubSensor):
                 )
                 self._current_interval = get_polling_interval(
                     config_manager, cached_ratelimit=data, homekit_connected=homekit_connected,
+                    full_sync_extra_calls=self.coordinator.full_sync_extra_calls_per_cycle,
                 )
                 next_poll_time = last_sync + timedelta(minutes=self._current_interval)
                 self._next_poll = dt_util.as_local(next_poll_time).strftime("%Y-%m-%d %H:%M:%S")
@@ -744,6 +745,7 @@ class TadoNextSyncSensor(PerEntityAvailabilityMixin, TadoHubSensor):
                 )
                 self._current_interval = get_polling_interval(
                     config_manager, cached_ratelimit=data, homekit_connected=homekit_connected,
+                    full_sync_extra_calls=self.coordinator.full_sync_extra_calls_per_cycle,
                 )
 
                 next_sync_time = last_sync + timedelta(minutes=self._current_interval)
@@ -832,8 +834,10 @@ class TadoPollingIntervalSensor(PerEntityAvailabilityMixin, TadoHubSensor):
                 self.coordinator.homekit_provider is not None
                 and self.coordinator.homekit_provider.is_connected
             )
+            full_sync_calls = self.coordinator.full_sync_extra_calls_per_cycle
             self._attr_native_value = get_polling_interval(
                 config_manager, cached_ratelimit=ratelimit_data, homekit_connected=homekit_connected,
+                full_sync_extra_calls=full_sync_calls,
             )
             self._data_present = True
 
@@ -851,7 +855,9 @@ class TadoPollingIntervalSensor(PerEntityAvailabilityMixin, TadoHubSensor):
             adaptive_interval = None
             if ratelimit_data:
                 with contextlib.suppress(Exception):
-                    adaptive_interval = calculate_adaptive_interval(ratelimit_data, config_manager)
+                    adaptive_interval = calculate_adaptive_interval(
+                        ratelimit_data, config_manager, full_sync_extra_calls=full_sync_calls,
+                    )
 
             baseline_interval = self._night_interval if self._is_night_mode else self._day_interval
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.diagnostics import async_redact_data
@@ -11,8 +10,6 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
     from .coordinator import TadoConfigEntry, TadoDataUpdateCoordinator
-
-_LOGGER = logging.getLogger(__name__)
 
 # Keys to redact from config entry data
 TO_REDACT_CONFIG = {

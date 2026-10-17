@@ -10,11 +10,11 @@ For completed features, see [CHANGELOG.md](CHANGELOG.md).
 
 ### Current Release
 
-- Stable: v4.5.0 (released 2026-10-03)
+- Stable: v4.5.1 (2026-10-17)
 - Headliners:
-  - Boiler Flow Temperature: bind a third-party boiler flow-temperature sensor (for homes without Internet Bridge)
-  - Absolute Humidity sensor, per zone (g/m³, alongside Dew Point) — more accurate mold risk assessment
-  - Ventilation Opportunity insight — alerts when outside air is drier than your room
+  - A wireless sensor that has gone offline no longer leaves its last reading on show as if it were current
+  - Smart Valve Control retries handing a zone back to Tado when the first attempt fails, and no longer removes a temperature you set yourself
+  - Polling no longer spends the last few API calls kept back for manual changes
 - Supported versions: v4.1.0 and later
 
 ### Next Release
@@ -50,6 +50,16 @@ Direct upgrade. No intermediate steps required.
 v5.0.0 removes migration code for versions older than v4.1.0, so it will refuse to load anything below that and tell you which version to upgrade to first.
 
 ## Breaking Changes (v5.0.0)
+
+### Requirement: Home Assistant 2026.8 or newer
+
+**What breaks:** v5.0.0 asks for version 4.0.0 or later of the HomeKit library (`aiohomekit`) that it shares with Home Assistant's own HomeKit Controller. Home Assistant 2026.7 and older ship 3.2.20, so the integration will not load there.
+
+**User impact:** None on Home Assistant 2026.8 or newer. HACS may still offer the download on an older Home Assistant (see v4.3.1), so don't count on it to stop you.
+
+**When:** v5.0.0 release
+
+**Migration:** Update Home Assistant before you update Tado CE, or stay on v4.5.x. The reasoning and the Home Assistant version table are in [Discussion #367](https://github.com/hiall-fyi/tado_ce/discussions/367).
 
 ### Removal: Pre-v4.1.0 Data Format Migration
 
@@ -122,9 +132,9 @@ v4.x support continues until v5.0.0 launches. EOL dates will be announced closer
 
 A spring-clean release that drops backward-compat code accumulated through the v3.x and v4.x cycles. The cleanup is laser-focused on dead surface area, not behaviour change.
 
-**You will need v4.1.0 or later installed before you upgrade to v5.0.0, and if you are older than that, go through the current v4.x release first.** Two different numbers, so worth separating. v4.1.0 is the line v5.0.0 refuses to load below, because that is where the saved-settings format it reads begins. Any 4.1.0+ release updates your settings to that format, including the current one (v4.5.0), so there is no reason to pick an older one. Coming from v4.1.0 or later, there is nothing to do. v5.0.0 will not auto-migrate the v3.x option keys, entity unique_ids or storage layouts, because the code that handled those upgrades is removed in that release. The path through the current v4.x release stays open, so there is no rush to do it in one jump.
+**You will need v4.1.0 or later installed before you upgrade to v5.0.0, and if you are older than that, go through the current v4.x release first.** Two different numbers, so worth separating. v4.1.0 is the line v5.0.0 refuses to load below, because that is where the saved-settings format it reads begins. Any 4.1.0+ release updates your settings to that format, including the current one (v4.5.1), so there is no reason to pick an older one. Coming from v4.1.0 or later, there is nothing to do. v5.0.0 will not auto-migrate the v3.x option keys, entity unique_ids or storage layouts, because the code that handled those upgrades is removed in that release. The path through the current v4.x release stays open, so there is no rush to do it in one jump.
 
-Note this is v5.0.0's rule, not this release's. v4.5.0 itself still accepts an entry from v3.0.0 onwards.
+Note this is v5.0.0's rule, not this release's. v4.5.1 itself still accepts an entry from v3.0.0 onwards.
 
 Planned removals:
 
@@ -137,6 +147,7 @@ Planned removals:
 - **AC swing legacy input retired** — older automations can still call the pre-v4.1 unified `swing_mode` values via a compatibility shim (which logs a deprecation warning). It's removed at v5.0.0; update those automations to the per-axis swing services before then.
 - **Dead-code and translation-key cleanup** — v3.x migration branches that are unreachable once v5's minimum-upgrade-from-v4.x rule holds, plus a handful of inconsistently-named translation keys, get swept together at the breaking-change boundary.
 - **Download Diagnostics dropped** — the Settings → Download Diagnostics button (a config-and-state snapshot) is removed. In practice it hasn't earned its place: troubleshooting an issue always comes down to a debug log, which shows what happened over time, where the snapshot only shows one frozen moment and can't. The button also carried an ongoing privacy cost, needing a redaction list kept up to date so it never leaked a serial or token. Removing it takes that maintenance surface out. Nothing you script against changes and no automation breaks, the button simply won't be there; for any problem, a debug log is the thing to grab.
+- **Predicted Window sensor retired** — the `binary_sensor.*_window_predicted` sensor, which guesses an open window from how a room's temperature behaves, is removed together with its two events, `tado_ce_window_predicted` and `tado_ce_window_predicted_cleared`, and its per-zone sensitivity and mode settings. It only ever fed the display and insights, never a heating decision, and keeping its accuracy right took more tuning than it gave back. An automation triggered by either event stops firing without any error, so move it to Tado's own open-window detection, which stays. First announced in v4.3.0.
 - **Service-call consistency** — three older services use a plain entity field instead of the entity picker, and timer vs open-window durations read in different units. Aligned here with the old form kept working through a deprecation window, since changing them affects how you call the service from automations.
 
 No timeline yet.

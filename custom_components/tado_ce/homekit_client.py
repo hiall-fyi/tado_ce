@@ -932,7 +932,10 @@ async def async_step_homekit_pairing(
         data_schema=vol.Schema(
             {
                 vol.Required("homekit_pin"): TextSelector(
-                    TextSelectorConfig(type=TextSelectorType.PASSWORD),
+                    TextSelectorConfig(
+                        type=TextSelectorType.PASSWORD,
+                        autocomplete="one-time-code",
+                    ),
                 ),
             },
         ),

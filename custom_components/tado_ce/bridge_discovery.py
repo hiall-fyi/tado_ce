@@ -115,7 +115,6 @@ class BridgeCapabilities:
 # ---------------------------------------------------------------------------
 
 _CAMEL_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
-_SCREAMING_RE = re.compile(r"^[A-Z][A-Z0-9_]+$")
 
 
 def _detect_value_type(value: object) -> str:

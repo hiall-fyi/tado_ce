@@ -1150,7 +1150,7 @@
   "services": {
     "set_climate_timer": {
       "name": "Set Climate Timer",
-      "description": "Set heating/cooling with a timer that automatically ends after the specified duration, or until the next schedule block. Compatible with official Tado integration.",
+      "description": "Set heating/cooling with a timer that automatically ends after the specified duration, or until the next schedule block. Compatible with the built-in Tado integration.",
       "fields": {
         "temperature": {
           "name": "Temperature",
@@ -1204,7 +1204,7 @@
     },
     "set_climate_temperature_offset": {
       "name": "Set Climate Temperature Offset",
-      "description": "Set the temperature offset (calibration) for a Tado climate device. Compatible with official Tado integration.",
+      "description": "Set the temperature offset (calibration) for a Tado climate device. Compatible with the built-in Tado integration.",
       "fields": {
         "entity_id": {
           "name": "Entity",
@@ -1274,7 +1274,7 @@
     },
     "activate_open_window": {
       "name": "Activate Open Window (Auto-Assist)",
-      "description": "Confirm an open window that Tado has already detected — same as tapping the icon in the Tado app. Only works when Tado's built-in detection has flagged an open window event. For triggering open window mode from external sensors, use 'Set Open Window Mode' instead."
+      "description": "Confirm an open window that Tado has already detected, same as tapping the icon in the Tado app. Only works when Tado's built-in detection has flagged an open window event. For triggering open window mode from external sensors, use 'Set Open Window Mode' instead."
     },
     "deactivate_open_window": {
       "name": "Deactivate Open Window",
@@ -1282,7 +1282,7 @@
     },
     "set_open_window_mode": {
       "name": "Set Open Window Mode",
-      "description": "Trigger open window mode from external sensors (Zigbee, Z-Wave contact sensors, etc.). Sets the zone to frost protection temperature — no Tado detection required. Duration defaults to the zone's Open Window Detection timeout setting, or 15 minutes if not configured.",
+      "description": "Trigger open window mode from external sensors (Zigbee, Z-Wave contact sensors, etc.). Sets the zone to frost protection temperature, with no Tado detection required. Duration defaults to the zone's Open Window Detection timeout setting, or 15 minutes if not configured.",
       "fields": {
         "duration": {
           "name": "Duration",
@@ -1300,7 +1300,7 @@
     },
     "turn_off_all_zones": {
       "name": "Turn Off All Rooms",
-      "description": "Place every climate zone (heating + AC) into a manual OFF overlay. Mirrors the Tado app's 'Turn OFF all rooms' button — schedules stay suppressed until you manually resume each zone."
+      "description": "Place every climate zone (heating + AC) into a manual OFF overlay. Mirrors the Tado app's 'Turn OFF all rooms' button. Schedules stay suppressed until you manually resume each zone."
     },
     "refresh": {
       "name": "Refresh",
@@ -1376,7 +1376,7 @@
         "homekit": "HomeKit",
         "polling_api": "Polling & API",
         "comfort_safety": "Comfort & Safety",
-        "external_sensors": "Outdoor Sensors"
+        "external_data_sources": "External Data Sources"
       }
     }
   },
@@ -1418,28 +1418,28 @@
       "message": "Invalid bridge serial or auth code"
     },
     "offset_write_failed": {
-      "message": "Could not set temperature offset for {entity_id} — all {device_count} device(s) failed to accept the write. Check that the devices are online and try again."
+      "message": "Could not set temperature offset for {entity_id}: all {device_count} device(s) failed to accept the write. Check that the devices are online and try again."
     },
     "timer_set_failed_all": {
       "message": "Timer could not be set on any of the {entity_count} zone(s). Reasons: {reasons}"
     },
     "state_restore_failed": {
-      "message": "State Restore failed for {entity_id} — the cloud rejected the call. The captured state was kept so you can try again."
+      "message": "State Restore failed for {entity_id}. The cloud rejected the call. The captured state was kept so you can try again."
     },
     "resume_schedule_failed": {
-      "message": "Resume Schedule failed for {entity_id} — the cloud rejected the call. Please try again."
+      "message": "Resume Schedule failed for {entity_id}. The cloud rejected the call. Please try again."
     },
     "turn_off_all_no_climate_zones": {
-      "message": "No heating or AC zones found in this Tado home — there is nothing to turn off."
+      "message": "No heating or AC zones found in this Tado home, so there is nothing to turn off."
     },
     "turn_off_all_failed_all": {
       "message": "Failed to turn off any zone. Tado's cloud rejected every call this cycle. Reasons: {reasons}. Check the integration's API quota or try again."
     },
     "auth_required": {
-      "message": "Tado authentication required — please re-authenticate the integration."
+      "message": "Tado authentication required. Please re-authenticate the integration."
     },
     "cloud_write_failed": {
-      "message": "Tado cloud write failed — the cloud rejected the request, please retry."
+      "message": "Tado cloud write failed. The cloud rejected the request, please retry."
     },
     "rate_limited": {
       "message": "Tado API rate-limited. Try again in {retry_after_minutes} min."
@@ -1527,7 +1527,7 @@
       },
       "select_home": {
         "title": "Select Home",
-        "description": "Multiple Tado homes detected — pick the one to monitor. Each home is a separate integration entry, so you can add the others later.",
+        "description": "Multiple Tado homes detected. Pick the one to monitor. Each home is a separate integration entry, so you can add the others later.",
         "data": {
           "home": "Home"
         },
@@ -1597,7 +1597,7 @@
         "sections": {
           "tado_features": {
             "name": "Tado Features",
-            "description": "Features Tado natively supports — enable what you want surfaced in Home Assistant.",
+            "description": "Features Tado natively supports. Enable what you want surfaced in Home Assistant.",
             "data": {
               "home_state_sync_enabled": "Home Presence (Home/Away)",
               "weather_enabled": "Weather Data",
@@ -1624,12 +1624,12 @@
             },
             "data_description": {
               "bridge_enabled": "Connect to your Tado Internet Bridge for boiler flow temperature readings (required for Weather Compensation)",
-              "homekit_enabled": "Control heating locally via HomeKit — works even when Tado's cloud is down"
+              "homekit_enabled": "Control heating locally via HomeKit, even when Tado's cloud is down"
             }
           },
           "smart_automations": {
             "name": "Smart Automations",
-            "description": "Tado CE enhancements — layered on top of Tado's own control.",
+            "description": "Tado CE enhancements, layered on top of Tado's own control.",
             "data": {
               "smart_comfort_enabled": "Smart Comfort",
               "thermal_analytics_enabled": "Thermal Analytics",
@@ -1639,7 +1639,7 @@
             "data_description": {
               "smart_comfort_enabled": "Comfort scoring, mold risk, condensation, and dew point sensors for each zone",
               "thermal_analytics_enabled": "Track how fast your rooms heat up and how your system performs over time",
-              "adaptive_preheat_enabled": "Automatically start heating early so your room is warm when the schedule kicks in — replaces Tado's Early Start with local logic",
+              "adaptive_preheat_enabled": "Automatically start heating early so your room is warm when the schedule kicks in. Replaces Tado's Early Start with local logic",
               "wc_enabled": "Needs the Internet Bridge enabled first. Automatically adjusts your boiler's flow temperature based on the outdoor weather."
             }
           },
@@ -1670,7 +1670,7 @@
             "data_description": {
               "smart_comfort_mode": "How much Tado CE nudges zone target temperature toward comfort. Light = subtle, Aggressive = noticeable. Start with Light.",
               "use_feels_like": "Factor in wind chill and humidity instead of raw temperature",
-              "mold_risk_window_type": "Your window type — affects how surface temperature is estimated for mold risk",
+              "mold_risk_window_type": "Your window type. Affects how surface temperature is estimated for mold risk",
               "smart_comfort_history_days": "How many days of temperature data to use for heating rate estimates (1–30)"
             }
           },
@@ -1720,13 +1720,13 @@
               "wc_slope": "How steeply flow temperature rises as it gets colder outside. Higher = more aggressive heating (0.3–3.0). Only used when the heating system preset above is Custom; otherwise it's calculated from your Max/Min Flow, Shutoff and Design Outdoor Temp values.",
               "wc_design_outdoor_temp": "The coldest temperature you expect in your area (-30 to 10°C)",
               "wc_max_flow_temp": "Highest flow temperature your boiler should reach at the coldest outdoor temp (25–80°C). Feeds the automatic slope calculation unless the preset above is Custom.",
-              "wc_min_flow_temp": "Lowest flow temperature — also used when heating shuts off (25–60°C). Feeds the automatic slope calculation unless the preset above is Custom.",
+              "wc_min_flow_temp": "Lowest flow temperature, also used when heating shuts off (25–60°C). Feeds the automatic slope calculation unless the preset above is Custom.",
               "wc_shutoff_temp": "Stop heating when outdoor temperature rises above this (5–30°C)",
               "wc_smoothing_method": "How outdoor temperature readings are averaged to avoid sudden changes",
               "wc_smoothing_window": "How long to average outdoor temperature over (15–1440 min)",
               "wc_room_compensation_factor": "How much to adjust flow temperature when a room is colder or warmer than its target (1.0–5.0)",
-              "wc_step_size": "Round flow temperature to this step size — larger steps mean fewer boiler adjustments (0.5–2.0°C)",
-              "wc_hysteresis": "Only send a new flow temperature when it differs from the last one by at least this much (0.5–3.0°C)",
+              "wc_step_size": "Round flow temperature to this step size. Larger steps mean fewer boiler adjustments (0.5–2.0°C)",
+              "wc_hysteresis": "Only send a new flow temperature when it differs from the last one by more than this much (0.5–3.0°C)",
               "wc_heating_system_preset": "Custom lets you set your own slope; the other options calculate it automatically from your Max/Min Flow, Shutoff and Design Outdoor Temp fields above.",
               "wc_room_compensation_enabled": "Nudge the flow temperature up or down when a room is colder or warmer than its target, on top of the outdoor-weather curve."
             }
@@ -1764,7 +1764,7 @@
             },
             "data_description": {
               "day_start_hour": "When daytime polling starts (0–23, default: 7). If Offset Sync's quiet hours are on, this is also when it resumes writing overnight corrections.",
-              "night_start_hour": "When nighttime polling starts — polls less often at night (0–23, default: 23). If Offset Sync's quiet hours are on, this is also when it stops writing overnight corrections.",
+              "night_start_hour": "When nighttime polling starts. It polls less often at night (0–23, default: 23). If Offset Sync's quiet hours are on, this is also when it stops writing overnight corrections.",
               "custom_day_interval": "Override automatic daytime polling with a fixed interval. Leave empty to let Tado CE adjust polling based on your API quota. (1–1440 min)",
               "custom_night_interval": "Override automatic nighttime polling with a fixed interval. Leave empty to let Tado CE adjust polling based on your API quota. (1–1440 min)",
               "refresh_debounce_seconds": "Wait this long after a change before fetching fresh data from Tado (1–60s)",
@@ -1787,8 +1787,8 @@
               "comfort_heat_vulnerable_group": "Raise heat and cold warnings one level earlier for homes with elderly, infant, or unwell occupants, where the same temperature carries more risk. Off by default."
             }
           },
-          "external_sensors": {
-            "name": "Outdoor Sensors",
+          "external_data_sources": {
+            "name": "External Data Sources",
             "data": {
               "use_outdoor_temp_entity": "Use Outdoor Temperature Entity",
               "outdoor_temp_entity": "Outdoor Temperature Entity",
@@ -1826,14 +1826,14 @@
       },
       "reset_to_defaults": {
         "title": "Reset to Defaults",
-        "description": "Choose what to reset. Per-category reset only resets tuning parameters — the feature stays enabled.",
+        "description": "Choose what to reset. Per-category reset only resets tuning parameters, so the feature stays enabled.",
         "data": {
           "reset_scope": "Reset Scope"
         }
       },
       "reset_confirm": {
         "title": "Confirm Reset",
-        "description": "This will reset all settings to their defaults. Your Tado account, bridge connection, and HomeKit pairing will be kept — you won't need to set those up again."
+        "description": "This will reset all settings to their defaults. Your Tado account, bridge connection, and HomeKit pairing will be kept, so you won't need to set those up again."
       },
       "zone_config": {
         "title": "Zone Configuration",
@@ -1843,7 +1843,7 @@
         }
       },
       "zone_sensor_config": {
-        "title": "Zone Config — {zone_name}",
+        "title": "Zone Config: {zone_name}",
         "description": "Configure per-zone settings. Sections can be expanded to reveal more options.",
         "sections": {
           "heating_section": {
@@ -1885,11 +1885,11 @@
               "svc_offset_min_change": "Offset Sync Sensitivity"
             },
             "data_description": {
-              "use_external_temp": "Turn off to temporarily revert to Tado's built-in sensor. Your selection stays saved — toggle back on anytime.",
+              "use_external_temp": "Turn off to temporarily revert to Tado's built-in sensor. Your selection stays saved, so you can toggle back on anytime.",
               "external_temp_sensor": "Select a sensor to override Tado's built-in reading. Disable the toggle above to pause without losing the selection.",
-              "use_external_humidity": "Turn off to temporarily revert to Tado's built-in humidity sensor. Your selection stays saved — toggle back on anytime.",
+              "use_external_humidity": "Turn off to temporarily revert to Tado's built-in humidity sensor. Your selection stays saved, so you can toggle back on anytime.",
               "external_humidity_sensor": "Select a humidity sensor to override Tado's built-in reading. Disable the toggle above to pause without losing the selection.",
-              "svc_mode": "Use your external sensor to improve TRV accuracy. Offset Sync (recommended) quietly corrects the TRV's temperature reading — works alongside Tado, better TRV battery life. Valve Target directly overrides the TRV setpoint — more aggressive, use only when Offset Sync isn't enough.",
+              "svc_mode": "Use your external sensor to improve TRV accuracy. Offset Sync (recommended) quietly corrects the TRV's temperature reading. It works alongside Tado, with better TRV battery life. Valve Target directly overrides the TRV setpoint. It is more aggressive, so use it only when Offset Sync isn't enough.",
               "svc_offset_min_change": "How much the offset must change before writing to the TRV. Higher values mean fewer writes (better for battery life) but less precise temperature display in the Tado app"
             }
           },
@@ -1900,7 +1900,7 @@
               "timer_duration": "Override Timer Duration (minutes)"
             },
             "data_description": {
-              "overlay_mode": "When you change temperature from HA, the Tado app, or a service call — how long the change lasts before Tado’s schedule resumes.",
+              "overlay_mode": "How long a temperature change from HA, the Tado app or a service call lasts before Tado’s schedule resumes.",
               "timer_duration": "Duration for Timer override mode (15 min to 12 hours)"
             }
           },
@@ -1943,19 +1943,19 @@
     "error": {
       "interval_out_of_range": "Polling interval must be between 1 and 1440 minutes",
       "invalid_number": "Please enter a valid number",
-      "bridge_auth_failed": "Invalid bridge serial or auth code — please check and try again",
+      "bridge_auth_failed": "Invalid bridge serial or auth code. Please check and try again",
       "bridge_serial_invalid": "Only v3+ Internet Bridges (serial starting with IB) support the local API. Your serial suggests a v2 bridge (GW prefix) which does not have a local API. Weather Compensation can still be used without a bridge via cloud data.",
       "wc_min_exceeds_max": "Minimum flow temperature cannot exceed maximum flow temperature",
       "homekit_wrong_pin": "The bridge refused the code. Either the 8-digit HomeKit setup code is wrong (check it on the bridge or in the Tado app), or another HomeKit controller (Homebridge, Apple Home, or Home Assistant's own HomeKit) is holding the bridge. Stop the other controller, then try again.",
       "homekit_already_paired": "Bridge is already paired with another controller. Unpair from Apple Home first, then try again",
       "homekit_network_error": "Could not reach the bridge on your network. Check it is powered on and connected",
-      "homekit_timeout": "Pairing timed out — the bridge did not respond in time",
-      "homekit_pairing_failed": "Pairing failed — please try again",
+      "homekit_timeout": "Pairing timed out. The bridge did not respond in time",
+      "homekit_pairing_failed": "Pairing failed. Please try again",
       "svc_active_sensor_clear": "Smart Valve Control is enabled for this zone. Disabling the external temperature sensor will deactivate Smart Valve Control. Set Smart Valve Control Mode to Off first if you want to pause the sensor without stopping SVC.",
-      "homekit_max_tries": "Too many failed attempts — the bridge is temporarily locked. Wait a few minutes or reset the bridge and try again.",
-      "homekit_busy": "The bridge is busy — another pairing may be in progress. Try again in a moment.",
+      "homekit_max_tries": "Too many failed attempts. The bridge is temporarily locked. Wait a few minutes or reset the bridge and try again.",
+      "homekit_busy": "The bridge is busy. Another pairing may be in progress. Try again in a moment.",
       "homekit_no_zeroconf": "HomeKit pairing needs Home Assistant's zeroconf service, which isn't running on this host. Add `default_config:` (or `zeroconf:`) to your configuration.yaml and restart, then try again.",
-      "homekit_no_bridge_detected": "None of your zones list a v3 or v3+ Internet Bridge, the only hardware this pairing flow can find. A v2 Internet Bridge (GW serial) doesn't support HomeKit, and Smart AC Control units pair separately with their own HomeKit code — this flow doesn't handle either. Submit to go back without pairing.",
+      "homekit_no_bridge_detected": "None of your zones list a v3 or v3+ Internet Bridge, the only hardware this pairing flow can find. A v2 Internet Bridge (GW serial) doesn't support HomeKit, and Smart AC Control units pair separately with their own HomeKit code, and this flow doesn't handle either. Submit to go back without pairing.",
       "homekit_pin_format": "That does not look like a HomeKit setup code. Enter the 8-digit code in the format 123-45-678 (not the 4-digit auth code), shown on your bridge or in the Tado app."
     }
   }

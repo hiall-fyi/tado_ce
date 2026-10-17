@@ -8,25 +8,33 @@ body:
         Thanks for taking the time to report this. A few quick details up front
         save a lot of back-and-forth. The debug log is the single most useful
         thing, and there's a link below for how to turn it on.
+  - type: markdown
+    attributes:
+      value: |
+        **Using Tado X?** This integration doesn't support Tado X hardware (see the
+        FAQ in the README for why and what to use instead), so please raise it as a
+        feature request or in Discussions rather than a bug.
   - type: checkboxes
     attributes:
       label: Before you start
       options:
         - label: I have searched the existing issues and discussions for this
           required: true
+        - label: I'm running the latest Tado CE release shown in HACS
+          required: true
   - type: input
     id: tado_ce_version
     attributes:
       label: Tado CE version
       description: Copy it from the integration's device page rather than typing from memory.
-      placeholder: e.g. 4.3.0
+      placeholder: e.g. 4.5.0
     validations:
       required: true
   - type: input
     id: ha_version
     attributes:
       label: Home Assistant version
-      placeholder: e.g. 2026.7.1
+      placeholder: e.g. 2026.9.4
     validations:
       required: true
   - type: dropdown
@@ -52,12 +60,6 @@ body:
         - "Not sure"
     validations:
       required: true
-  - type: markdown
-    attributes:
-      value: |
-        **Using Tado X?** This integration doesn't support Tado X hardware (see the
-        FAQ in the README for why and what to use instead), so please raise it as a
-        feature request or in Discussions rather than a bug.
   - type: checkboxes
     attributes:
       label: Tado hardware

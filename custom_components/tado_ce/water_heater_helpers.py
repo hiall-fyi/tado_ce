@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Any
 
 from .climate_helpers import RollbackPlan, _attempt_with_rollback
 
 if TYPE_CHECKING:
     from collections.abc import Coroutine
-
-_LOGGER = logging.getLogger(__name__)
 
 
 async def api_call_with_rollback_wh(

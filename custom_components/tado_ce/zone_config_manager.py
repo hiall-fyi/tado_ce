@@ -135,8 +135,10 @@ class ZoneConfigManager:
                     exc_info=True,
                 )
 
-    async def async_set_zone_value(self, zone_id: str, key: str, value: Any) -> None:
-        """Set one config key for a zone, persist, and notify listeners on change."""
+    async def async_set_zone_value(
+        self, zone_id: str, key: str, value: Any, *, immediate: bool = False,
+    ) -> None:
+        """Set one config key for a zone, persist (at once if immediate), and notify listeners on change."""
         zone_id = str(zone_id)
         if zone_id not in self._config:
             self._config[zone_id] = {}
@@ -145,6 +147,8 @@ class ZoneConfigManager:
         self._config[zone_id][key] = value
 
         await self.async_save()
+        if immediate:
+            await self._data_loader.async_flush_pending_saves()
 
         if old_value != value:
             self._notify_listeners(zone_id, key, value)

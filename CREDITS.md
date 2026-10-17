@@ -14,8 +14,8 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 | ☕☕☕☕☕☕ | [@jeverley](https://github.com/jeverley) |
 | ☕☕☕☕☕ | Marcel v.H., [@Prodeguerriero](https://github.com/Prodeguerriero), [@rodneyha](https://github.com/rodneyha), [@UKICS](https://github.com/UKICS), [@wisskid](https://github.com/wisskid) |
 | ☕☕☕☕ | [@hapklaar](https://github.com/hapklaar) |
-| ☕☕ | Arnaud L., [@janchrillesen](https://github.com/janchrillesen), [@jeromewir](https://github.com/jeromewir), Luke R., [@marcovn](https://github.com/marcovn), [@ratormat](https://github.com/ratormat), Vit P. |
-| ☕ | Alby T., kottrupk, [@MathiasB112](https://github.com/MathiasB112), Philipp H. |
+| ☕☕ | Arnaud L., [@janchrillesen](https://github.com/janchrillesen), [@jeromewir](https://github.com/jeromewir), Luke R., [@marcovn](https://github.com/marcovn), [@ratormat](https://github.com/ratormat), Sebastian M., [@Saughassy](https://github.com/Saughassy), Vit P. |
+| ☕ | Alby T., Bernhard S., kottrupk, [@MathiasB112](https://github.com/MathiasB112), Philipp H. |
 
 ---
 
@@ -32,6 +32,14 @@ Community members who sent an actual patch, not just a report — reviewed and e
 ## Per-Version Credits
 
 Community contributors who helped shape each release through bug reports, feature requests, testing, feedback, and code.
+
+### v4.5.1
+
+- **[@sknapek](https://github.com/sknapek)** — Reported that switching a zone from Off to Heat set 20°C instead of the 19°C on its schedule, and suggested a per-zone default ([#379](https://github.com/hiall-fyi/tado_ce/issues/379)). The fix uses the schedule wherever Tado CE has it, rather than a fixed number.
+- **[@moggy83](https://github.com/moggy83)** — Tested the v4.5.0 bridge-detection fix end to end on a seven-zone home where only one zone has an in-zone thermostat ([#347](https://github.com/hiall-fyi/tado_ce/issues/347), comment 11), confirming pairing reached the PIN prompt and local control came up across every zone. Two things from that test are tightened this release: a dedicated log line now says when a mapping that takes several polls to finish is actually done, since the existing log just went quiet partway through with nothing to say it had finished, and the pairing PIN field now marks itself as a one-time code, which asks a browser not to offer saving it as a password. The same thread (discussion [#377](https://github.com/hiall-fyi/tado_ce/discussions/377)) gave the poll-by-poll API usage that the quota reset and automatic interval fixes in this release were checked against.
+- **[@wrowlands3](https://github.com/wrowlands3)** — Reported a zone whose humidity had stayed on the same value for nearly a month while its temperature kept updating ([#368](https://github.com/hiall-fyi/tado_ce/issues/368)). Over the next few days they supplied debug logs, screenshots of the zone's sensors and settings, separate restart and reload captures, and the device list from their stored zone data. The restart capture showed the old cloud temperature on screen for about three minutes before HomeKit filled in, and the device list showed the wireless sensor, which Tado treats as the zone's main device, offline since 12 September. Together those pinned down what was frozen and which device decides it, which is what this release's offline-sensor fix is built on.
+- **[@slflowfoon](https://github.com/slflowfoon)** — Reported a HomeKit Local Control room with several devices whose target kept flipping between the Tado Cloud value and a HomeKit value, with automations reading each flip as a manual adjustment ([#375](https://github.com/hiall-fyi/tado_ce/issues/375)). They supplied the diagnosis (the room kept one remembered value that each device was compared against), a patch, and the tests.
+- **[@Reinvented0](https://github.com/Reinvented0)** — Reported a HomeKit target that flipped to a new value and then back to the old one about five minutes later, staying stale until the next zone refresh, with a debug log and an analysis that traced it to the cloud refresh skip and the five-minute staleness check ([#378](https://github.com/hiall-fyi/tado_ce/issues/378)). The refresh skip is fixed in this release; the target flip-back is only partly addressed.
 
 ### v4.5.0
 
@@ -213,7 +221,7 @@ The 4.0 cycle ran across 16 betas between April and May 2026. The contributors b
 ### v3.1.1
 
 - **[@MathiasB112](https://github.com/MathiasB112)** — Reported device authorization broken due to Tado server changes ([#185](https://github.com/hiall-fyi/tado_ce/issues/185))
-- **[@UKICS](https://github.com/UKICS)** — Confirmed device authorization issue affecting both Tado CE and official integration ([#185](https://github.com/hiall-fyi/tado_ce/issues/185))
+- **[@UKICS](https://github.com/UKICS)** — Confirmed device authorization issue affecting both Tado CE and the built-in Tado integration ([#185](https://github.com/hiall-fyi/tado_ce/issues/185))
 - **[@driagi](https://github.com/driagi)** — Reported climate card unusable when zone is OFF ([#182](https://github.com/hiall-fyi/tado_ce/issues/182))
 - **[@neonsp](https://github.com/neonsp)** — Reported AC always defaulting to COOL when turning on ([#182](https://github.com/hiall-fyi/tado_ce/issues/182))
 

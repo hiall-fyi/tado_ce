@@ -1150,7 +1150,7 @@
   "services": {
     "set_climate_timer": {
       "name": "Definir o temporizador de climatização",
-      "description": "Defina o aquecimento/arrefecimento com um temporizador que termina automaticamente após a duração especificada ou até ao bloco de programação seguinte. Compatível com a integração oficial do Tado.",
+      "description": "Defina o aquecimento/arrefecimento com um temporizador que termina automaticamente após o período especificado ou até ao próximo bloco de programação. Compatível com a integração Tado incorporada.",
       "fields": {
         "temperature": {
           "name": "Temperatura",
@@ -1186,7 +1186,7 @@
     },
     "set_climate_temperature_offset": {
       "name": "Definir o desvio da temperatura climática",
-      "description": "Definir o desvio de temperatura (calibração) para um dispositivo climático Tado. Compatível com a integração oficial do Tado.",
+      "description": "Defina o desvio de temperatura (calibração) para um dispositivo de climatização Tado. Compatível com a integração Tado incorporada.",
       "fields": {
         "entity_id": {
           "name": "Entidade",
@@ -1256,7 +1256,7 @@
     },
     "activate_open_window": {
       "name": "Ativar janela aberta (Auto-Assist)",
-      "description": "Confirma uma janela aberta que o Tado já detetou — o mesmo que tocar no ícone na aplicação Tado. Só funciona quando a deteção integrada do Tado sinalizou um evento de janela aberta. Para ativar a partir de sensores externos, use 'Definir modo janela aberta'."
+      "description": "Confirme uma janela aberta que o Tado já tenha detetado, tal como ao tocar no ícone na aplicação do Tado. Só funciona quando a deteção integrada do Tado tiver assinalado um evento de janela aberta. Para ativar o modo de janela aberta a partir de sensores externos, utilize, em vez disso, a opção «Definir modo de janela aberta»."
     },
     "deactivate_open_window": {
       "name": "Desativar janela aberta",
@@ -1264,7 +1264,7 @@
     },
     "set_open_window_mode": {
       "name": "Definir modo janela aberta",
-      "description": "Ativa o modo janela aberta a partir de sensores externos (Zigbee, Z-Wave, etc.). Define a zona para temperatura de proteção contra geada com temporizador — sem necessidade de deteção Tado. A duração predefinida é o timeout de deteção de janela da zona, ou 15 minutos.",
+      "description": "Ativa o modo «Janela aberta» a partir de sensores externos (Zigbee, sensores de contacto Z-Wave, etc.). Define a temperatura de proteção contra o gelo para a zona, sem que seja necessária a deteção do Tado. A duração é, por predefinição, igual ao tempo de espera definido para a deteção de janela aberta da zona ou, caso não esteja configurado, de 15 minutos.",
       "fields": {
         "duration": {
           "name": "Duração",
@@ -1282,7 +1282,7 @@
     },
     "turn_off_all_zones": {
       "name": "Desligar todas as divisões",
-      "description": "Coloque todas as zonas climáticas (aquecimento + ar condicionado) num estado de desativação manual. Esta função corresponde ao botão «Desligar todas as divisões» da aplicação Tado — as programações permanecem suspensas até que reative manualmente cada zona."
+      "description": "Coloque todas as zonas climáticas (aquecimento + ar condicionado) num estado de desativação manual. Esta função corresponde ao botão «Desligar todas as divisões» da aplicação Tado. As programações permanecem suspensas até que reative manualmente cada zona."
     },
     "set_schedule_temperature": {
       "name": "Definir a temperatura programada",
@@ -1369,7 +1369,7 @@
         "polling_api": "Sondagem e API",
         "homekit": "HomeKit",
         "comfort_safety": "Conforto e Segurança",
-        "external_sensors": "Sensores para o exterior"
+        "external_data_sources": "Fontes de dados externas"
       }
     },
     "svc_mode": {
@@ -1418,28 +1418,28 @@
       "message": "Série de ponte ou código de autenticação inválidos"
     },
     "offset_write_failed": {
-      "message": "Não foi possível definir o desvio de temperatura para {entity_id} — todos os dispositivos {device_count} não aceitaram a gravação. Verifique se os dispositivos estão online e tente novamente."
+      "message": "Não foi possível definir o desvio de temperatura para o {entity_id}: nenhum dos dispositivos com {device_count} aceitou a gravação. Verifique se os dispositivos estão online e tente novamente."
     },
     "timer_set_failed_all": {
       "message": "Não foi possível definir o temporizador em nenhuma das zonas {entity_count}. Motivos: {reasons}"
     },
     "state_restore_failed": {
-      "message": "Falha na restauração do estado para {entity_id} — a nuvem rejeitou a chamada. O estado capturado foi guardado para que possa tentar novamente."
+      "message": "A restauração do estado falhou para o {entity_id}. A nuvem rejeitou a chamada. O estado capturado foi guardado para que possa tentar novamente."
     },
     "resume_schedule_failed": {
-      "message": "A tentativa de retomar a programação para {entity_id} falhou — a nuvem rejeitou a chamada. Por favor, tente novamente."
+      "message": "A programação de reatamento falhou para o {entity_id}. A nuvem rejeitou a chamada. Por favor, tente novamente."
     },
     "turn_off_all_no_climate_zones": {
-      "message": "Não foram encontradas zonas de aquecimento ou ar condicionado nesta casa Tado — não há nada para desligar."
+      "message": "Não foram encontradas zonas de aquecimento ou ar condicionado nesta casa Tado, pelo que não há nada para desligar."
     },
     "turn_off_all_failed_all": {
       "message": "Não foi possível desligar nenhuma zona. A nuvem da Tado rejeitou todas as chamadas neste ciclo. Motivos: {reasons}. Verifique a quota da API da integração ou tente novamente."
     },
     "auth_required": {
-      "message": "É necessária a autenticação do Tado — por favor, volte a autenticar a integração."
+      "message": "É necessária a autenticação do Tado. Por favor, volte a autenticar a integração."
     },
     "cloud_write_failed": {
-      "message": "Falha na gravação na nuvem do Tado — a nuvem rejeitou o pedido; tente novamente."
+      "message": "Falha na gravação na nuvem do Tado. A nuvem rejeitou o pedido; por favor, tente novamente."
     },
     "rate_limited": {
       "message": "A API do Tado está sujeita a limites de requisições. Tente novamente daqui a {retry_after_minutes} minutos."
@@ -1527,7 +1527,7 @@
       },
       "select_home": {
         "title": "Selecionar casa",
-        "description": "Foram detetadas várias casas Tado — escolha a que pretende monitorizar. Cada casa constitui uma entrada de integração separada, pelo que pode adicionar as restantes mais tarde.",
+        "description": "Foram detetadas várias casas Tado. Escolha aquela que pretende monitorizar. Cada casa corresponde a uma entrada de integração separada, pelo que pode adicionar as restantes mais tarde.",
         "data": {
           "home": "Início"
         },
@@ -1599,7 +1599,7 @@
         }
       },
       "zone_sensor_config": {
-        "title": "Configuração da zona - {zone_name}",
+        "title": "Configuração da zona: {zone_name}",
         "description": "Configurar definições por zona. As secções podem ser expandidas para revelar mais opções.",
         "sections": {
           "heating_section": {
@@ -1641,11 +1641,11 @@
               "svc_offset_min_change": "Sensibilidade de sincronização de desvio"
             },
             "data_description": {
-              "use_external_temp": "Desative para voltar temporariamente ao sensor integrado do Tado. A sua escolha fica guardada — pode reativar a qualquer momento.",
+              "use_external_temp": "Desative esta função para voltar temporariamente a utilizar o sensor integrado do Tado. A sua escolha fica guardada, pelo que pode reativá-la a qualquer momento.",
               "external_temp_sensor": "Selecione um sensor para substituir a leitura integrada do Tado. Desative o botão acima para pausar sem perder a seleção.",
-              "use_external_humidity": "Desative esta função para voltar temporariamente a utilizar o sensor de humidade integrado do Tado. A sua escolha fica guardada — pode reativá-la a qualquer momento.",
+              "use_external_humidity": "Desative esta função para voltar temporariamente a utilizar o sensor de humidade integrado do Tado. A sua escolha fica guardada, pelo que pode reativá-la a qualquer momento.",
               "external_humidity_sensor": "Selecione um sensor de humidade para substituir a leitura integrada do Tado. Desative o botão acima para pausar sem perder a seleção.",
-              "svc_mode": "Utilize o seu sensor externo para melhorar a precisão do TRV. A função «Offset Sync» (recomendada) corrige discretamente a leitura de temperatura do TRV — funciona em conjunto com o Tado, prolongando a duração da bateria do TRV. A função «Valve Target» substitui diretamente o ponto de regulação do TRV — mais agressiva, utilize-a apenas quando a função «Offset Sync» não for suficiente.",
+              "svc_mode": "Utilize o seu sensor externo para melhorar a precisão do TRV. A função «Offset Sync» (recomendada) corrige discretamente a leitura de temperatura do TRV. Funciona em conjunto com o Tado, prolongando a autonomia da bateria do TRV. A função «Valve Target» substitui diretamente o ponto de regulação do TRV. É mais agressiva, pelo que deve utilizá-la apenas quando a função «Offset Sync» não for suficiente.",
               "svc_offset_min_change": "Em quanto o desvio deve variar antes de se registar no TRV. Valores mais elevados significam menos registos (melhor para a duração da bateria), mas uma exibição menos precisa da temperatura na aplicação Tado"
             }
           },
@@ -1656,7 +1656,7 @@
               "timer_duration": "Duração do temporizador de substituição (minutos)"
             },
             "data_description": {
-              "overlay_mode": "Quando altera a temperatura através do HA, da aplicação Tado ou de uma chamada de assistência — quanto tempo dura essa alteração antes de o horário programado do Tado ser retomado.",
+              "overlay_mode": "Quanto tempo dura uma alteração de temperatura efetuada através do HA, da aplicação Tado ou de uma intervenção técnica antes de o horário programado do Tado ser retomado.",
               "timer_duration": "Duração do modo de anulação do temporizador (15 minutos a 12 horas)"
             }
           },
@@ -1683,7 +1683,7 @@
         "sections": {
           "tado_features": {
             "name": "Funcionalidades do Tado",
-            "description": "Funcionalidades que o Tado suporta nativamente — ative as que deseja que apareçam no Home Assistant.",
+            "description": "Funcionalidades que o Tado suporta de forma nativa. Ative as que deseja que apareçam no Home Assistant.",
             "data": {
               "home_state_sync_enabled": "Presença em casa (Em casa/Fora)",
               "weather_enabled": "Dados meteorológicos",
@@ -1710,12 +1710,12 @@
             },
             "data_description": {
               "bridge_enabled": "Ligue-se à sua Tado Internet Bridge para obter as leituras da temperatura de saída da caldeira (necessárias para a compensação climática)",
-              "homekit_enabled": "Controle o aquecimento localmente através do HomeKit — funciona mesmo quando a nuvem da Tado está em baixo"
+              "homekit_enabled": "Controle o aquecimento localmente através do HomeKit, mesmo quando a nuvem da Tado estiver indisponível"
             }
           },
           "smart_automations": {
             "name": "Automações inteligentes",
-            "description": "Melhorias do Tado CE — integradas no sistema de controlo próprio da Tado.",
+            "description": "Melhorias do Tado CE, integradas no próprio sistema de controlo da Tado.",
             "data": {
               "smart_comfort_enabled": "Conforto Inteligente",
               "thermal_analytics_enabled": "Análise térmica",
@@ -1725,7 +1725,7 @@
             "data_description": {
               "smart_comfort_enabled": "Sensores de conforto, risco de bolor, condensação e ponto de orvalho para cada zona",
               "thermal_analytics_enabled": "Acompanhe a rapidez com que os seus quartos aquecem e o desempenho do seu sistema ao longo do tempo",
-              "adaptive_preheat_enabled": "Inicie automaticamente o aquecimento mais cedo para que o seu quarto esteja quente quando o horário programado entrar em vigor — substitui a função «Early Start» do Tado por uma lógica local",
+              "adaptive_preheat_enabled": "Inicie automaticamente o aquecimento mais cedo, para que o seu quarto esteja quente quando o horário programado entrar em vigor. Substitui a função «Early Start» da Tado por uma lógica local",
               "wc_enabled": "É necessário ativar primeiro a Internet Bridge. Ajusta automaticamente a temperatura de saída da sua caldeira com base nas condições meteorológicas exteriores."
             }
           },
@@ -1756,7 +1756,7 @@
             "data_description": {
               "smart_comfort_mode": "Em que medida o Tado CE ajusta a temperatura alvo da zona para um nível de conforto. Suave = subtil, Agressivo = percetível. Comece com a opção Suave.",
               "use_feels_like": "Fator de arrefecimento do vento e humidade em vez de temperatura bruta",
-              "mold_risk_window_type": "O seu tipo de janela - afecta a forma como a temperatura da superfície é estimada para o risco de bolor",
+              "mold_risk_window_type": "O tipo de janela. Influencia a forma como a temperatura da superfície é estimada para avaliar o risco de bolor",
               "smart_comfort_history_days": "Quantos dias de dados de temperatura devem ser utilizados para as estimativas da taxa de aquecimento (1-30)"
             }
           },
@@ -1794,7 +1794,7 @@
             },
             "data_description": {
               "day_start_hour": "Quando começa a recolha de dados durante o dia (0–23, valor predefinido: 7). Se o modo «horário de silêncio» do Offset Sync estiver ativado, é também nesta altura que este retoma a gravação das correções noturnas.",
-              "night_start_hour": "Quando a recolha de dados noturna começa — a recolha é efetuada com menor frequência durante a noite (0–23, valor predefinido: 23). Se o modo de horas tranquilas do Offset Sync estiver ativado, é também nesta altura que este deixa de registar correções durante a noite.",
+              "night_start_hour": "Quando começa a recolha de dados noturna. A recolha ocorre com menor frequência durante a noite (0–23, valor predefinido: 23). Se o modo «horário de silêncio» do Offset Sync estiver ativado, é também nessa altura que este deixa de registar as correções noturnas.",
               "custom_day_interval": "Substitua a sondagem automática diurna por um intervalo fixo. Deixe em branco para permitir que o Tado CE ajuste a sondagem com base na sua quota de API. (1–1440 min)",
               "custom_night_interval": "Substitua a consulta automática noturna por um intervalo fixo. Deixe em branco para permitir que o Tado CE ajuste a frequência das consultas com base na sua quota de API. (1–1440 min)",
               "refresh_debounce_seconds": "Esperar este tempo após uma alteração antes de ir buscar novos dados ao Tado (1-60s)",
@@ -1853,13 +1853,13 @@
               "wc_slope": "Indica a rapidez com que a temperatura de fluxo aumenta à medida que a temperatura exterior arrefece. Quanto mais elevado for o valor, mais intenso será o aquecimento (0,3–3,0). Utiliza-se apenas quando a predefinição do sistema de aquecimento acima for «Personalizada»; caso contrário, é calculado com base nos valores de fluxo máximo/mínimo, corte de fluxo e temperatura exterior de projeto.",
               "wc_design_outdoor_temp": "A temperatura mais fria que espera na sua região (-30 a 10°C)",
               "wc_max_flow_temp": "Temperatura máxima de saída que a sua caldeira deve atingir na temperatura exterior mais baixa (25–80 °C). Esta valor é utilizado no cálculo automático da inclinação, a menos que a predefinição acima seja «Personalizada».",
-              "wc_min_flow_temp": "Temperatura mínima do fluxo — também utilizada quando o aquecimento é desligado (25–60 °C). Serve de base para o cálculo automático da inclinação, a menos que a predefinição acima seja «Personalizada».",
+              "wc_min_flow_temp": "Temperatura mínima do fluxo, também utilizada quando o aquecimento é desligado (25–60 °C). Serve de base para o cálculo automático da inclinação, a menos que a predefinição acima seja «Personalizada».",
               "wc_shutoff_temp": "Parar o aquecimento quando a temperatura exterior subir acima deste valor (5-30°C)",
               "wc_smoothing_method": "Como se calcula a média das leituras da temperatura exterior para evitar alterações súbitas",
               "wc_smoothing_window": "Quanto tempo para calcular a média da temperatura exterior (15-1440 min)",
               "wc_room_compensation_factor": "Quanto ajustar a temperatura do fluxo quando uma divisão está mais fria ou mais quente do que o seu objetivo (1,0-5,0)",
-              "wc_step_size": "Arredondar a temperatura do caudal para este tamanho de passo - passos maiores significam menos ajustes da caldeira (0,5-2,0°C)",
-              "wc_hysteresis": "Só envia uma nova temperatura de fluxo quando esta difere da última em pelo menos este valor (0,5-3,0°C)",
+              "wc_step_size": "Arredonde a temperatura de fluxo para este valor de passo. Passos maiores significam menos ajustes na caldeira (0,5–2,0 °C)",
+              "wc_hysteresis": "Envie uma nova temperatura de fluxo apenas quando esta diferir da última em mais do que este valor (0,5–3,0 °C)",
               "wc_heating_system_preset": "A opção «Personalizada» permite-lhe definir a sua própria inclinação; as outras opções calculam-na automaticamente a partir dos campos «Caudal Máx./Mín.», «Corte» e «Temperatura exterior de projeto» acima indicados.",
               "wc_room_compensation_enabled": "Ajuste a temperatura de saída para cima ou para baixo quando uma divisão estiver mais fria ou mais quente do que o valor pretendido, para além da curva meteorológica exterior."
             }
@@ -1873,8 +1873,8 @@
               "comfort_heat_vulnerable_group": "Aumentar o nível de alerta de calor e frio um nível mais cedo para casas onde vivam idosos, bebés ou pessoas doentes, nas quais a mesma temperatura representa um risco maior. Desativado por predefinição."
             }
           },
-          "external_sensors": {
-            "name": "Sensores para o exterior",
+          "external_data_sources": {
+            "name": "Fontes de dados externas",
             "data": {
               "use_outdoor_temp_entity": "Utilizar a entidade «Temperatura exterior»",
               "outdoor_temp_entity": "Entidade «Temperatura exterior»",
@@ -1911,14 +1911,14 @@
         }
       },
       "reset_to_defaults": {
-        "description": "Escolha o que pretende repor. A reposição por categoria apenas repõe os parâmetros de afinação - a funcionalidade permanece activada.",
+        "description": "Escolha o que pretende repor. A reposição por categoria apenas repõe os parâmetros de afinação, pelo que a funcionalidade permanece ativada.",
         "title": "Repor as predefinições",
         "data": {
           "reset_scope": "Redefinir o âmbito de aplicação"
         }
       },
       "reset_confirm": {
-        "description": "Isto irá repor todas as definições para as predefinições. A sua conta Tado, a ligação em ponte e o emparelhamento com o HomeKit serão mantidos - não terá de os configurar novamente.",
+        "description": "Isto irá repor todas as definições para os valores predefinidos. A sua conta Tado, a ligação à ponte e o emparelhamento com o HomeKit serão mantidos, pelo que não precisará de os configurar novamente.",
         "title": "Confirmar a reposição"
       },
       "homekit_pairing": {
@@ -1943,20 +1943,20 @@
     "error": {
       "interval_out_of_range": "O intervalo de sondagem deve situar-se entre 1 e 1440 minutos",
       "invalid_number": "Introduzir um número válido",
-      "bridge_auth_failed": "Série da ponte ou código de autenticação inválidos - verifique e tente novamente",
+      "bridge_auth_failed": "Número de série ou código de autenticação da ponte inválido. Verifique e tente novamente",
       "wc_min_exceeds_max": "A temperatura mínima do caudal não pode exceder a temperatura máxima do caudal",
       "bridge_serial_invalid": "Apenas as Internet Bridges v3+ (série que começa com IB) suportam a API local. A sua série sugere uma ponte v2 (prefixo GW) que não tem uma API local. A compensação meteorológica pode ainda ser utilizada sem uma ponte através de dados na nuvem.",
       "homekit_wrong_pin": "A ponte rejeitou o código. Ou o código de configuração do HomeKit de 8 dígitos está errado (verifique-o na ponte ou na aplicação Tado), ou outro controlador HomeKit (Homebridge, Apple Home ou o próprio HomeKit do Home Assistant) está a bloquear a ponte. Desative o outro controlador e tente novamente.",
       "homekit_already_paired": "O Bridge já está emparelhado com outro controlador. Desemparelhe primeiro a partir do Apple Home e depois tente novamente",
       "homekit_network_error": "Não foi possível contactar a ponte na sua rede. Verifique se está ligada e conectada",
-      "homekit_timeout": "O tempo de emparelhamento expirou - a ponte não respondeu a tempo",
-      "homekit_pairing_failed": "O emparelhamento falhou - tente novamente",
+      "homekit_timeout": "O tempo de espera para o emparelhamento esgotou-se. A ponte não respondeu a tempo",
+      "homekit_pairing_failed": "A emparelhagem falhou. Por favor, tente novamente",
       "svc_active_sensor_clear": "O Controlo Inteligente da Válvula está ativado para esta zona. Desativar o sensor de temperatura externo desativará o Controlo Inteligente da Válvula. Defina primeiro o Modo de Controlo Inteligente da Válvula para Desligado se pretender colocar o sensor em pausa sem interromper o SVC.",
-      "homekit_max_tries": "Demasiadas tentativas falhadas — a ponte está temporariamente bloqueada. Aguarde alguns minutos ou reinicie a ponte e tente novamente.",
-      "homekit_busy": "A ponte está ocupada — pode estar a decorrer outro emparelhamento. Tente novamente daqui a pouco.",
+      "homekit_max_tries": "Demasiadas tentativas falhadas. A ponte está temporariamente bloqueada. Aguarde alguns minutos ou reinicie a ponte e tente novamente.",
+      "homekit_busy": "A ponte está ocupada. Pode estar a decorrer outro emparelhamento. Tente novamente daqui a pouco.",
       "homekit_no_zeroconf": "O emparelhamento do HomeKit requer o serviço zeroconf do Home Assistant, que não está a ser executado neste host. Adicione `default_config:` (ou `zeroconf:`) ao seu ficheiro configuration.yaml e reinicie o sistema; depois, tente novamente.",
       "homekit_pin_format": "Isso não parece ser um código de configuração do HomeKit. Introduza o código de 8 dígitos no formato 123-45-678 (não o código de autenticação de 4 dígitos), que aparece na sua ponte ou na aplicação Tado.",
-      "homekit_no_bridge_detected": "Nenhuma das suas zonas inclui uma Internet Bridge v3 ou v3+, o único hardware que este fluxo de emparelhamento consegue detetar. Uma Internet Bridge v2 (GW serial) não é compatível com o HomeKit, e as unidades Smart AC Control emparelham-se separadamente com o seu próprio código HomeKit — este fluxo não suporta nenhuma das duas. Clique em «Enviar» para voltar atrás sem emparelhar."
+      "homekit_no_bridge_detected": "Nenhuma das suas zonas inclui uma Internet Bridge v3 ou v3+, o único hardware que este fluxo de emparelhamento consegue detetar. Uma Internet Bridge v2 (GW serial) não é compatível com o HomeKit, e as unidades Smart AC Control emparelham-se separadamente com o seu próprio código HomeKit, e este fluxo não suporta nenhuma delas. Clique em «Enviar» para voltar atrás sem efetuar o emparelhamento."
     }
   }
 }

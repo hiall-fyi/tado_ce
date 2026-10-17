@@ -244,8 +244,10 @@ class TadoHumiditySensor(TadoZoneSensor):
         self._attr_native_value = new_value
 
     def _update_homekit_attributes(self) -> None:
-        """Pin humidity source to cloud (bridge humidity lags; reconciler only flips on cloud failure)."""
-        self._data_source = "cloud"
+        """Report where the value came from: HomeKit when the published cloud humidity is missing, else cloud."""
+        zone = get_zone_state(self.coordinator.data, self._zone_id) or {}
+        cloud = ((zone.get("sensorDataPoints") or {}).get("humidity") or {}).get("percentage")
+        self._data_source = "homekit" if cloud is None and self._attr_native_value is not None else "cloud"
         self._last_homekit_update = None
 
 

@@ -509,7 +509,7 @@ def _extract_max_duration_days(recommendation: str) -> int:
                 try:
                     dur_days = max(dur_days, int(g))
                 except ValueError:
-                    pass
+                    pass  # every _DURATION_RE group is \d+, so int(g) cannot actually fail
                 break
     return dur_days
 

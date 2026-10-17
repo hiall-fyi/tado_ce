@@ -1,13 +1,12 @@
-"""Tado CE API write optimisation: guard, debounce, queue, coalesce.
+"""Tado CE API write optimisation: guard, debounce, queue.
 
-Five primitives the climate / water_heater / switch entities use to
+Four primitives the climate / water_heater / switch entities use to
 keep redundant or rapid-fire calls off the cloud API: `ActionGuard`
 skips calls whose requested state already matches current state,
 `ActionDebouncer` collapses bursts within a per-zone window,
 `DeviceSyncQueue` serialises device-level writes with a configurable
-gap, `RefreshCoalescer` collapses post-write coordinator refreshes
-into one, `ResumeGuard` skips a schedule-resume call for a zone with
-no active overlay. All five are zone-/entity-scoped, none mutate
+gap, `ResumeGuard` skips a schedule-resume call for a zone with
+no active overlay. All four are zone-/entity-scoped, none mutate
 state on their own.
 """
 
@@ -321,90 +320,6 @@ class DeviceSyncQueue:
                 "operation(s) in total",
                 dropped_count,
             )
-
-
-class RefreshCoalescer:
-    """Collapse multiple post-write coordinator refreshes into one debounced call."""
-
-    def __init__(
-        self,
-        coordinator: TadoDataUpdateCoordinator,
-        window: float = 2.0,
-        *,
-        skip_when_fresh: bool = False,
-    ) -> None:
-        """Initialise the coalescer with a window and freshness-skip toggle."""
-        self._coordinator = coordinator
-        self._window: float = window
-        self._pending_timer: asyncio.TimerHandle | None = None
-        self._pending_count: int = 0
-        self._skip_when_fresh: bool = skip_when_fresh
-        self._loop: asyncio.AbstractEventLoop | None = None
-        self._refresh_task: asyncio.Task[None] | None = None
-
-    def _get_loop(self) -> asyncio.AbstractEventLoop:
-        """Return the cached event loop, acquiring it on first call."""
-        if self._loop is None:
-            self._loop = asyncio.get_running_loop()
-        return self._loop
-
-    def schedule_refresh(self, entity_id: str | None = None) -> None:
-        """Schedule a coalesced refresh after the window, skipping when entity is fresh.
-
-        When `skip_when_fresh` is enabled and the entity has had a
-        recent API call, the refresh is dropped entirely. The next
-        scheduled poll picks up the state without an extra request.
-        """
-        if (
-            entity_id
-            and self._skip_when_fresh
-            and self._coordinator.is_entity_fresh(entity_id)
-        ):
-            _LOGGER.debug(
-                "Write Optimiser: %s is still fresh, skipping coalesced "
-                "refresh, next poll will pick it up",
-                entity_id,
-            )
-            return
-
-        self._pending_count += 1
-
-        if self._pending_timer is not None:
-            self._pending_timer.cancel()
-
-        loop = self._get_loop()
-        self._pending_timer = loop.call_later(self._window, self._fire_refresh)
-
-    def _fire_refresh(self) -> None:
-        """Run the coalesced coordinator refresh."""
-        self._pending_count = 0
-        self._pending_timer = None
-        task = asyncio.ensure_future(
-            self._coordinator.async_request_refresh(),
-        )
-        self._refresh_task = task
-        task.add_done_callback(_log_task_exception)
-
-    def cancel(self) -> None:
-        """Cancel any pending coalesced refresh (called during integration unload)."""
-        if self._pending_count > 0:
-            _LOGGER.debug(
-                "Write Optimiser: shutdown cancelled coalesced refresh "
-                "(%d pending entity update(s))",
-                self._pending_count,
-            )
-        if self._pending_timer is not None:
-            self._pending_timer.cancel()
-            self._pending_timer = None
-        if self._refresh_task is not None and not self._refresh_task.done():
-            self._refresh_task.cancel()
-            self._refresh_task = None
-        self._pending_count = 0
-
-    @property
-    def pending_count(self) -> int:
-        """Return the number of writes queued behind the current coalesce window."""
-        return self._pending_count
 
 
 class ResumeGuard:

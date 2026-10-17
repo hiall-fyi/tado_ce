@@ -527,7 +527,7 @@ class TadoACClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdat
             loop = asyncio.get_running_loop()
             self._cloud_verification_handle = loop.call_later(delay, _fire)
         except RuntimeError:
-            pass
+            _LOGGER.debug("climate_ac: no running loop, skipping cloud-verification schedule")
 
     async def async_will_remove_from_hass(self) -> None:
         """Tear down zone-config / external-sensor / HomeKit listeners."""
@@ -1318,6 +1318,8 @@ class TadoACClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdat
             await self.coordinator.async_capture_state(
                 self._zone_id, self._entity_type, "set_fan_mode",
             )
+            if self.coordinator.state_reconciler:
+                self.coordinator.state_reconciler.record_local_write(self._zone_id)
             _LOGGER.debug(
                 "Climate AC: %s set fan mode to %s",
                 self._zone_name, fan_mode,
@@ -1462,6 +1464,8 @@ class TadoACClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdat
             await self.coordinator.async_capture_state(
                 self._zone_id, self._entity_type, "set_swing_mode",
             )
+            if self.coordinator.state_reconciler:
+                self.coordinator.state_reconciler.record_local_write(self._zone_id)
             _LOGGER.debug(
                 "Climate AC: %s set swing %s",
                 self._zone_name, source_label,

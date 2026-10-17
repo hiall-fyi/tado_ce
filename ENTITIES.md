@@ -1,4 +1,4 @@
-# Tado CE — Entity Reference (v4.5.0)
+# Tado CE — Entity Reference (v4.5.1)
 
 A catalogue of every entity Tado CE creates, with the exact `entity_id` you'll see in your install.
 
@@ -34,8 +34,8 @@ The tables below show the slug a **fresh installer** got at each major-version s
 - **Device serial** placeholder `SU1234`. Substitute your TRV / zone serial.
 - **Mobile device** placeholder `{device_name}`. Substitute the device name in your Tado app.
 - **CE column markers:**
-  - `✓` — CE-exclusive, not in HA's official Tado integration.
-  - `⬆` — enhanced version of an HA-official feature.
+  - `✓` — CE-exclusive, not in HA's built-in Tado integration.
+  - `⬆` — enhanced version of a feature the built-in HA integration already has.
   - blank — present in both integrations.
 
 ---
@@ -289,7 +289,7 @@ When `offset_clamped: true` appears, the physical gap between your external sens
 | Early start | ⬆ | Early Start | `switch.lounge_early_start` | `switch.lounge_early_start` |
 | Child lock | | Child Lock (was "{device} Child Lock" in v2.3.1) | `switch.lounge_su1234_child_lock` | `switch.lounge_child_lock` |
 
-HA's official Tado integration exposes early start as a read-only binary sensor; CE provides a controllable switch.
+HA's built-in Tado integration exposes early start as a read-only binary sensor; CE provides a controllable switch.
 
 ---
 
@@ -303,7 +303,7 @@ HA's official Tado integration exposes early start as a read-only binary sensor;
 | Smart boost | ✓ | Smart Boost | `button.lounge_smart_boost` | `button.lounge_smart_boost` |
 | Identify (v4.1.0-beta.3+) | ✓ | Identify | — | `button.lounge_identify` |
 
-Boost replicates the Tado app's boost feature (25°C for 30min). HA's official integration doesn't expose this. Smart Boost is CE-exclusive, using thermal analytics to calculate optimal duration.
+Boost replicates the Tado app's boost feature (25°C for 30min). HA's built-in integration doesn't expose this. Smart Boost is CE-exclusive, using thermal analytics to calculate optimal duration.
 
 The Identify button (added v4.1.0-beta.3) lives on the zone device and uses the `button.{zone}_identify` shape (e.g. `button.lounge_identify`). A zone with more than one TRV gets one button per device, disambiguated by a device-type suffix, so the second resolves as `button.{zone}_identify_{device_type}` (e.g. `button.lounge_identify_va02`). Its slug is pinned, so unlike most entities it stays single-prefixed even on a fresh HA 2026.6+ install (see the note above). It flashes the device's LED locally over HomeKit when the bridge is connected, falling back to the cloud `identify_device` service otherwise.
 
@@ -321,7 +321,7 @@ The doubled-segment slug (`heating_schedule_schedule`) comes from the calendar d
 
 ## Zone Config
 
-Per-zone configuration entities (heat emitter, UFH buffer, adaptive preheat, smart comfort, window type, overlay mode, overlay timer, min/max temp, temp offset, surface offset) **were removed in v3.1.0**. Those settings now live in the Options Flow under **Settings → Tado CE → Configure → Zone Configuration**. Legacy entities are cleaned up automatically on upgrade.
+Per-zone configuration entities (heat emitter, UFH buffer, adaptive preheat, smart comfort, window type, overlay mode, overlay timer, min/max temp, temp offset, surface offset) **were removed in v3.1.0**. Those settings now live in the Options Flow under **Settings → Tado CE → Configure → Zone Configuration**. They are no longer created; any left over from before v3.1.0 can be deleted from Settings → Devices & Services → Entities.
 
 One per-zone config entity was reintroduced in v4.2.0:
 

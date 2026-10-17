@@ -106,7 +106,7 @@ BATTERY_STATE_DISPLAY_MAP: dict[str, str] = {
 }
 
 
-CONNECTION_STATE_ATTR_MAP: dict[bool, str] = {True: "online", False: "offline"}
+CONNECTION_STATE_ATTR_MAP: dict[bool | None, str] = {True: "online", False: "offline", None: "unknown"}
 
 
 # === Generic lookup helper ===
@@ -189,8 +189,8 @@ def format_battery_state(state: str) -> str:
 
 
 def format_connection_state_attr(connected: bool | None) -> str:
-    """Map connectionState.value (bool) to "online" / "offline" for extra_state_attributes."""
-    return CONNECTION_STATE_ATTR_MAP.get(bool(connected) if connected is not None else False, "offline")
+    """Map a parsed connectionState (True/False/None) to "online" / "offline" / "unknown"."""
+    return CONNECTION_STATE_ATTR_MAP[connected]
 
 
 def strip_zone_prefix(text: str, zone_name: str) -> str:

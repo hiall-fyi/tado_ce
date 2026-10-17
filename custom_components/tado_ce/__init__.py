@@ -197,7 +197,7 @@ async def _async_wire_and_start_coordinator(
     if saved and isinstance(saved, dict):
         coordinator._homekit_reads_saved = saved.get("reads_saved", 0)
         coordinator._homekit_writes_saved = saved.get("writes_saved", 0)
-        coordinator._prev_savings_remaining = saved.get("prev_remaining")
+        coordinator._savings_last_reset_seen = saved.get("last_reset_utc")
         _LOGGER.debug(
             "Setup: HomeKit savings loaded, reads=%s, writes=%s",
             coordinator._homekit_reads_saved,
@@ -527,12 +527,11 @@ async def _async_shutdown_coordinator(coordinator: TadoDataUpdateCoordinator) ->
         _LOGGER.debug("Unload: cancelled coordinator refresh handler")
 
     coordinator.action_debouncer.cancel_all()
-    coordinator.refresh_coalescer.cancel()
     await coordinator.cancel_bridge_poll()
     await coordinator.device_sync_queue.shutdown()
     _LOGGER.debug(
         "Unload: cancelled write-optimisation components "
-        "(debouncer, coalescer, bridge poll, device-sync queue)",
+        "(debouncer, bridge poll, device-sync queue)",
     )
 
     if hasattr(coordinator, "insight_history"):

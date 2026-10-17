@@ -456,6 +456,9 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
             merged_hum, hum_source = cloud_humidity, "cloud"
 
         self._attr_current_temperature = merged_temp
+        hcc = self.coordinator.heating_cycle_coordinator
+        if merged_temp is None and hcc is not None:
+            hcc.clear_zone_state(self._zone_id)
         self._temperature_source = temp_source
         self._attr_current_humidity = merged_hum
         self._humidity_source = hum_source
@@ -510,25 +513,24 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
         if not heating_cycle_coordinator:
             return
 
-        _zone_id = self._zone_id
-        _zone_name = self._zone_name
-        _current_temp = self._attr_current_temperature
+        # Current temperature is captured now so the task feeds the value this update saw.
+        self.hass.async_create_task(
+            self._async_feed_heating_cycle(temp, self._attr_current_temperature),
+        )
 
-        async def _safe_heating_cycle_update() -> None:
-            """Fire-and-forget wrapper with error logging."""
-            try:
-                await heating_cycle_coordinator.on_zone_update(
-                    _zone_id, temp, _current_temp,
-                )
-            except (KeyError, TypeError, ValueError):
-                _LOGGER.debug(
-                    "Climate Heating: %s heating-cycle update failed, "
-                    "skipping this tick",
-                    _zone_name,
-                    exc_info=True,
-                )
-
-        self.hass.async_create_task(_safe_heating_cycle_update())
+    async def _async_feed_heating_cycle(self, target: float, current: float | None) -> None:
+        """Feed the heating-cycle coordinator, skipping when there is no room temperature."""
+        heating_cycle_coordinator = self.coordinator.heating_cycle_coordinator
+        if heating_cycle_coordinator is None or current is None:
+            return
+        try:
+            await heating_cycle_coordinator.on_zone_update(self._zone_id, target, current)
+        except (KeyError, TypeError, ValueError):
+            _LOGGER.debug(
+                "Climate Heating: %s heating-cycle update failed, skipping this tick",
+                self._zone_name,
+                exc_info=True,
+            )
 
     def _schedule_cloud_verification(self) -> None:
         """Schedule a coordinator refresh to verify HomeKit write."""
@@ -551,7 +553,7 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
             loop = asyncio.get_running_loop()
             self._cloud_verification_handle = loop.call_later(delay, _fire)
         except RuntimeError:
-            pass
+            _LOGGER.debug("climate_heating: no running loop, skipping cloud-verification schedule")
 
     def _apply_optimistic_or_api_state(
         self,
@@ -924,11 +926,7 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
             # Unstamped, a replayed bridge target overwrites this write.
             if self.coordinator.state_reconciler:
                 self.coordinator.state_reconciler.record_local_write(self._zone_id)
-            heating_cycle_coordinator = self.coordinator.heating_cycle_coordinator
-            if heating_cycle_coordinator:
-                await heating_cycle_coordinator.on_zone_update(
-                    self._zone_id, temperature, self._attr_current_temperature or temperature,
-                )
+            await self._async_feed_heating_cycle(temperature, self._attr_current_temperature)
             # Schedule cloud verification to confirm write reached Tado server
             self._schedule_cloud_verification()
             return
@@ -950,11 +948,7 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
                 raise
             return
 
-        heating_cycle_coordinator = self.coordinator.heating_cycle_coordinator
-        if heating_cycle_coordinator:
-            await heating_cycle_coordinator.on_zone_update(
-                self._zone_id, temperature, self._attr_current_temperature or temperature,
-            )
+        await self._async_feed_heating_cycle(temperature, self._attr_current_temperature)
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""
@@ -1089,9 +1083,18 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
         return local_success
 
     def _resolve_heat_target(self) -> float:
-        """Pick the target for a mode-only HEAT request; a Manual-OFF frost target doesn't count as the user's inside HEAT."""
+        """Pick the HEAT target; a Manual-OFF frost target resolves to the cached schedule, else 20."""
         if self._attr_hvac_mode == HVACMode.OFF and self._overlay_type == "MANUAL":
-            return 20.0
+            scheduled = get_current_schedule_target(
+                self._zone_id, data_loader=self.coordinator.data_loader,
+            )
+            if scheduled is None:
+                _LOGGER.debug(
+                    "Climate Heating: %s has no usable schedule target, HEAT from manual off uses 20°C",
+                    self._zone_name,
+                )
+                return 20.0
+            return scheduled
         return self._attr_target_temperature or 20.0
 
     async def _apply_optimistic_hvac_mode_write(

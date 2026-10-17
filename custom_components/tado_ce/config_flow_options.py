@@ -85,6 +85,7 @@ from .const import (
     ZONE_TEMP_MIN_FLOOR,
     is_climate_zone,
 )
+from .helpers import live_zones
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry, ConfigFlowResult
@@ -115,7 +116,7 @@ RESET_DEFAULTS: dict[str, dict[str, Any]] = {
         "mold_risk_window_type": "double_pane",
         "smart_comfort_history_days": 7,
     },
-    "external_sensors": {
+    "external_data_sources": {
         "outdoor_temp_entity": "",
         "boiler_flow_temp_entity": "",
     },
@@ -170,7 +171,7 @@ RESET_DEFAULTS: dict[str, dict[str, Any]] = {
 _RESET_SCOPE_OPTIONS = [
     "everything",
     "smart_comfort",
-    "external_sensors",
+    "external_data_sources",
     "comfort_safety",
     "thermal_analytics",
     "weather_compensation",
@@ -374,11 +375,11 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                 {"collapsed": True},
             )
 
-        # --- External Sensors (always visible) ---
+        # --- External Data Sources (always visible) ---
         # Outdoor data is a cross-feature input (window detection, Smart Comfort,
         # mold risk, Air Comfort AQI), so its bindings live in a neutral section,
         # not under whichever feature consumes them.
-        sections[vol.Required("external_sensors")] = data_entry_flow.section(
+        sections[vol.Required("external_data_sources")] = data_entry_flow.section(
             vol.Schema(
                 {
                     vol.Optional(
@@ -612,7 +613,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         processed_input: dict[str, Any] = {}
 
         self._process_smart_comfort(user_input, processed_input)
-        self._process_external_sensors(user_input, processed_input)
+        self._process_external_data_sources(user_input, processed_input)
         self._process_polling_api(user_input, processed_input, errors)
 
         # Flatten comfort_safety section
@@ -908,10 +909,10 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         processed["smart_comfort_mode"] = section.get("smart_comfort_mode")
         processed["mold_risk_window_type"] = section.get("mold_risk_window_type")
 
-    def _process_external_sensors(
+    def _process_external_data_sources(
         self, user_input: dict[str, Any], processed: dict[str, Any],
     ) -> None:
-        """Flatten the External Sensors section (outdoor temp + boiler flow bindings).
+        """Flatten the External Data Sources section (outdoor temp + boiler flow bindings).
 
         use_outdoor_temp_entity has a schema default, so HA's own form
         validation always fills the toggle key in before this runs; the
@@ -922,10 +923,10 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         what lets an x-clear (an omitted key) actually reach processed as
         empty, not the old value.
         """
-        if "external_sensors" not in user_input:
+        if "external_data_sources" not in user_input:
             return
-        section = user_input["external_sensors"]
-        _LOGGER.debug("external_sensors section submitted: %s", section)
+        section = user_input["external_data_sources"]
+        _LOGGER.debug("external_data_sources section submitted: %s", section)
         existing = self.config_entry.options
         for toggle_key, entity_key in (
             ("use_outdoor_temp_entity", "outdoor_temp_entity"),
@@ -1075,7 +1076,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         # Build zone options (exclude HOT_WATER, external sensors are heating/AC only)
         zone_options = [
             {"value": str(z.get("id")), "label": z.get("name", f"Zone {z.get('id')}")}
-            for z in zones_info
+            for z in live_zones(zones_info, coordinator.data)
             if is_climate_zone(z.get("type", ""))
         ]
 
@@ -1143,7 +1144,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
 
         if "sensor_section" in user_input:
             s = user_input["sensor_section"]
-            # Same dead branch as _process_external_sensors' outdoor_temp_entity:
+            # Same dead branch as _process_external_data_sources' outdoor_temp_entity:
             # the toggle's schema default means HA already filled it in.
             submitted_temp = (s.get("external_temp_sensor") or "").strip()
             if "use_external_temp" in s:

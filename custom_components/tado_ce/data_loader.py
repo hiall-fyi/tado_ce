@@ -237,8 +237,18 @@ class DataLoader:
         return self.get_cached("mobile_devices")  # type: ignore[return-value]
 
     def load_ratelimit_file(self) -> dict[str, Any] | None:
-        """Return cached rate-limit snapshot, or None if unloaded."""
-        return self.get_cached("ratelimit")  # type: ignore[return-value]
+        """Return the rate-limit snapshot with the newest parsed remaining and limit laid over it."""
+        snapshot = self.get_cached("ratelimit")
+        if not isinstance(snapshot, dict):
+            return None
+        live = self.get_cached("ratelimit_live")
+        if not isinstance(live, dict):
+            return snapshot
+        overlay = {
+            key: value for key in ("remaining", "limit")
+            if isinstance(value := live.get(key), int) and not isinstance(value, bool)
+        }
+        return {**snapshot, **overlay} if overlay else snapshot
 
     def load_schedules_file(self) -> dict[str, Any] | None:
         """Return cached schedule data for every zone, or None if unloaded."""

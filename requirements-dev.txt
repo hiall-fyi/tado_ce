@@ -6,6 +6,9 @@
 # would silently check against tool defaults instead. Home Assistant is here
 # because the mypy settings are tuned against its type stubs.
 homeassistant==2026.9.4
+# Runtime dependency from manifest.json, pinned to the lowest version it allows.
+# Dependabot skips it; change it together with manifest.json.
+aiohomekit==3.2.20
 ruff==0.16.10
 mypy==2.3.1
 

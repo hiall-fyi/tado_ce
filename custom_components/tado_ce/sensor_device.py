@@ -20,7 +20,7 @@ from .format_helpers import (
 from .format_helpers import (
     strip_zone_prefix as _strip_zone_prefix,
 )
-from .helpers import PerEntityAvailabilityMixin, mask_serial
+from .helpers import PerEntityAvailabilityMixin, connection_value_to_bool, mask_serial, offline_since_date
 from .insights_device import (
     calculate_battery_recommendation,
 )
@@ -71,7 +71,7 @@ class TadoBatterySensor(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataU
             self._attr_translation_placeholders = {"device_suffix": suffix}
 
         self._firmware = device.get("currentFwVersion")
-        self._connection_state = (device.get("connectionState") or {}).get("value")
+        self._connection_state = connection_value_to_bool(device.get("connectionState"))
         self._connection_timestamp = (device.get("connectionState") or {}).get("timestamp")
         self._recommendation: str = ""
 
@@ -116,13 +116,14 @@ class TadoBatterySensor(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataU
                             self._attr_native_value = _format_battery_state(raw_battery)
                             self._firmware = device.get("currentFwVersion")
                             conn = device.get("connectionState") or {}
-                            self._connection_state = conn.get("value")
+                            self._connection_state = connection_value_to_bool(conn)
                             self._connection_timestamp = conn.get("timestamp")
 
                             self._recommendation = calculate_battery_recommendation(
                                 battery_state=raw_battery,
                                 zone_name=self._zone_name,
                                 device_type=self._device_type,
+                                offline_since=offline_since_date(conn),
                             )
 
                             self._data_present = True

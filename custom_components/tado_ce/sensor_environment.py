@@ -488,15 +488,6 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
             else:
                 self._update_ac(config_manager)
 
-            self.coordinator.publish_entity_data(
-                self._zone_id,
-                ENTITY_DATA_CONDENSATION_RISK,
-                {
-                    "state": self._attr_native_value,
-                    "recommendation": self._recommendation,
-                },
-            )
-
         except Exception as e:
             _LOGGER.debug(
                 "Environment Sensor: zone %s condensation risk update "
@@ -504,6 +495,16 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
                 self._zone_id, e,
             )
             self._data_present = False
+        finally:
+            self._publish_condensation()
+
+    def _publish_condensation(self) -> None:
+        """Publish the current risk, or an unavailable state that consumers ignore."""
+        if self._data_present:
+            payload = {"state": self._attr_native_value, "recommendation": self._recommendation}
+        else:
+            payload = {"state": "unavailable", "recommendation": ""}
+        self.coordinator.publish_entity_data(self._zone_id, ENTITY_DATA_CONDENSATION_RISK, payload)
 
     @callback
     def _update_heating(self, sensor_data: dict[str, Any], config_manager: ConfigurationManager) -> None:
@@ -1000,6 +1001,8 @@ class TadoComfortLevelSensor(TadoZoneSensor):
 
             if self._humidity is not None:
                 self._dew_point = _calculate_dew_point(self._temperature, self._humidity)
+            else:
+                self._dew_point = None
 
             # Compute Heat Index (warm side only)
             if (

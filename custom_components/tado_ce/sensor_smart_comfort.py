@@ -672,7 +672,7 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
             )
             self._data_present = False
         finally:
-            # (used by TadoPreheatNowSensor and insight collector)
+            # (read by TadoPreheatNowSensor and AdaptivePreheatManager)
             if self._data_present:
                 self.coordinator.publish_entity_data(
                     self._zone_id,
@@ -689,6 +689,10 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
                         "predicted_crossover_time": self._predicted_crossover_time,
                         "is_cooling_prediction": self._is_cooling_prediction,
                     },
+                )
+            else:
+                self.coordinator.publish_entity_data(
+                    self._zone_id, ENTITY_DATA_PREHEAT_ADVISOR, {"state": "unavailable"},
                 )
 
 

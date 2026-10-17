@@ -38,7 +38,7 @@ from .const import (
     SERVICE_TURN_OFF_ALL_ZONES,
     is_climate_zone,
 )
-from .helpers import async_trigger_immediate_refresh, build_timer_termination, mask_serial
+from .helpers import async_trigger_immediate_refresh, build_timer_termination, live_zones, mask_serial
 from .services_helpers import run_service_call
 from .write_optimizer import ResumeGuard
 
@@ -412,7 +412,7 @@ def _sanitize_termination_for_request(
             try:
                 sanitized["durationInSeconds"] = int(duration)
             except (TypeError, ValueError):
-                pass
+                _LOGGER.debug("services: non-numeric captured termination duration %r, dropping", duration)
 
     return sanitized
 
@@ -814,7 +814,7 @@ async def handle_turn_off_all_zones(hass: HomeAssistant, call: ServiceCall) -> N
 
     target_zones: list[tuple[str, str]] = [
         (str(zone["id"]), zone["type"])
-        for zone in zones_info
+        for zone in live_zones(zones_info, coord.data)
         if is_climate_zone(zone.get("type") or "")
     ]
     if not target_zones:

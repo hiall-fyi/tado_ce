@@ -25,7 +25,7 @@ from .const import (
     DOMAIN,
     QUOTA_BOOTSTRAP_CALLS,
 )
-from .helpers import parse_iso_datetime
+from .helpers import parse_iso_datetime, predicted_next_reset
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -89,19 +89,15 @@ def should_block_manual_action(
 
     last_reset_utc = ratelimit_data.get("last_reset_utc")
     if last_reset_utc:
-        try:
-            last_reset = parse_iso_datetime(last_reset_utc)
-            next_reset = last_reset + timedelta(hours=24)
-            now_utc = dt_util.utcnow()
-
-            if now_utc >= next_reset:
-                return False, ""
-        except (ValueError, TypeError) as e:
+        next_reset = predicted_next_reset(last_reset_utc)
+        if next_reset is None:
             _LOGGER.debug(
-                "Rate Limit: could not parse last_reset_utc (%s), "
+                "Rate Limit: could not parse last_reset_utc (%r), "
                 "treating reset time as unknown",
-                e,
+                last_reset_utc,
             )
+        elif dt_util.utcnow() >= next_reset:
+            return False, ""
     else:
         # No reset time known yet (fresh install / stale snapshot),
         # so let manual actions through so the first API response
@@ -404,6 +400,20 @@ async def async_update_ratelimit_reset_time(
         new_reset = detected_reset.strftime("%Y-%m-%dT%H:%M:%SZ")
         if data.get("last_reset_utc") == new_reset:
             return
+
+        # History can hold yesterday's reset too; an older one would mark today's as already passed.
+        try:
+            is_not_newer = detected_reset <= parse_iso_datetime(data["last_reset_utc"])
+        except (KeyError, ValueError, TypeError) as e:
+            # Missing or unreadable recorded reset: replace it as before
+            _LOGGER.debug("Rate Limit: recorded reset time not usable (%s), replacing it", e)
+        else:
+            if is_not_newer:
+                _LOGGER.debug(
+                    "Rate Limit: history reset %s UTC is not newer than the recorded one, keeping it",
+                    detected_reset.strftime("%Y-%m-%d %H:%M"),
+                )
+                return
 
         data["last_reset_utc"] = new_reset
         _recalculate_reset_fields(data, detected_reset)
