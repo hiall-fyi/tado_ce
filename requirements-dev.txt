@@ -5,21 +5,21 @@
 # live in pyproject.toml, which is not part of this repository, so a CI runner
 # would silently check against tool defaults instead. Home Assistant is here
 # because the mypy settings are tuned against its type stubs.
-homeassistant==2026.10.1
+homeassistant==2026.10.4
 # Runtime dependency from manifest.json, pinned to the lowest version it allows.
 # Dependabot skips it; change it together with manifest.json.
 aiohomekit==3.2.20
-ruff==0.17.0
-mypy==2.4.0
+ruff==0.17.3
+mypy==2.4.1
 
 # The test suite is not part of this repository either; these are here so a
 # fresh clone can set up the same local environment.
-pytest==9.1.1
-pytest-asyncio==1.4.0
-pytest-homeassistant-custom-component==0.13.372
-hypothesis==6.169.1
+pytest==9.2.0
+pytest-asyncio==1.4.1
+pytest-homeassistant-custom-component==0.13.375
+hypothesis==6.170.13
 freezegun==1.5.5
 asyncssh==2.24.1
 
 # Mutation testing (pyproject.toml [tool.mutmut]).
-mutmut==3.8.0
+mutmut==3.8.1
