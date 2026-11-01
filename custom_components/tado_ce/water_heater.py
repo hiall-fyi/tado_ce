@@ -99,6 +99,9 @@ class TadoWaterHeater(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpd
     """Tado CE Water Heater Entity."""
 
     _attr_has_entity_name = True
+    _write_timing_zone_kind = "hot_water"
+    # Hot water has no HomeKit write path, every write goes through the cloud API.
+    _last_write_source = "cloud"
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, home_id: str) -> None:
         super().__init__(coordinator)

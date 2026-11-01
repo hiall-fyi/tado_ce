@@ -41,10 +41,6 @@ from .const import (
     DEVICE_SYNC_DELAY_DEFAULT,
     DEVICE_SYNC_DELAY_MAX,
     DEVICE_SYNC_DELAY_MIN,
-    DISPLAY_TEMP_SOURCE_MAP,
-    DISPLAY_TEMP_SOURCE_OPTIONS,
-    DISPLAY_TEMP_SOURCE_REVERSE_MAP,
-    HEATING_TYPE_OPTIONS,
     HEATING_TYPE_RADIATOR,
     MAX_CUSTOM_INTERVAL,
     MAX_HOMEKIT_CLOUD_SYNC_MINUTES,
@@ -56,20 +52,15 @@ from .const import (
     MIN_PRESENCE_MIN_REFRESH_MINUTES,
     MIN_WEATHER_MIN_REFRESH_MINUTES,
     OVERLAY_MODE_DEFAULT,
-    OVERLAY_MODE_DEFAULT_DISPLAY,
-    OVERLAY_MODE_MAP,
-    OVERLAY_MODE_OPTIONS,
-    OVERLAY_MODE_REVERSE_MAP,
+    OVERLAY_MODE_KEYS,
     SMART_ACTIONS_DEBOUNCE_DEFAULT,
     SMART_ACTIONS_DEBOUNCE_MAX,
     SMART_ACTIONS_DEBOUNCE_MIN,
-    SMART_COMFORT_MODE_OPTIONS,
     SURFACE_TEMP_OFFSET_MAX,
     SURFACE_TEMP_OFFSET_MIN,
     SURFACE_TEMP_OFFSET_STEP,
     SVC_OFFSET_MIN_CHANGE_MAX,
     SVC_OFFSET_MIN_CHANGE_MIN,
-    TIMER_DURATION_DEFAULT,
     TIMER_DURATION_MAX,
     TIMER_DURATION_MIN,
     TIMER_DURATION_OPTIONS,
@@ -81,16 +72,31 @@ from .const import (
     WINDOW_SENSITIVITY_MAP,
     WINDOW_SENSITIVITY_OPTIONS,
     WINDOW_SENSITIVITY_REVERSE_MAP,
+    WRITE_ROUTE_AUTO,
+    WRITE_ROUTE_CLOUD,
     ZONE_TEMP_MAX_CEILING,
     ZONE_TEMP_MIN_FLOOR,
     is_climate_zone,
 )
-from .helpers import live_zones
+from .helpers import live_zones, normalise_timer_minutes
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry, ConfigFlowResult
 
 _LOGGER = logging.getLogger(__name__)
+
+# Zone form select option keys; each key is also the stored value (overlay_mode stores the uppercase).
+_DISPLAY_TEMP_SOURCE_KEYS = ("auto", "homekit", "cloud")
+_HEATING_TYPE_KEYS = (HEATING_TYPE_RADIATOR, "ufh")
+_SMART_COMFORT_MODE_KEYS = ("none", "light", "moderate", "aggressive")
+_WRITE_ROUTE_KEYS = (WRITE_ROUTE_AUTO, WRITE_ROUTE_CLOUD)
+
+
+def _pick_option(raw: Any, keys: tuple[str, ...], default: str) -> str | None:
+    """Return raw when it is a known option key, the default when not, None when absent."""
+    if raw is None:
+        return None
+    return raw if raw in keys else default
 
 # All feature toggle keys (used by reset "everything")
 _ALL_TOGGLE_KEYS = (
@@ -106,6 +112,7 @@ _ALL_TOGGLE_KEYS = (
     "offset_enabled",
     "zone_configuration_enabled",
     "heating_circuit_enabled",
+    "write_timing_enabled",
 )
 
 # Per-scope default values for Reset to Defaults
@@ -293,6 +300,10 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                             vol.Optional(
                                 "zone_configuration_enabled",
                                 default=opt("zone_configuration_enabled", False),
+                            ): BooleanSelector(),
+                            vol.Optional(
+                                "write_timing_enabled",
+                                default=opt("write_timing_enabled", False),
                             ): BooleanSelector(),
                         },
                     ),
@@ -517,7 +528,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         # Hot water timer default duration (service-layer default, affects
         # the water_heater.turn_on and set_water_heater_timer service when
         # no explicit duration is given).
-        polling_schema_fields[vol.Optional("hot_water_timer_duration", default=opt("hot_water_timer_duration", DEFAULT_HOT_WATER_TIMER_DURATION))] = NumberSelector(NumberSelectorConfig(min=1, max=MAX_CUSTOM_INTERVAL, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min"))
+        polling_schema_fields[vol.Optional("hot_water_timer_duration", default=normalise_timer_minutes(opt("hot_water_timer_duration", DEFAULT_HOT_WATER_TIMER_DURATION)))] = NumberSelector(NumberSelectorConfig(min=TIMER_DURATION_MIN, max=TIMER_DURATION_MAX, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min"))
 
         sections[vol.Required("polling_api")] = data_entry_flow.section(
             vol.Schema(polling_schema_fields),
@@ -1102,7 +1113,11 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         )
 
     def _process_zone_sensor_input(
-        self, user_input: dict[str, Any], existing_config: dict[str, Any] | None = None,
+        self,
+        user_input: dict[str, Any],
+        existing_config: dict[str, Any] | None = None,
+        *,
+        is_heating: bool = False,
     ) -> dict[str, Any]:
         """Flatten and process zone sensor config form sections into key-value pairs.
 
@@ -1116,22 +1131,17 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         if "heating_section" in user_input:
             s = user_input["heating_section"]
             raw = s.get("heating_type")
-            all_values["heating_type"] = raw.lower() if raw is not None else None
+            all_values["heating_type"] = _pick_option(raw, _HEATING_TYPE_KEYS, HEATING_TYPE_RADIATOR)
             raw = s.get("ufh_buffer_minutes")
             all_values["ufh_buffer_minutes"] = int(raw) if raw is not None else None
             all_values["adaptive_preheat"] = s.get("adaptive_preheat")
 
         if "comfort_section" in user_input:
             s = user_input["comfort_section"]
-            raw_mode = s.get("smart_comfort_mode")
-            if raw_mode is None:
-                all_values["smart_comfort_mode"] = None
-            elif raw_mode == "None":
-                # "None" (capital N) is the sentinel meaning "no comfort mode",
-                # distinct from an absent key meaning "cleared".
-                all_values["smart_comfort_mode"] = "none"
-            else:
-                all_values["smart_comfort_mode"] = raw_mode.lower()
+            # "none" means no comfort mode; an absent key means cleared.
+            all_values["smart_comfort_mode"] = _pick_option(
+                s.get("smart_comfort_mode"), _SMART_COMFORT_MODE_KEYS, "none",
+            )
             all_values["window_type"] = s.get("window_type")
             raw = s.get("window_predicted_mode")
             all_values["window_predicted_mode"] = (
@@ -1171,9 +1181,9 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         if "overlay_section" in user_input:
             s = user_input["overlay_section"]
             raw = s.get("overlay_mode")
-            all_values["overlay_mode"] = (
-                OVERLAY_MODE_MAP.get(raw, OVERLAY_MODE_DEFAULT) if raw is not None else None
-            )
+            picked = _pick_option(raw, OVERLAY_MODE_KEYS, OVERLAY_MODE_DEFAULT.lower())
+            # The option keys are the lowercase of the stored API values.
+            all_values["overlay_mode"] = picked.upper() if picked is not None else None
             raw = s.get("timer_duration")
             if raw is None:
                 all_values["timer_duration"] = None
@@ -1182,6 +1192,10 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                 all_values["timer_duration"] = max(
                     TIMER_DURATION_MIN, min(raw_timer, TIMER_DURATION_MAX),
                 )
+            # Only the heating form carries this field, so a missing key there means it was cleared.
+            if is_heating:
+                raw = s.get("write_route")
+                all_values["write_route"] = _pick_option(raw, _WRITE_ROUTE_KEYS, WRITE_ROUTE_AUTO)
 
         if "temperature_section" in user_input:
             s = user_input["temperature_section"]
@@ -1210,9 +1224,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                 max(SURFACE_TEMP_OFFSET_MIN, min(float(raw), SURFACE_TEMP_OFFSET_MAX)) if raw is not None else None
             )
             raw = s.get("display_temp_source")
-            all_values["display_temp_source"] = (
-                DISPLAY_TEMP_SOURCE_MAP.get(raw, "auto") if raw is not None else None
-            )
+            all_values["display_temp_source"] = _pick_option(raw, _DISPLAY_TEMP_SOURCE_KEYS, "auto")
 
         return all_values
 
@@ -1246,6 +1258,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             all_values = self._process_zone_sensor_input(
                 user_input, zone_config_manager.get_zone_config(zone_id),
+                is_heating=zone_type == "HEATING",
             )
 
             # SVC-active + sensor clear inline validation.
@@ -1270,6 +1283,13 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                     "window_type": zone_config_manager.get_effective_window_type(
                         zone_id, coordinator.config_manager,
                     ),
+                    "overlay_mode": zone_config_manager.get_effective_overlay_mode(
+                        zone_id, coordinator.overlay_mode,
+                    ),
+                    "timer_duration": zone_config_manager.get_effective_timer_duration(
+                        zone_id, coordinator.timer_duration,
+                    ),
+                    "write_route": zone_config_manager.get_write_route(zone_id),
                 }
                 if zone_type == "AIR_CONDITIONING":
                     existing_display["min_temp"] = zone_config_manager.get_effective_min_temp(
@@ -1293,17 +1313,15 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         config = zone_config_manager.get_zone_config(zone_id)
 
         # Current values with display-friendly transforms
-        cur_heating = config.get("heating_type", HEATING_TYPE_RADIATOR).capitalize()
-        if cur_heating == "Ufh":
-            cur_heating = "UFH"
+        cur_heating = _pick_option(
+            config.get("heating_type", HEATING_TYPE_RADIATOR), _HEATING_TYPE_KEYS, HEATING_TYPE_RADIATOR,
+        )
         cur_ufh_buffer = config.get("ufh_buffer_minutes", 30)
         cur_adaptive = config.get("adaptive_preheat", "off")
         # Handle legacy bool values from pre-migration configs
         if isinstance(cur_adaptive, bool):
             cur_adaptive = "active" if cur_adaptive else "off"
-        cur_comfort = config.get("smart_comfort_mode", "none").capitalize()
-        if cur_comfort == "None":
-            cur_comfort = "None"
+        cur_comfort = _pick_option(config.get("smart_comfort_mode", "none"), _SMART_COMFORT_MODE_KEYS, "none")
         cur_window_type = zone_config_manager.get_effective_window_type(
             zone_id, coordinator.config_manager,
         )
@@ -1319,13 +1337,15 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         cur_svc_offset_min_change = config.get("svc_offset_min_change", 0.5)
         cur_use_ext_temp = bool(cur_temp_sensor)
         cur_use_ext_humidity = bool(cur_humidity_sensor)
-        cur_overlay = OVERLAY_MODE_REVERSE_MAP.get(
-            config.get("overlay_mode", OVERLAY_MODE_DEFAULT), OVERLAY_MODE_DEFAULT_DISPLAY,
+        cur_overlay = _pick_option(
+            str(zone_config_manager.get_effective_overlay_mode(zone_id, coordinator.overlay_mode)).lower(),
+            OVERLAY_MODE_KEYS, OVERLAY_MODE_DEFAULT.lower(),
         )
-        cur_display_temp_source = DISPLAY_TEMP_SOURCE_REVERSE_MAP.get(
-            config.get("display_temp_source", "auto"), "Automatic",
+        cur_write_route = zone_config_manager.get_write_route(zone_id)
+        cur_display_temp_source = _pick_option(
+            config.get("display_temp_source", "auto"), _DISPLAY_TEMP_SOURCE_KEYS, "auto",
         )
-        cur_timer = str(config.get("timer_duration", TIMER_DURATION_DEFAULT))
+        cur_timer = str(zone_config_manager.get_effective_timer_duration(zone_id, coordinator.timer_duration))
         if zone_type == "AIR_CONDITIONING":
             cur_min_temp = zone_config_manager.get_effective_min_temp(zone_id, zone_capabilities)
             cur_max_temp = zone_config_manager.get_effective_max_temp(zone_id, zone_capabilities)
@@ -1355,6 +1375,19 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                         unit_of_measurement="°C",
                     ),
                 )
+
+        # Built separately like svc_fields; heating zones only (AC and hot water never take HomeKit overlay writes).
+        route_fields: dict[Any, Any] = {}
+        if zone_type == "HEATING":
+            route_fields[vol.Optional("write_route", description={"suggested_value": cur_write_route})] = (
+                SelectSelector(
+                    SelectSelectorConfig(
+                        options=list(_WRITE_ROUTE_KEYS),
+                        mode=SelectSelectorMode.DROPDOWN,
+                        translation_key="zone_write_route",
+                    ),
+                )
+            )
 
         return self.async_show_form(
             step_id="zone_sensor_config",
@@ -1397,8 +1430,9 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                                     "display_temp_source", description={"suggested_value": cur_display_temp_source},
                                 ): SelectSelector(
                                     SelectSelectorConfig(
-                                        options=DISPLAY_TEMP_SOURCE_OPTIONS,
+                                        options=list(_DISPLAY_TEMP_SOURCE_KEYS),
                                         mode=SelectSelectorMode.DROPDOWN,
+                                        translation_key="zone_display_temp_source",
                                     ),
                                 ),
                             },
@@ -1413,8 +1447,9 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                                     "heating_type", description={"suggested_value": cur_heating},
                                 ): SelectSelector(
                                     SelectSelectorConfig(
-                                        options=HEATING_TYPE_OPTIONS,
+                                        options=list(_HEATING_TYPE_KEYS),
                                         mode=SelectSelectorMode.DROPDOWN,
+                                        translation_key="zone_heating_type",
                                     ),
                                 ),
                                 vol.Optional(
@@ -1480,8 +1515,9 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                                     "smart_comfort_mode", description={"suggested_value": cur_comfort},
                                 ): SelectSelector(
                                     SelectSelectorConfig(
-                                        options=SMART_COMFORT_MODE_OPTIONS,
+                                        options=list(_SMART_COMFORT_MODE_KEYS),
                                         mode=SelectSelectorMode.DROPDOWN,
+                                        translation_key="smart_comfort_mode",
                                     ),
                                 ),
                                 vol.Optional(
@@ -1522,8 +1558,9 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                                     "overlay_mode", description={"suggested_value": cur_overlay},
                                 ): SelectSelector(
                                     SelectSelectorConfig(
-                                        options=OVERLAY_MODE_OPTIONS,
+                                        options=list(OVERLAY_MODE_KEYS),
                                         mode=SelectSelectorMode.DROPDOWN,
+                                        translation_key="zone_overlay_mode",
                                     ),
                                 ),
                                 vol.Optional(
@@ -1534,6 +1571,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                                         mode=SelectSelectorMode.DROPDOWN,
                                     ),
                                 ),
+                                **route_fields,
                             },
                         ),
                         {"collapsed": True},

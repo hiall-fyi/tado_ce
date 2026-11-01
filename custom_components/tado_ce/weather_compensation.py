@@ -289,6 +289,7 @@ def evaluate(
     )
 
     # --- Step 1: outdoor temp availability ---
+    used_fallback = False
     if outdoor_temp_raw is None:
         # Grace period: use last known smoothed value if available and fresh
         if (
@@ -297,17 +298,21 @@ def evaluate(
             and (now_mono - state.last_outdoor_reading_time) <= _OUTDOOR_TEMP_GRACE_SECONDS
         ):
             outdoor_temp_raw = state.ema_outdoor_temp
+            used_fallback = True
         elif state.ema_outdoor_temp is not None and state.last_outdoor_reading_time == 0.0:
-            # First poll after restart: persisted EMA available, no timing info
+            # First poll after restart: the grace starts here, once
             outdoor_temp_raw = state.ema_outdoor_temp
+            state.last_outdoor_reading_time = now_mono
+            used_fallback = True
         else:
             state.status = "paused"
             base.status = "paused"
             return base
 
-    # --- Step 2: record the raw reading ---
-    state.last_raw_outdoor_temp = outdoor_temp_raw
-    state.last_outdoor_reading_time = now_mono
+    # --- Step 2: record the raw reading (a fallback is not a reading) ---
+    if not used_fallback:
+        state.last_raw_outdoor_temp = outdoor_temp_raw
+        state.last_outdoor_reading_time = now_mono
 
     # --- Step 3: smooth outdoor temp ---
     smoothed = smooth_outdoor_temp(config, state, outdoor_temp_raw, poll_interval_minutes)

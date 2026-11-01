@@ -18,6 +18,7 @@ from .const import (
     SERVICE_ACTIVATE_OPEN_WINDOW,
     SERVICE_ADD_METER_READING,
     SERVICE_DEACTIVATE_OPEN_WINDOW,
+    SERVICE_GET_FLOW_TEMPERATURE_SETTINGS,
     SERVICE_GET_TEMP_OFFSET,
     SERVICE_IDENTIFY_DEVICE,
     SERVICE_REFRESH,
@@ -207,6 +208,9 @@ async def _async_wire_and_start_coordinator(
         _LOGGER.debug(
             "Setup: HomeKit savings, no persisted data, starting fresh",
         )
+
+    # Loads the saved write timing counters when the option is on, deletes them when it is off.
+    await coordinator.write_timing.async_load()
 
     await coordinator.async_config_entry_first_refresh()
 
@@ -558,6 +562,7 @@ def _unregister_all_services(hass: HomeAssistant) -> None:
         SERVICE_RESUME_SCHEDULE,
         SERVICE_SET_TEMP_OFFSET,
         SERVICE_GET_TEMP_OFFSET,
+        SERVICE_GET_FLOW_TEMPERATURE_SETTINGS,
         SERVICE_ADD_METER_READING,
         SERVICE_REFRESH,
         SERVICE_IDENTIFY_DEVICE,
@@ -615,11 +620,14 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
         async_dismiss_homekit_pairing_invalid_issue,
         async_dismiss_rate_limit_issue,
     )
+    from .write_timing import async_remove_saved_counts
 
     home_id = entry.data.get("home_id")
     async_dismiss_homekit_pairing_invalid_issue(hass, home_id)
     async_dismiss_rate_limit_issue(hass, home_id)
     async_dismiss_auth_issue(hass, home_id)
+    # Last, so a failed delete cannot skip the dismissals above.
+    await async_remove_saved_counts(hass, home_id)
 
 
 async def async_remove_config_entry_device(

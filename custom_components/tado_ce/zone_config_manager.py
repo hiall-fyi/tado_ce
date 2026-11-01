@@ -6,7 +6,15 @@ from contextlib import suppress
 import logging
 from typing import TYPE_CHECKING, Any
 
-from .const import DEFAULT_WINDOW_TYPE, DEFAULT_ZONE_CONFIG, OVERLAY_MODE_DEFAULT, WINDOW_U_VALUES
+from .const import (
+    DEFAULT_WINDOW_TYPE,
+    DEFAULT_ZONE_CONFIG,
+    OVERLAY_MODE_DEFAULT,
+    TIMER_DURATION_DEFAULT,
+    WINDOW_U_VALUES,
+    WRITE_ROUTE_AUTO,
+    WRITE_ROUTE_CLOUD,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -231,6 +239,23 @@ class ZoneConfigManager:
                 )
             return window_type
         return config_manager.get_mold_risk_window_type()
+
+    def get_effective_overlay_mode(self, zone_id: str, global_mode: str | None) -> str:
+        """Resolve the zone's overlay mode: explicit per-zone value, else the live hub setting."""
+        if self.has_zone_override(zone_id, "overlay_mode"):
+            return str(self.get_zone_value(zone_id, "overlay_mode", OVERLAY_MODE_DEFAULT))
+        return global_mode or OVERLAY_MODE_DEFAULT
+
+    def get_write_route(self, zone_id: str) -> str:
+        """Return the zone's write route, falling back to automatic for a missing or unknown value."""
+        route = self.get_zone_value(zone_id, "write_route", WRITE_ROUTE_AUTO)
+        return route if route in (WRITE_ROUTE_AUTO, WRITE_ROUTE_CLOUD) else WRITE_ROUTE_AUTO
+
+    def get_effective_timer_duration(self, zone_id: str, global_minutes: int | None) -> int:
+        """Resolve the zone's timer minutes: explicit per-zone value, else the live hub setting."""
+        if self.has_zone_override(zone_id, "timer_duration"):
+            return int(self.get_zone_value(zone_id, "timer_duration", TIMER_DURATION_DEFAULT))
+        return int(global_minutes or TIMER_DURATION_DEFAULT)
 
     def get_window_u_value(self, zone_id: str, config_manager: ConfigurationManager) -> float:
         """Resolve the U-value (W/m²K) for the zone's effective window type."""

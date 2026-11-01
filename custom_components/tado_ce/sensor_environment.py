@@ -9,7 +9,7 @@ from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorStateClass,
 )
-from homeassistant.const import UnitOfDensity, UnitOfTemperature
+from homeassistant.const import UnitOfTemperature
 from homeassistant.core import callback
 from homeassistant.util import dt as dt_util
 
@@ -72,6 +72,9 @@ if TYPE_CHECKING:
     from .coordinator import TadoDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+
+# Plain string: Home Assistant only gained UnitOfDensity in 2026.7 and we support older releases.
+_ABSOLUTE_HUMIDITY_UNIT = "g/m³"
 
 
 def _classify_comfort_deviation(deviation: float) -> str:
@@ -841,7 +844,7 @@ class TadoAbsoluteHumiditySensor(TadoZoneSensor):
         self._attr_icon = _meta.icon
         self._attr_entity_category = get_entity_category(_meta)
         self._attr_device_class = SensorDeviceClass.ABSOLUTE_HUMIDITY
-        self._attr_native_unit_of_measurement = UnitOfDensity.GRAMS_PER_CUBIC_METER
+        self._attr_native_unit_of_measurement = _ABSOLUTE_HUMIDITY_UNIT
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_suggested_display_precision = 1
 

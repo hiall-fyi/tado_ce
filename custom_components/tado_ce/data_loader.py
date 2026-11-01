@@ -39,6 +39,7 @@ from .const import (
     TIMER_DURATION_MAX,
     TIMER_DURATION_MIN,
 )
+from .helpers import normalise_timer_minutes
 from .storage import async_migrate_json_to_store
 
 if TYPE_CHECKING:
@@ -84,6 +85,7 @@ _ALL_STORES: dict[str, int] = {
     "insight_runtime_state": 30,
     "zone_identity": 10,
     "zone_type_baseline": 10,
+    "write_timing": 15,
 }
 
 STORE_VERSION = 1
@@ -312,6 +314,12 @@ class DataLoader:
                 name,
             )
 
+    async def async_remove_auxiliary(self, name: str) -> None:
+        """Delete one auxiliary store file and drop any save still queued for it."""
+        store = self._stores.get(name)
+        if store is not None:
+            await store.async_remove()
+
     # === Overlay mode (per-home, Store-backed) ===
 
     async def async_load_overlay_mode(self) -> str:
@@ -369,7 +377,7 @@ class DataLoader:
             if data is None:
                 return TIMER_DURATION_DEFAULT
             if isinstance(data, dict):
-                return data.get("timer_duration", TIMER_DURATION_DEFAULT)  # type: ignore[no-any-return]
+                return normalise_timer_minutes(data.get("timer_duration", TIMER_DURATION_DEFAULT))
         except (HomeAssistantError, OSError) as e:
             _LOGGER.debug(
                 "Data Loader: could not load timer duration (%s), "

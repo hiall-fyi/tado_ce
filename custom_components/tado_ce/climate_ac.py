@@ -42,6 +42,7 @@ from .climate_helpers import (
 from .const import CLOUD_VERIFICATION_BUFFER_SECONDS, DOMAIN, SIGNAL_HOMEKIT_UPDATE
 from .device_manager import get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY
+from .error_dispatch import is_typed_cloud_rejection
 from .format_helpers import (
     format_overlay_type as _format_overlay_type,
 )
@@ -261,6 +262,7 @@ class TadoACClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdat
     """Tado CE Air Conditioning Climate Entity."""
 
     _attr_has_entity_name = True
+    _write_timing_zone_kind = "ac"
 
     def _apply_capabilities(self, ac_caps: dict[str, Any]) -> None:
         """Derive the capability-driven attributes (features, modes, fan, swing, temp range).
@@ -677,8 +679,6 @@ class TadoACClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdat
         self._attr_swing_mode = v_swing.lower() if v_swing else None
         self._attr_swing_horizontal_mode = h_swing.lower() if h_swing else None
 
-        self._overlay_type = zone_data.get("overlayType")
-
         # HVAC action
         api_hvac_action = self._calculate_hvac_action(hvac_mode=self._attr_hvac_mode, ac_power_on=ac_power_on)
 
@@ -867,6 +867,7 @@ class TadoACClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdat
             setting = zone_data.get("setting") or {}
             power = setting.get("power")
 
+            self._overlay_type = zone_data.get("overlayType")
             if power == "ON":
                 self._extract_ac_power_state(setting, zone_data, ac_on)
             else:
@@ -1650,18 +1651,15 @@ class TadoACClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdat
         if fan_key and fan_value:
             setting[fan_key] = fan_value
 
-        # Swing: pass explicit raw axis values straight through; skip
-        # axes the current AC mode doesn't expose, or values not in
-        # the capability set
-        for swing_dir, swing_explicit in [
-            ("verticalSwing", vertical_swing),
-            ("horizontalSwing", horizontal_swing),
+        # Swing: an axis not named keeps its current value; unsupported axes or values are omitted
+        for swing_dir, swing_explicit, swing_current in [
+            ("verticalSwing", vertical_swing, self._attr_swing_mode),
+            ("horizontalSwing", horizontal_swing, self._attr_swing_horizontal_mode),
         ]:
-            if swing_explicit is None:
-                continue
+            swing_value = swing_explicit if swing_explicit is not None else (swing_current or "").upper()
             supported = mode_caps.get(swing_dir) or []
-            if swing_explicit in supported:
-                setting[swing_dir] = swing_explicit
+            if swing_value in supported:
+                setting[swing_dir] = swing_value
 
         return setting
 
@@ -1709,8 +1707,12 @@ class TadoACClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdat
         await _check_bootstrap_reserve_or_raise(self.hass, f"AC {self._zone_name}", coordinator=self.coordinator)
 
         client = self.coordinator.api_client
+        mode = None
+        if self._attr_hvac_mode in (HVACMode.OFF, HVACMode.AUTO):
+            # An idle heat pump asked for a target above the room means heat, as in set_temperature
+            mode = HA_TO_TADO_HVAC_MODE.get(self._resolve_ac_mode_for_temp_change(None, temperature))
         setting = self._build_ac_setting(
-            temperature, None, None, None, None,
+            temperature, mode, None, None, None,
         )
         termination = build_timer_termination(
             duration_minutes=duration_minutes, overlay=overlay,
@@ -1728,6 +1730,9 @@ class TadoACClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdat
                 reason=f"set timer at {temperature}°C",
                 capture_source="set_timer",
             )
-        except HomeAssistantError:
+        except HomeAssistantError as err:
+            # A typed 429 or auth error keeps its translated message; a plain failure reports False.
+            if is_typed_cloud_rejection(err):
+                raise
             return False
         return True

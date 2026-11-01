@@ -106,7 +106,6 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         unique_id_suffix="api_breakdown",
         entity_category="diagnostic",
         icon="mdi:chart-bar",
-        enabled_default=False,
     ),
     # ===================================================================
     # Weather Sensors (sensor_weather.py): 3 entries, all DIAGNOSTIC

@@ -57,6 +57,7 @@ from .weather_compensation import (
 )
 from .write_health_tracker import WriteHealthTracker
 from .write_optimizer import ActionDebouncer, DeviceSyncQueue
+from .write_timing import WriteTimingRecorder
 from .zone_fingerprint import ZoneFingerprintDelta, ZoneFingerprintTracker
 
 if TYPE_CHECKING:
@@ -133,6 +134,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.config_manager = config_manager
         self.zone_config_manager = zone_config_manager
         self.data_loader = data_loader
+        self.write_timing = WriteTimingRecorder(config_manager, data_loader)
         self.api_client = api_client
         self.api_tracker = api_tracker
         self.smart_comfort_manager = smart_comfort_manager

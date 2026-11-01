@@ -18,6 +18,11 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
+def is_typed_cloud_rejection(err: HomeAssistantError) -> bool:
+    """Return whether `err` is the translated 429 or auth error `dispatch_to_service_call` raised."""
+    return isinstance(err.__cause__, (TadoAuthError, TadoRateLimitError))
+
+
 def _apply_cloud_error_recovery(
     exc: TadoAuthError | TadoRateLimitError,
     config_entry: ConfigEntry,

@@ -11,10 +11,9 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 | | Supporters |
 |---|-----------|
 | ☕☕☕☕☕☕☕☕ | [@ChrisMarriott38](https://github.com/ChrisMarriott38) |
-| ☕☕☕☕☕☕ | [@jeverley](https://github.com/jeverley) |
+| ☕☕☕☕☕☕ | [@hapklaar](https://github.com/hapklaar), [@jeverley](https://github.com/jeverley) |
 | ☕☕☕☕☕ | Marcel v.H., [@Prodeguerriero](https://github.com/Prodeguerriero), [@rodneyha](https://github.com/rodneyha), [@UKICS](https://github.com/UKICS), [@wisskid](https://github.com/wisskid) |
-| ☕☕☕☕ | [@hapklaar](https://github.com/hapklaar) |
-| ☕☕ | Arnaud L., [@janchrillesen](https://github.com/janchrillesen), [@jeromewir](https://github.com/jeromewir), Luke R., [@marcovn](https://github.com/marcovn), [@ratormat](https://github.com/ratormat), Sebastian M., [@Saughassy](https://github.com/Saughassy), Vit P. |
+| ☕☕ | Arnaud L., [@FerranMartin](https://github.com/FerranMartin), [@janchrillesen](https://github.com/janchrillesen), [@jeromewir](https://github.com/jeromewir), Luke R., [@marcovn](https://github.com/marcovn), [@ratormat](https://github.com/ratormat), [@Saughassy](https://github.com/Saughassy), Sebastian M., [@sknapek](https://github.com/sknapek), Vit P. |
 | ☕ | Alby T., Bernhard S., kottrupk, [@MathiasB112](https://github.com/MathiasB112), Philipp H. |
 
 ---
@@ -23,6 +22,7 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 
 Community members who sent an actual patch, not just a report — reviewed and either merged directly or folded into the shipped fix on the same diagnosis.
 
+- **[@apilone](https://github.com/apilone)** — The patch in [#396](https://github.com/hiall-fyi/tado_ce/issues/396), the heating action fix for v4.6.0. His rule for when a lowered target still shows heating went in as he wrote it, and his change to take the action from Tado's data when a change is confirmed went in with a different parameter name.
 - **[@nicohabets](https://github.com/nicohabets)** — [PR #341](https://github.com/hiall-fyi/tado_ce/pull/341), the quota-reserve fix for [#340](https://github.com/hiall-fyi/tado_ce/issues/340). Landed as its own commit sharing the same diagnosis rather than a direct merge, since `main` runs ahead of what's on GitHub, plus the two sibling handlers he flagged separately.
 - **[@Flavien](https://github.com/Flavien)** — [PR #330](https://github.com/hiall-fyi/tado_ce/pull/330), three HomeKit sync fixes for v4.3.2, two shipped as written.
 - **[@hacker4257](https://github.com/hacker4257)** — [PR #132](https://github.com/hiall-fyi/tado_ce/pull/132), the API call history directory fix for v2.2.0.
@@ -32,6 +32,22 @@ Community members who sent an actual patch, not just a report — reviewed and e
 ## Per-Version Credits
 
 Community contributors who helped shape each release through bug reports, feature requests, testing, feedback, and code.
+
+### v4.6.0
+
+- **[@4af67267](https://github.com/4af67267)** — Reported that Tado CE stopped setting up after updating from v4.4.1 to v4.5.x on Home Assistant 2025.12 ([#385](https://github.com/hiall-fyi/tado_ce/issues/385)) and attached the log with `cannot import name 'UnitOfDensity'`. That line pointed straight at the new Absolute Humidity sensor and the Home Assistant version it needs, which this release fixes.
+- **[@MatrixOneXP](https://github.com/MatrixOneXP)** — Reported that changes from Home Assistant stopped showing on a Smart Thermostat RU02 display once HomeKit was connected ([#380](https://github.com/hiall-fyi/tado_ce/issues/380)), then tested the per-zone override on v4.5.1 and confirmed that a write through the cloud updates the display. Their test is what showed the hub's Override duration was ignored by zones with no setting of their own, which this release fixes, and the new Send changes via setting for heating zones comes from the same report.
+- **[@moggy83](https://github.com/moggy83)** — Opened discussion [#377](https://github.com/hiall-fyi/tado_ce/discussions/377) and followed it through a move from the 20,000-call daily limit to a 1,000-call one, posting timestamped API usage history, debug logs of every poll and the HomeKit savings counters from before and after the quota reset. Those showed the reset time sitting on an older day and no reset being recorded when the limit changed along with it, which is what the quota reset fixes in this release address. The captures of seven rooms being switched off together also showed why a room could stay on Heat afterwards, which is fixed here too.
+- **[@mpartington](https://github.com/mpartington)** — Reported that a 5 minute `set_climate_timer` ran for 15 minutes ([#388](https://github.com/hiall-fyi/tado_ce/issues/388)), and then posted the Overlay sensor expiry for their office zone and reported the same 15 minutes on a radiator-valve-only room. That showed the 15 minutes was not tied to the valve or sensor model and came from Tado CE itself, which this release fixes.
+- **[@thebatfink](https://github.com/thebatfink)** — Tried a Heating Curve Slope of 1.5, 2.0 and 2.5 on a 10 °C day, posted the boiler output temperature chart, and said the house warmed up slowly when they expected a higher slope to be more aggressive ([#386](https://github.com/hiall-fyi/tado_ce/discussions/386)). That showed the slope help text is the wrong way round when it is warmer outside than the Design Outdoor Temp, which this release corrects.
+- **[@MatteFil](https://github.com/MatteFil)** — Reported that one Smart Thermostat was never matched to its room over HomeKit ([#393](https://github.com/hiall-fyi/tado_ce/issues/393)) and suggested the log should print both serials. When asked to compare them they posted the details of the zone's device, a 22-character `serialNo` next to the 12-character `shortSerialNo` the bridge reports, which showed the match only looked at the long one. This release fixes that.
+- **[@jfrigger](https://github.com/jfrigger)** — Pointed out in the thread on [#387](https://github.com/hiall-fyi/tado_ce/issues/387) that a heating zone's mode showed as unknown after every preset change, and posted the log that showed the refresh arriving and being ignored. That led straight to the preset change holding the card back, which this release fixes.
+- **[@maxjoos](https://github.com/maxjoos)** — Reported that an air conditioner kept showing "Until you resume schedule" after its timer had ended into an off schedule block ([#395](https://github.com/hiall-fyi/tado_ce/issues/395)), with the stored zone data showing Tado reporting no overlay at the same moment. They also traced it to the AC card only reading the overlay type while the unit was on and sent a patch that points at the same spot as the fix already in this release, which confirmed the cause.
+- **[@owillems](https://github.com/owillems)** — Reported that a heating zone showed idle after a change from Home Assistant while it was heating at full power ([#387](https://github.com/hiall-fyi/tado_ce/issues/387)), and named the cause of that part: the refresh that confirms a change took the heating state from the expected value it was about to clear instead of from Tado's data.
+- **[@apilone](https://github.com/apilone)** — Reported that a heating zone showed "heating" for a whole refresh after its target was lowered below the room temperature ([#396](https://github.com/hiall-fyi/tado_ce/issues/396)), with a timeline from the entity history that showed the valve closed throughout. They traced it to two causes in the code and sent a patch for both, which went in almost as written.
+- **[@Sven-kilian](https://github.com/Sven-kilian)** — Posted the bridge response from a BR02 OpenTherm system, which has no maximum output temperature field, and confirmed that the Tado app still lets them set the boiler's maximum temperature ([#187](https://github.com/hiall-fyi/tado_ce/issues/187)). That pointed at the setting Tado keeps in its cloud, which the new `tado_ce.get_flow_temperature_settings` action reads.
+- **[@bobbinz](https://github.com/bobbinz)** — Reported that the climate card stayed on its old state after pressing Smart Boost until the next refresh, while a temperature change or cancelling an override showed at once ([#389](https://github.com/hiall-fyi/tado_ce/issues/389)). That comparison pointed at the two buttons, which wrote to Tado by their own route instead of the one the other timer actions use.
+- **[@zetoun13](https://github.com/zetoun13)** — Reported that setting one swing axis on an air conditioner reset the other ([#398](https://github.com/hiall-fyi/tado_ce/issues/398)), with the steps to reproduce it and the cause in the code, and suggested carrying the current value the way temperature and fan already are.
 
 ### v4.5.1
 

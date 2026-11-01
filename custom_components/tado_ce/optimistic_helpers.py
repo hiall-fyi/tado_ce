@@ -22,6 +22,9 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+# Written at every stamp, read only by write timing.
+ROUTE_AT_STAMP_ATTR = "_write_timing_route_at_stamp"
+
 # All optimistic tracking fields across entity types.
 # clear_optimistic_state() resets every field present on the entity to None.
 _OPTIMISTIC_FIELDS = (
@@ -77,6 +80,8 @@ async def set_optimistic_fields(
     entity._optimistic_set_at = time.monotonic()  # type: ignore[attr-defined]
     entity._optimistic_sequence = coordinator.get_next_sequence()  # type: ignore[attr-defined]
     entity._optimistic_zone_fetch_epoch = coordinator.zone_fetch_epoch_for_write()  # type: ignore[attr-defined]
+    # Lets write timing tell a route this write set from one an earlier write left behind.
+    setattr(entity, ROUTE_AT_STAMP_ATTR, getattr(entity, "_last_write_source", None))
 
     if expected:
         for key, value in expected.items():
@@ -130,6 +135,13 @@ def _has_fresher_zone_poll(entity: object) -> bool:
     return bool(current_epoch > written_epoch)
 
 
+def _record_write_timing(entity: object, outcome: str) -> None:
+    """Hand one judging to the coordinator's write timing recorder, if it has one."""
+    recorder = getattr(getattr(entity, "coordinator", None), "write_timing", None)
+    if recorder is not None:
+        recorder.record(entity, outcome)
+
+
 def resolve_optimistic_update(
     entity: object,
     *,
@@ -163,6 +175,7 @@ def resolve_optimistic_update(
                 "%s: API confirmed optimistic state, clearing tracking",
                 getattr(entity, "_zone_name", getattr(entity, "entity_id", "?")),
             )
+            _record_write_timing(entity, "confirmed")
             clear_optimistic_state(entity)
             return OptimisticUpdateResult.ACCEPT_API
 
@@ -188,9 +201,11 @@ def resolve_optimistic_update(
                 "accepting Tado's reported state",
                 getattr(entity, "_zone_name", getattr(entity, "entity_id", "?")),
             )
+            _record_write_timing(entity, "expired")
             clear_optimistic_state(entity)
             return OptimisticUpdateResult.EXPIRED
 
+        _record_write_timing(entity, "different")
         _LOGGER.debug(
             "%s: preserving optimistic state. API has not yet confirmed",
             getattr(entity, "_zone_name", getattr(entity, "entity_id", "?")),

@@ -556,6 +556,12 @@ class HomeKitLocalProvider:
                         "HomeKit: zone %s accessory %d %s changed %s → %s (event push)",
                         zone_id, key[0], char_type, old_value, value,
                     )
+                else:
+                    # An echo of our own write arrives with the value already cached.
+                    _LOGGER.debug(
+                        "HomeKit: zone %s accessory %d %s reported %s (event push, unchanged)",
+                        zone_id, key[0], char_type, value,
+                    )
         signal = SIGNAL_HOMEKIT_UPDATE.format(home_id=self._home_id)
         for zone_id in updated_zones:
             self._note_target_ambiguity(zone_id)

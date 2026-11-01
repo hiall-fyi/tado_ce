@@ -11,6 +11,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from .const import MAX_CUSTOM_INTERVAL
+from .helpers import normalise_timer_minutes
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -37,6 +38,7 @@ MIN_REFRESH_DEBOUNCE_SECONDS: int = 1
 MAX_REFRESH_DEBOUNCE_SECONDS: int = 60
 DEFAULT_SCHEDULE_CALENDAR_ENABLED = False  # Schedule Calendar (opt-in)
 DEFAULT_SMART_COMFORT_ENABLED = False  # Smart Comfort analytics (opt-in)
+DEFAULT_WRITE_TIMING_ENABLED = False  # Write timing counters in Download Diagnostics (opt-in)
 DEFAULT_OUTDOOR_TEMP_ENTITY = ""  # Outdoor temperature entity for weather compensation
 DEFAULT_BOILER_FLOW_TEMP_ENTITY = ""  # External boiler flow-temp entity for bridgeless homes
 DEFAULT_WEATHER_COMPENSATION = "none"  # Weather compensation preset
@@ -47,8 +49,6 @@ DEFAULT_MOLD_RISK_WINDOW_TYPE = "double_pane"  # Window type for mold risk surfa
 # Validation constants
 MIN_HOUR = 0
 MAX_HOUR = 23
-MIN_TIMER_DURATION = 1  # minutes
-MAX_TIMER_DURATION = 1440  # 24 hours
 MIN_SMART_COMFORT_HISTORY_DAYS = 1
 MAX_SMART_COMFORT_HISTORY_DAYS = 30
 
@@ -236,8 +236,9 @@ class ConfigurationManager:
         return self._get_int_option("api_history_retention_days", DEFAULT_API_HISTORY_RETENTION_DAYS, 0, 365)
 
     def get_hot_water_timer_duration(self) -> int:
-        """Get hot water timer duration in minutes (1-1440, default 60)."""
-        return self._get_int_option("hot_water_timer_duration", DEFAULT_HOT_WATER_TIMER_DURATION, MIN_TIMER_DURATION, MAX_TIMER_DURATION)
+        """Get hot water timer duration in minutes (1-720, default 60); a saved value above 720 is brought down to it."""
+        raw = self._get_int_option("hot_water_timer_duration", DEFAULT_HOT_WATER_TIMER_DURATION, -(10**6), 10**6)
+        return normalise_timer_minutes(raw)
 
     def get_refresh_debounce_seconds(self) -> int:
         """Get refresh debounce delay in seconds (higher = fewer API calls, slower UI; default 15)."""
@@ -250,6 +251,10 @@ class ConfigurationManager:
     def get_smart_comfort_enabled(self) -> bool:
         """Check if Smart Comfort analytics is enabled (opt-in)."""
         return self._get_option("smart_comfort_enabled", DEFAULT_SMART_COMFORT_ENABLED)  # type: ignore[no-any-return]
+
+    def get_write_timing_enabled(self) -> bool:
+        """Check if write timing counters are on (opt-in; anything but a real True counts as off)."""
+        return self._get_option("write_timing_enabled", DEFAULT_WRITE_TIMING_ENABLED) is True
 
     def get_outdoor_temp_entity(self) -> str:
         """Get the outdoor temperature entity for weather compensation (any provider)."""

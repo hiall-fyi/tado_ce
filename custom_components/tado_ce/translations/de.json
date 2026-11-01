@@ -11,7 +11,7 @@
             "name": "Anwesenheit gesperrt"
           },
           "data_source": {
-            "name": "Quelle der Daten"
+            "name": "Datenquelle"
           }
         }
       },
@@ -19,10 +19,10 @@
         "name": "Fenster",
         "state_attributes": {
           "detected_time": {
-            "name": "Ermittelte Zeit"
+            "name": "Erkennungszeit"
           },
           "expiry_time": {
-            "name": "Verfallszeit"
+            "name": "Ablaufzeit"
           }
         }
       },
@@ -45,18 +45,18 @@
             "name": "Dauer (Minuten)"
           },
           "confidence": {
-            "name": "Vertrauen"
+            "name": "Konfidenz"
           },
           "zone_type": {
-            "name": "Art der Zone"
+            "name": "Zonentyp"
           }
         }
       },
       "window_predicted": {
-        "name": "Voraussichtliches Fenster",
+        "name": "Fenster vorhergesagt",
         "state_attributes": {
           "confidence": {
-            "name": "Vertrauen"
+            "name": "Konfidenz"
           },
           "temp_drop": {
             "name": "Temperaturabfall"
@@ -68,10 +68,10 @@
             "name": "Empfehlung"
           },
           "zone_type": {
-            "name": "Art der Zone"
+            "name": "Zonentyp"
           },
           "readings_count": {
-            "name": "Lesungen zählen"
+            "name": "Anzahl der Messwerte"
           },
           "anomaly_readings": {
             "name": "Anomalie-Messwerte"
@@ -85,7 +85,7 @@
         "name": "Verbindung",
         "state_attributes": {
           "device_serial": {
-            "name": "Gerät seriell"
+            "name": "Geräteseriennummer"
           },
           "device_type": {
             "name": "Gerätetyp"
@@ -108,7 +108,7 @@
         "name": "Verbindung{device_suffix}",
         "state_attributes": {
           "device_serial": {
-            "name": "Gerät seriell"
+            "name": "Geräteseriennummer"
           },
           "device_type": {
             "name": "Gerätetyp"
@@ -137,10 +137,10 @@
             "name": "Zuletzt verbunden"
           },
           "last_disconnected": {
-            "name": "Zuletzt unterbrochene Verbindung"
+            "name": "Zuletzt getrennt"
           },
           "reconnect_count": {
-            "name": "Anzahl der Verbindungen wiederherstellen"
+            "name": "Anzahl der Wiederverbindungen"
           },
           "uptime": {
             "name": "Betriebszeit"
@@ -156,7 +156,7 @@
         "name": "Alle Zeitpläne fortsetzen"
       },
       "refresh_ac": {
-        "name": "Funktionen zur Aktualisierung der Klimaanlage"
+        "name": "AC-Funktionen aktualisieren"
       },
       "refresh_schedule": {
         "name": "Zeitplan aktualisieren"
@@ -186,7 +186,7 @@
             "name": "Zone ID"
           },
           "offset_celsius": {
-            "name": "Abweichung (°C)"
+            "name": "Offset (°C)"
           }
         }
       },
@@ -202,10 +202,10 @@
             "name": "Zone ID"
           },
           "zone_type": {
-            "name": "Art der Zone"
+            "name": "Zonentyp"
           },
           "swing_mode": {
-            "name": "Schaukel (vertikal)",
+            "name": "Schwenken (vertikal)",
             "state": {
               "auto": "Auto",
               "off": "Aus",
@@ -218,7 +218,7 @@
             }
           },
           "swing_horizontal_mode": {
-            "name": "Schaukel (horizontal)",
+            "name": "Schwenken (horizontal)",
             "state": {
               "auto": "Auto",
               "off": "Aus",
@@ -247,7 +247,7 @@
         "name": "AC"
       },
       "boiler_flow_temp": {
-        "name": "Kesselvorlauftemperatur"
+        "name": "Vorlauftemp. des Heizkessels"
       },
       "target": {
         "name": "Ziel",
@@ -261,10 +261,10 @@
         }
       },
       "overlay": {
-        "name": "Überlagerung",
+        "name": "Overlay",
         "state_attributes": {
           "source_zone": {
-            "name": "Quellgebiet"
+            "name": "Quellzone"
           }
         }
       },
@@ -299,7 +299,7 @@
         "name": "Batterie",
         "state_attributes": {
           "device_serial": {
-            "name": "Gerät seriell"
+            "name": "Geräteseriennummer"
           },
           "device_type": {
             "name": "Gerätetyp"
@@ -322,7 +322,7 @@
         "name": "Batterie{device_suffix}",
         "state_attributes": {
           "device_serial": {
-            "name": "Gerät seriell"
+            "name": "Geräteseriennummer"
           },
           "device_type": {
             "name": "Gerätetyp"
@@ -342,19 +342,19 @@
         }
       },
       "home_id": {
-        "name": "Heim-ID"
+        "name": "Haus-ID"
       },
       "api_usage": {
-        "name": "API-Verwendung",
+        "name": "API-Nutzung",
         "state_attributes": {
           "limit": {
-            "name": "Grenze"
+            "name": "Limit"
           },
           "remaining": {
-            "name": "Verbleibende"
+            "name": "Verbleibend"
           },
           "percentage_used": {
-            "name": "Verwendeter Prozentsatz"
+            "name": "Genutzter Anteil"
           },
           "last_updated": {
             "name": "Zuletzt aktualisiert"
@@ -365,25 +365,25 @@
         }
       },
       "api_reset": {
-        "name": "API-Reset",
+        "name": "API-Zurücksetzung",
         "state_attributes": {
           "time_until_reset": {
             "name": "Zeit bis zum Zurücksetzen"
           },
           "reset_seconds": {
-            "name": "Sekunden zurücksetzen"
+            "name": "Sekunden bis zum Zurücksetzen"
           },
           "reset_at": {
-            "name": "Zurücksetzen auf"
+            "name": "Zurücksetzen um"
           },
           "last_reset": {
-            "name": "Letzte Rückstellung"
+            "name": "Letztes Zurücksetzen"
           },
           "status": {
             "name": "Status"
           },
           "next_poll": {
-            "name": "Nächste Umfrage"
+            "name": "Nächste Abfrage"
           },
           "current_interval_minutes": {
             "name": "Aktuelles Intervall (min)"
@@ -391,19 +391,19 @@
         }
       },
       "api_limit": {
-        "name": "API-Grenze"
+        "name": "API-Limit"
       },
       "api_status": {
         "name": "API-Status",
         "state_attributes": {
           "remaining_calls": {
-            "name": "Verbleibende Anrufe"
+            "name": "Verbleibende Aufrufe"
           },
           "total_calls": {
-            "name": "Anrufe insgesamt"
+            "name": "Aufrufe insgesamt"
           },
           "reset_time": {
-            "name": "Zeit zurücksetzen"
+            "name": "Zeitpunkt des Zurücksetzens"
           },
           "recommendation": {
             "name": "Empfehlung"
@@ -414,7 +414,7 @@
         "name": "Token-Status"
       },
       "zone_count": {
-        "name": "Zone zählen",
+        "name": "Zonenanzahl",
         "state_attributes": {
           "heating_zones": {
             "name": "Heizzonen"
@@ -428,10 +428,10 @@
         }
       },
       "last_sync": {
-        "name": "Letzte Synchronisation"
+        "name": "Letzte Synchronisierung"
       },
       "next_sync": {
-        "name": "Nächste Synchronisation",
+        "name": "Nächste Synchronisierung",
         "state_attributes": {
           "countdown": {
             "name": "Countdown"
@@ -451,7 +451,7 @@
             "name": "Tagesintervall"
           },
           "night_interval": {
-            "name": "Nachtpause"
+            "name": "Nachtintervall"
           },
           "is_night_mode": {
             "name": "Nachtmodus"
@@ -459,36 +459,36 @@
         }
       },
       "call_history": {
-        "name": "Anrufverlauf",
+        "name": "Aufrufverlauf",
         "state_attributes": {
           "history": {
-            "name": "Geschichte"
+            "name": "Verlauf"
           },
           "history_period_days": {
-            "name": "Historischer Zeitraum (Tage)"
+            "name": "Verlaufszeitraum (Tage)"
           },
           "oldest_call": {
-            "name": "Ältester Anruf"
+            "name": "Ältester Aufruf"
           },
           "newest_call": {
-            "name": "Neuester Anruf"
+            "name": "Neuester Aufruf"
           },
           "calls_per_hour": {
-            "name": "Anrufe pro Stunde"
+            "name": "Aufrufe pro Stunde"
           },
           "calls_today": {
-            "name": "Anrufe heute"
+            "name": "Aufrufe heute"
           },
           "most_called_endpoint": {
-            "name": "Meistgenannter Endpunkt"
+            "name": "Am häufigsten aufgerufener Endpunkt"
           }
         }
       },
       "api_breakdown": {
-        "name": "API-Aufgliederung",
+        "name": "API-Aufschlüsselung",
         "state_attributes": {
           "breakdown_24h": {
-            "name": "Störung (24h)"
+            "name": "Aufschlüsselung (24 h)"
           },
           "breakdown_today": {
             "name": "Aufschlüsselung (heute)"
@@ -505,7 +505,7 @@
         }
       },
       "home_insights": {
-        "name": "Home Einblicke",
+        "name": "Haus-Einblicke",
         "state_attributes": {
           "summary": {
             "name": "Zusammenfassung"
@@ -514,13 +514,13 @@
             "name": "Erforderliche Maßnahmen"
           },
           "zones_ok": {
-            "name": "Zonen OK"
+            "name": "Zonen in Ordnung"
           },
           "top_priority": {
             "name": "Oberste Priorität"
           },
           "top_recommendation": {
-            "name": "Top-Empfehlung"
+            "name": "Wichtigste Empfehlung"
           },
           "zones_with_issues": {
             "name": "Zonen mit Problemen"
@@ -529,10 +529,10 @@
             "name": "Zonenübergreifende Einblicke"
           },
           "persistent_insights": {
-            "name": "Anhaltende Erkenntnisse"
+            "name": "Anhaltende Einblicke"
           },
           "insight_health_score": {
-            "name": "Insight-Gesundheitsscore"
+            "name": "Gesundheitswert der Einblicke"
           },
           "weekly_digest": {
             "name": "Wöchentliche Zusammenfassung"
@@ -546,10 +546,10 @@
             "name": "Oberste Priorität"
           },
           "top_recommendation": {
-            "name": "Top-Empfehlung"
+            "name": "Wichtigste Empfehlung"
           },
           "insight_types": {
-            "name": "Einsichtstypen"
+            "name": "Einblicktypen"
           },
           "recommendations": {
             "name": "Empfehlungen"
@@ -566,13 +566,13 @@
             "name": "Historischer Durchschnitt"
           },
           "sample_count": {
-            "name": "Anzahl der Proben"
+            "name": "Anzahl der Stichproben"
           },
           "summary": {
             "name": "Zusammenfassung"
           },
           "zone_type": {
-            "name": "Art der Zone"
+            "name": "Zonentyp"
           },
           "recommendation": {
             "name": "Empfehlung"
@@ -595,15 +595,15 @@
             "name": "Minuten bis"
           },
           "zone_type": {
-            "name": "Art der Zone"
+            "name": "Zonentyp"
           }
         }
       },
       "next_sched_temp": {
-        "name": "Nächster Zeitplan Temperatur",
+        "name": "Temperatur des nächsten Zeitplans",
         "state_attributes": {
           "schedule_time": {
-            "name": "Zeit einplanen"
+            "name": "Zeitpunkt im Zeitplan"
           },
           "is_heating_on": {
             "name": "Heizung an"
@@ -615,12 +615,12 @@
             "name": "Temperaturunterschied"
           },
           "zone_type": {
-            "name": "Art der Zone"
+            "name": "Zonentyp"
           }
         }
       },
       "preheat_advisor": {
-        "name": "Heizungsratgeber",
+        "name": "Vorheiz-Berater",
         "state_attributes": {
           "current_temperature": {
             "name": "Aktuelle Temperatur"
@@ -638,27 +638,27 @@
             "name": "Aufheizrate"
           },
           "confidence": {
-            "name": "Vertrauen"
+            "name": "Konfidenz"
           },
           "summary": {
             "name": "Zusammenfassung"
           },
           "zone_type": {
-            "name": "Art der Zone"
+            "name": "Zonentyp"
           },
           "cooling_rate": {
             "name": "Abkühlungsrate"
           },
           "predicted_crossover_time": {
-            "name": "Voraussichtliche Crossover-Zeit"
+            "name": "Voraussichtlicher Crossover-Zeitpunkt"
           },
           "is_cooling_prediction": {
-            "name": "Vorhersage der Kühlung"
+            "name": "Kühlungsprognose"
           }
         }
       },
       "comfort_target": {
-        "name": "Komfort Ziel",
+        "name": "Komfortziel",
         "state_attributes": {
           "current_temperature": {
             "name": "Aktuelle Temperatur"
@@ -670,13 +670,13 @@
             "name": "Luftfeuchtigkeit"
           },
           "comfort_model": {
-            "name": "Modell Komfort"
+            "name": "Komfortmodell"
           },
           "deviation_from_comfort": {
             "name": "Abweichung vom Komfort"
           },
           "zone_type": {
-            "name": "Art der Zone"
+            "name": "Zonentyp"
           }
         }
       },
@@ -687,10 +687,10 @@
             "name": "Anzahl der Zyklen"
           },
           "completed_count": {
-            "name": "Abgeschlossene Zählung"
+            "name": "Anzahl abgeschlossen"
           },
           "confidence_score": {
-            "name": "Konfidenzniveau"
+            "name": "Konfidenzwert"
           }
         }
       },
@@ -701,15 +701,15 @@
             "name": "Anzahl der Zyklen"
           },
           "completed_count": {
-            "name": "Abgeschlossene Zählung"
+            "name": "Anzahl abgeschlossen"
           },
           "confidence_score": {
-            "name": "Konfidenzniveau"
+            "name": "Konfidenzwert"
           }
         }
       },
       "preheat_time": {
-        "name": "Vorwärmzeit",
+        "name": "Vorheizzeit",
         "state_attributes": {
           "current_temp": {
             "name": "Aktuelle Temperatur"
@@ -721,21 +721,21 @@
             "name": "Anzahl der Zyklen"
           },
           "completed_count": {
-            "name": "Abgeschlossene Zählung"
+            "name": "Anzahl abgeschlossen"
           },
           "confidence_score": {
-            "name": "Konfidenzniveau"
+            "name": "Konfidenzwert"
           }
         }
       },
       "confidence": {
-        "name": "Vertrauen",
+        "name": "Konfidenz",
         "state_attributes": {
           "cycle_count": {
             "name": "Anzahl der Zyklen"
           },
           "completed_count": {
-            "name": "Abgeschlossene Zählung"
+            "name": "Anzahl abgeschlossen"
           },
           "recommendation": {
             "name": "Empfehlung"
@@ -743,7 +743,7 @@
         }
       },
       "heat_accel": {
-        "name": "Heizung Beschleunigung"
+        "name": "Heizbeschleunigung"
       },
       "approach_factor": {
         "name": "Annäherungsfaktor",
@@ -752,12 +752,12 @@
             "name": "Anzahl der Zyklen"
           },
           "completed_count": {
-            "name": "Abgeschlossene Zählung"
+            "name": "Anzahl abgeschlossen"
           }
         }
       },
       "mold_risk": {
-        "name": "Schimmelpilzrisiko",
+        "name": "Schimmelrisiko",
         "state": {
           "critical": "Kritisch",
           "high": "Hoch",
@@ -778,16 +778,16 @@
             "name": "Taupunkt"
           },
           "margin": {
-            "name": "Marge"
+            "name": "Abstand"
           },
           "mold_risk_percentage": {
-            "name": "Schimmelpilzrisiko (%)"
+            "name": "Schimmelrisiko (%)"
           },
           "temperature_source": {
             "name": "Quelle der Temperatur",
             "state": {
-              "surface_estimation": "Schätzung der Oberfläche",
-              "room_average": "Zimmer Durchschnitt",
+              "surface_estimation": "Oberflächenschätzung",
+              "room_average": "Raumdurchschnitt",
               "unknown": "Unbekannt"
             }
           },
@@ -801,7 +801,7 @@
             "name": "Offset der Oberflächentemperatur"
           },
           "zone_type": {
-            "name": "Art der Zone"
+            "name": "Zonentyp"
           },
           "recommendation": {
             "name": "Empfehlung"
@@ -809,7 +809,7 @@
         }
       },
       "mold_risk_pct": {
-        "name": "Indikator für Schimmelgefahr",
+        "name": "Schimmelrisiko-Indikator",
         "state_attributes": {
           "room_temperature": {
             "name": "Raumtemperatur"
@@ -826,13 +826,13 @@
           "temperature_source": {
             "name": "Quelle der Temperatur",
             "state": {
-              "surface_estimation": "Flächenberechnung",
-              "room_average": "Durchschnitt pro Zimmer",
+              "surface_estimation": "Oberflächenschätzung",
+              "room_average": "Raumdurchschnitt",
               "unknown": "Unbekannt"
             }
           },
           "zone_type": {
-            "name": "Art der Zone"
+            "name": "Zonentyp"
           }
         }
       },
@@ -846,7 +846,7 @@
             "name": "Luftfeuchtigkeit"
           },
           "indoor_dew_point": {
-            "name": "Taupunkt in Innenräumen"
+            "name": "Innentaupunkt"
           },
           "surface_temperature": {
             "name": "Oberflächentemperatur"
@@ -855,25 +855,25 @@
             "name": "Außentemperatur"
           },
           "margin": {
-            "name": "Marge"
+            "name": "Abstand"
           },
           "window_type": {
-            "name": "Fenster-Typ"
+            "name": "Fenstertyp"
           },
           "u_value": {
             "name": "U-Wert"
           },
           "zone_type": {
-            "name": "Art der Zone"
+            "name": "Zonentyp"
           },
           "recommendation": {
             "name": "Empfehlung"
           },
           "outdoor_humidity": {
-            "name": "Feuchtigkeit im Freien"
+            "name": "Außenluftfeuchtigkeit"
           },
           "outdoor_dew_point": {
-            "name": "Taupunkt im Freien"
+            "name": "Außentaupunkt"
           },
           "window_outer_surface_temp": {
             "name": "Temperatur der Außenfläche des Fensters"
@@ -890,7 +890,7 @@
             "name": "Außentemperatur"
           },
           "window_type": {
-            "name": "Fenster-Typ"
+            "name": "Fenstertyp"
           },
           "u_value": {
             "name": "U-Wert"
@@ -901,14 +901,14 @@
           "calculation_method": {
             "name": "Berechnungsmethode",
             "state": {
-              "surface_estimation": "Flächenberechnung",
+              "surface_estimation": "Oberflächenschätzung",
               "calibrated_surface": "Kalibrierte Oberfläche",
-              "room_average": "Durchschnitt pro Zimmer",
+              "room_average": "Raumdurchschnitt",
               "unknown": "Unbekannt"
             }
           },
           "zone_type": {
-            "name": "Art der Zone"
+            "name": "Zonentyp"
           }
         }
       },
@@ -925,7 +925,7 @@
             "name": "Berechnungsmethode"
           },
           "zone_type": {
-            "name": "Art der Zone"
+            "name": "Zonentyp"
           }
         }
       },
@@ -942,16 +942,16 @@
             "name": "Außentemperatur"
           },
           "comfort_target": {
-            "name": "Ziel Komfort"
+            "name": "Komfortziel"
           },
           "comfort_model": {
-            "name": "Modell Komfort"
+            "name": "Komfortmodell"
           },
           "dew_point": {
             "name": "Taupunkt"
           },
           "zone_type": {
-            "name": "Art der Zone"
+            "name": "Zonentyp"
           },
           "recommendation": {
             "name": "Empfehlung"
@@ -959,19 +959,19 @@
         }
       },
       "bridge_wiring_state": {
-        "name": "Zustand der Verkabelung des Heizkessels"
+        "name": "Verdrahtungszustand des Heizkessels"
       },
       "bridge_boiler_output_temp": {
         "name": "Ausgangstemperatur des Heizkessels"
       },
       "bridge_boiler_output_temp_time": {
-        "name": "Kesselleistung Temperatur Zeit"
+        "name": "Zeitpunkt der Ausgangstemperatur des Heizkessels"
       },
       "bridge_boiler_flow_temp": {
         "name": "Vorlauftemperatur des Heizkessels"
       },
       "bridge_boiler_flow_temp_time": {
-        "name": "Heizkessel-Vorlauftemperatur-Zeit"
+        "name": "Zeitpunkt der Vorlauftemperatur des Heizkessels"
       },
       "bridge_boiler_max_output_temp": {
         "name": "Maximale Ausgangstemperatur des Heizkessels"
@@ -980,34 +980,34 @@
         "name": "Warmwasser vorhanden"
       },
       "bridge_device_type": {
-        "name": "Kesseltyp"
+        "name": "Gerätetyp des Heizkessels"
       },
       "bridge_device_serial": {
         "name": "Seriennummer des Heizkessels"
       },
       "bridge_therm_interface_type": {
-        "name": "Typ der Kesselanschlussstelle"
+        "name": "Schnittstellentyp des Heizkessels"
       },
       "bridge_device_connected": {
-        "name": "Heizkessel angeschlossen"
+        "name": "Heizkessel verbunden"
       },
       "bridge_capabilities": {
-        "name": "Bridge-Fähigkeiten"
+        "name": "Bridge-Funktionen"
       },
       "bridge_schema_version": {
-        "name": "Version des Brückenschemas"
+        "name": "Bridge-Schema-Version"
       },
       "wc_target_flow_temp": {
-        "name": "Wetterausgleichsziel"
+        "name": "Ziel der Wetterkompensation"
       },
       "wc_status": {
-        "name": "Wetter Ausgleichsstatus"
+        "name": "Status der Wetterkompensation"
       },
       "homekit_reads_saved": {
-        "name": "Gespeicherte HomeKit-Lesungen"
+        "name": "Eingesparte HomeKit-Lesevorgänge"
       },
       "homekit_writes_saved": {
-        "name": "HomeKit schreibt gerettet"
+        "name": "Eingesparte HomeKit-Schreibvorgänge"
       },
       "absolute_humidity": {
         "name": "Absolute Luftfeuchtigkeit",
@@ -1037,7 +1037,7 @@
         },
         "state_attributes": {
           "presence": {
-            "name": "Aktuelle Präsenz"
+            "name": "Aktuelle Anwesenheit"
           },
           "presence_locked": {
             "name": "Anwesenheit gesperrt"
@@ -1054,7 +1054,7 @@
         "name": "Dauer der Überschreibung",
         "state": {
           "tado_mode": "Bis zur nächsten automatischen Änderung",
-          "manual": "Bis zur Wiederaufnahme des regulären Betriebs",
+          "manual": "Bis Sie den Zeitplan fortsetzen",
           "timer": "Timer"
         },
         "state_attributes": {
@@ -1068,7 +1068,7 @@
             "name": "Timer-Infos"
           },
           "manual_info": {
-            "name": "Bis zur Wiederaufnahme des regulären Betriebs"
+            "name": "Bis Sie den Zeitplan fortsetzen"
           },
           "api_calls_per_change": {
             "name": "API-Aufrufe pro Änderung"
@@ -1076,7 +1076,7 @@
         }
       },
       "timer_duration": {
-        "name": "Überlagerungstimer",
+        "name": "Overlay-Timer",
         "state_attributes": {
           "description": {
             "name": "Beschreibung"
@@ -1090,7 +1090,7 @@
         }
       },
       "heating_circuit": {
-        "name": "Heizkreislauf",
+        "name": "Heizkreis",
         "state": {
           "no_heating_circuit": "Kein Heizkreis"
         }
@@ -1098,7 +1098,7 @@
     },
     "switch": {
       "early_start": {
-        "name": "Früher Start",
+        "name": "Early Start",
         "state_attributes": {
           "zone_id": {
             "name": "Zone ID"
@@ -1115,7 +1115,7 @@
         "name": "Kindersicherung",
         "state_attributes": {
           "serial": {
-            "name": "Serienmäßig"
+            "name": "Seriennummer"
           },
           "device_type": {
             "name": "Gerätetyp"
@@ -1126,7 +1126,7 @@
         }
       },
       "quota_reserve": {
-        "name": "Quotenreserve"
+        "name": "Kontingentreserve"
       }
     },
     "water_heater": {
@@ -1158,31 +1158,31 @@
         },
         "time_period": {
           "name": "Zeitspanne",
-          "description": "Dauer bis zur Rückkehr zum Zeitplan (Format HH:MM:SS, z. B. \"01:30:00\" für 90 Minuten). Nicht erforderlich bei Verwendung des Overlay-Modus."
+          "description": "Dauer bis zur Rückkehr zum Zeitplan: 1 Minute bis 12 Stunden (Format HH:MM:SS, z. B. „01:30:00“ für 90 Minuten). Bei Verwendung des Overlay-Modus nicht erforderlich."
         },
         "overlay": {
           "name": "Overlay-Typ",
-          "description": "Wann die Überschreibung beendet werden soll. Verwenden Sie „next_time_block“, um die Überschreibung bei der nächsten automatischen Änderung in Ihrem Tado-Zeitplan zu beenden, oder „manual“, um sie beizubehalten, bis Sie den Zeitplan wieder aufnehmen. Bei dieser Einstellung ist „time_period“ nicht erforderlich."
+          "description": "Wann die Überschreibung beendet werden soll. Verwenden Sie „next_time_block“, um die Überschreibung bei der nächsten automatischen Änderung in Ihrem Tado-Zeitplan zu beenden, oder „manual“, um sie beizubehalten, bis Sie den Zeitplan fortsetzen. Bei dieser Einstellung ist „time_period“ nicht erforderlich."
         }
       }
     },
     "set_water_heater_timer": {
-      "name": "Timer für Wassererhitzer einstellen",
-      "description": "Schalten Sie das heiße Wasser mit einem Timer und einer optionalen Temperatureinstellung ein.",
+      "name": "Warmwasserbereiter-Timer einstellen",
+      "description": "Schalten Sie das Warmwasser mit einem Timer und optionaler Temperatureinstellung ein.",
       "fields": {
         "time_period": {
           "name": "Zeitspanne",
-          "description": "Dauer bis zum Ausschalten (Format HH:MM:SS, z. B. \"01:30:00\" für 90 Minuten)."
+          "description": "Zeit bis zum Ausschalten: von 1 Minute bis 12 Stunden (Format HH:MM:SS, z. B. „01:30:00“ für 90 Minuten)."
         },
         "temperature": {
           "name": "Temperatur",
-          "description": "Zieltemperatur in Celsius (optional, für Solaranlagen)."
+          "description": "Zieltemperatur in Celsius (optional, für solare Warmwasseranlagen)."
         }
       }
     },
     "resume_schedule": {
       "name": "Zeitplan fortsetzen",
-      "description": "Löschen Sie jede manuelle Übersteuerung und kehren Sie zum automatischen Zeitplan zurück."
+      "description": "Löschen Sie jede manuelle Überschreibung und kehren Sie zum automatischen Zeitplan zurück."
     },
     "set_climate_temperature_offset": {
       "name": "Klima-Temperatur-Offset einstellen",
@@ -1190,25 +1190,25 @@
       "fields": {
         "entity_id": {
           "name": "Entität",
-          "description": "Die Klimaeinheit, für die der Ausgleich festgelegt werden soll."
+          "description": "Die Klima-Entität, für die der Offset festgelegt werden soll."
         },
         "offset": {
-          "name": "Versetzt",
-          "description": "Temperatur-Offset in Celsius (-10 bis +10)."
+          "name": "Offset",
+          "description": "Temperatur-Offset in Celsius (-9,9 bis +10)."
         }
       }
     },
     "add_meter_reading": {
       "name": "Zählerstand hinzufügen",
-      "description": "Hinzufügen eines Energiezählerstandes für Energy IQ. Unterstützt die Angabe des Datums für historische Messwerte (Tado CE-Erweiterung).",
+      "description": "Fügen Sie einen Energiezählerstand für Energy IQ hinzu. Unterstützt die Angabe des Datums für historische Ablesungen (Erweiterung von Tado CE).",
       "fields": {
         "reading": {
-          "name": "Lesen",
+          "name": "Zählerstand",
           "description": "Der Zählerstandswert in m³ oder kWh (ohne Nachkommastellen)."
         },
         "date": {
           "name": "Datum",
-          "description": "Das Datum der Ablesung (JJJJ-MM-TT). Wenn nicht angegeben, wird standardmäßig das heutige Datum verwendet. Dies ermöglicht das Hinzufügen historischer Messwerte."
+          "description": "Das Datum der Ablesung (JJJJ-MM-TT). Standardmäßig wird das heutige Datum verwendet, wenn keines angegeben ist. So können Sie historische Ablesungen hinzufügen."
         }
       }
     },
@@ -1217,22 +1217,22 @@
       "description": "Lassen Sie die LED eines Tado-Geräts blinken, um es zu identifizieren.",
       "fields": {
         "device_serial": {
-          "name": "Gerät seriell",
+          "name": "Geräteseriennummer",
           "description": "Die kurze Seriennummer des Geräts (z. B. VA1234567890)."
         }
       }
     },
     "set_away_configuration": {
-      "name": "Auswärtskonfiguration einstellen",
+      "name": "Abwesenheitskonfiguration einstellen",
       "description": "Legen Sie fest, welche Temperatur verwendet werden soll, wenn alle Personen außer Haus sind.",
       "fields": {
         "entity_id": {
           "name": "Entität",
-          "description": "Die Klimaeinheit, für die Abwesenheitseinstellungen konfiguriert werden sollen."
+          "description": "Die Klima-Entität, für die die Abwesenheitseinstellungen konfiguriert werden sollen."
         },
         "mode": {
           "name": "Modus",
-          "description": "Abwesenheitsmodus - \"Auto\" für die intelligente Einstellung von Tado, \"Manuell\" für eine feste Temperatur, \"Aus\" zum Ausschalten der Heizung."
+          "description": "Abwesenheitsmodus: „auto“ für die intelligente Anpassung von Tado, „manual“ für eine feste Temperatur, „off“ zum Ausschalten der Heizung."
         },
         "temperature": {
           "name": "Temperatur",
@@ -1250,90 +1250,94 @@
       "fields": {
         "entity_id": {
           "name": "Entität",
-          "description": "Die Klimaeinrichtung, für die ein Ausgleich geschaffen werden soll."
+          "description": "Die Klima-Entität, für die der Offset abgerufen werden soll."
         }
       }
     },
     "activate_open_window": {
       "name": "Offenes Fenster aktivieren (Auto-Assist)",
-      "description": "Bestätigen Sie ein offenes Fenster, das Tado bereits erkannt hat – genau wie beim Antippen des Symbols in der Tado-App. Dies funktioniert nur, wenn die integrierte Erkennung von Tado ein offenes Fenster gemeldet hat. Um den Modus „Offenes Fenster“ über externe Sensoren auszulösen, verwenden Sie stattdessen die Option „Modus ‚Offenes Fenster‘ einstellen“."
+      "description": "Bestätigen Sie ein offenes Fenster, das Tado bereits erkannt hat, genauso wie beim Antippen des Symbols in der Tado-App. Funktioniert nur, wenn die integrierte Erkennung von Tado ein Ereignis „offenes Fenster“ gemeldet hat. Um den Modus „Offenes Fenster“ über externe Sensoren auszulösen, verwenden Sie stattdessen „Offenes-Fenster-Modus setzen“."
     },
     "deactivate_open_window": {
       "name": "Offenes Fenster deaktivieren",
-      "description": "Schließen Sie ein offenes Fenster, das Tado selbst erkannt hat oder das Sie mit „Offenes Fenster aktivieren“ bestätigt haben, und setzen Sie den normalen Heiz- bzw. Kühlbetrieb fort. Dadurch wird der Modus „Offenes Fenster aktivieren“ nicht deaktiviert. Da dieser Modus eine Frostwarnung anzeigt, deaktivieren Sie ihn stattdessen mit „Zeitplan fortsetzen“ oder „Vorherigen Zustand wiederherstellen“."
+      "description": "Beenden Sie ein offenes Fenster, das Tado selbst erkannt hat oder das Sie mit „Offenes Fenster aktivieren“ bestätigt haben, und setzen Sie den normalen Heiz- bzw. Kühlbetrieb fort. „Offenes-Fenster-Modus setzen“ wird dadurch nicht aufgehoben. Dieser Modus schreibt ein Frostschutz-Overlay, heben Sie ihn daher stattdessen mit „Zeitplan fortsetzen“ oder „Vorherigen Zustand wiederherstellen“ auf."
     },
     "set_open_window_mode": {
       "name": "Offenes-Fenster-Modus setzen",
-      "description": "Löst den Modus „Offenes Fenster“ über externe Sensoren (Zigbee, Z-Wave-Kontaktsensoren usw.) aus. Stellt die Zone auf die Frostschutztemperatur ein, ohne dass eine Erkennung durch Tado erforderlich ist. Die Dauer entspricht standardmäßig der Zeitüberschreitungseinstellung für die Erkennung offener Fenster der Zone oder 15 Minuten, falls keine Konfiguration vorliegt.",
+      "description": "Löst den Modus „Offenes Fenster“ über externe Sensoren aus (Zigbee, Z-Wave-Kontaktsensoren usw.). Setzt die Zone auf Frostschutztemperatur, ohne dass eine Erkennung durch Tado erforderlich ist. Die Dauer entspricht standardmäßig dem Timeout der Fenstererkennung der Zone oder 15 Minuten, falls keines konfiguriert ist.",
       "fields": {
         "duration": {
           "name": "Dauer",
-          "description": "Wie lange der Offenes-Fenster-Modus aktiv bleiben soll, in Sekunden (60–3600). Standardmäßig das Tado-Fenstererkennungs-Timeout der Zone."
+          "description": "Wie lange der Offenes-Fenster-Modus aktiv bleiben soll, in Sekunden (60–3600). 0 bedeutet unbegrenzt, bis Sie den Zeitplan manuell fortsetzen. Standardmäßig gilt das Timeout der Tado-Fenstererkennung der Zone."
         },
         "capture_state": {
-          "name": "Zustand einnehmen",
+          "name": "Zustand erfassen",
           "description": "Erfasst den aktuellen Zustand der Zone, bevor der Modus \"Offenes Fenster\" angewendet wird, um eine spätere Wiederherstellung über den Dienst \"Vorherigen Zustand wiederherstellen\" zu ermöglichen. Standardmäßig aktiviert."
         }
       }
     },
     "restore_previous_state": {
       "name": "Vorherigen Zustand wiederherstellen",
-      "description": "Versetzt eine Zone in den Zustand vor dem letzten Überlagerungsvorgang zurück. Wenn kein erfasster Zustand existiert, wird der Zeitplan wieder aufgenommen."
+      "description": "Versetzt eine Zone in den Zustand vor dem letzten Overlay-Vorgang zurück. Ist kein erfasster Zustand vorhanden, wird stattdessen der Zeitplan fortgesetzt."
     },
     "turn_off_all_zones": {
       "name": "Alle Räume ausschalten",
-      "description": "Setzen Sie jede Klimazone (Heizung + Klimaanlage) in den manuellen AUS-Modus. Dies entspricht der Schaltfläche „Alle Räume ausschalten“ in der Tado-App. Zeitpläne bleiben deaktiviert, bis Sie jede Zone manuell wieder aktivieren."
+      "description": "Setzen Sie jede Klimazone (Heizung + AC) in ein manuelles AUS-Overlay. Entspricht der Schaltfläche „Alle Räume ausschalten“ in der Tado-App. Zeitpläne bleiben unterdrückt, bis Sie jede Zone manuell fortsetzen."
     },
     "set_schedule_temperature": {
       "name": "Temperatur für den Zeitplan einstellen",
-      "description": "Stellen Sie die Zieltemperatur einer Zone über eine Automatisierung, beispielsweise einen Urlaubskalender, ein, ohne dass die intelligente Ventilsteuerung dies als manuelle Übersteuerung behandelt. Die intelligente Ventilsteuerung arbeitet weiterhin auf dieses Ziel hin und kehrt beim nächsten Zeitblockwechsel zu Ihrem normalen Zeitplan zurück.",
+      "description": "Stellen Sie die Zieltemperatur einer Zone über eine Automatisierung ein, beispielsweise einen Urlaubskalender, ohne dass Smart Valve Control dies als manuelle Überschreibung behandelt. Smart Valve Control arbeitet weiterhin auf dieses Ziel hin und kehrt beim nächsten Zeitblockwechsel zu Ihrem normalen Zeitplan zurück.",
       "fields": {
         "temperature": {
           "name": "Temperatur",
-          "description": "Solltemperatur in Grad Celsius."
+          "description": "Zieltemperatur in Celsius."
         },
         "overlay": {
-          "name": "Überlagerungstyp",
-          "description": "Wann die Übersteuerung beendet werden soll. Verwenden Sie „next_time_block“, um die Übersteuerung bei der nächsten automatischen Änderung in Ihrem Tado-Zeitplan zu beenden, oder „manual“, um sie beizubehalten, bis Sie den Zeitplan wieder aufnehmen."
+          "name": "Overlay-Typ",
+          "description": "Wann die Überschreibung beendet werden soll. Verwenden Sie „next_time_block“, um sie bei der nächsten automatischen Änderung in Ihrem Tado-Zeitplan zu beenden, oder „manual“, um sie beizubehalten, bis Sie den Zeitplan fortsetzen."
         },
         "force_override": {
-          "name": "Kraftüberlagerung",
-          "description": "Standardmäßig deaktiviert, sodass eine manuelle Änderung, die Sie am Schieberegler vorgenommen haben, beibehalten wird. Aktivieren Sie diese Option für eine Automatisierung, die Vorrang vor einer manuellen Änderung haben soll, beispielsweise bei einem Feiertagsplan, der immer Vorrang hat."
+          "name": "Überschreibung erzwingen",
+          "description": "Standardmäßig aus, damit eine manuelle Änderung, die Sie am Schieberegler vorgenommen haben, unangetastet bleibt. Schalten Sie sie für eine Automatisierung ein, die Vorrang vor einer manuellen Änderung haben soll, beispielsweise ein Urlaubsplan, der sich durchsetzen muss."
         }
       }
     },
     "refresh": {
       "name": "Aktualisieren",
-      "description": "Erzwingen Sie eine sofortige Abfrage der Präsenzdaten unter Umgehung des minimalen Aktualisierungsintervalls. Für Nutzer, die ihre Aktualisierungsfrequenz über eine Automatisierung selbst steuern, schützt die automatische Abfrage-Untergrenze Ihre API-Quote in der übrigen Zeit weiterhin.",
+      "description": "Ruft die Anwesenheitsdaten sofort ab und umgeht dabei das minimale Aktualisierungsintervall. Für Nutzer, die ihren eigenen Aktualisierungsrhythmus über eine Automatisierung steuern; die automatische Abfrage-Untergrenze schützt Ihr API-Kontingent in der übrigen Zeit weiterhin.",
       "fields": {
         "data": {
           "name": "Zu aktualisierende Daten",
-          "description": "Welche Daten sollen nun abgerufen werden: Anwesenheit auf dem Mobilgerät oder Anwesenheit zu Hause (zu Hause/unterwegs)? Wird ignoriert, wenn diese Funktion deaktiviert ist."
+          "description": "Welche Daten jetzt abgerufen werden sollen: Anwesenheit der Mobilgeräte oder Anwesenheit im Haus (Zuhause/Abwesend). Wird ignoriert, wenn diese Funktion ausgeschaltet ist."
         }
       }
+    },
+    "get_flow_temperature_settings": {
+      "name": "Einstellung der Vorlauftemperatur auslesen",
+      "description": "Liest die maximale Vorlauftemperatur aus, die Tado für ein OpenTherm-Heizsystem gespeichert hat. Es wird nichts geändert. Dafür wird ein API-Aufruf verwendet; zurückgegeben werden ein Status und die Einstellung so, wie Tado sie sendet, mit gekürzten Seriennummern. Ein Haus ohne OpenTherm-System liefert „nicht zutreffend“."
     }
   },
   "selector": {
     "smart_comfort_mode": {
       "options": {
         "none": "Keine (deaktiviert)",
-        "light": "Licht",
-        "moderate": "Mäßig",
+        "light": "Leicht",
+        "moderate": "Moderat",
         "aggressive": "Aggressiv"
       }
     },
     "mold_risk_window_type": {
       "options": {
-        "single_pane": "Einzelscheibe (U=5.0)",
-        "double_pane": "Doppelverglasung (U=2,7)",
-        "triple_pane": "Dreifachverglasung (U=1,0)",
-        "passive_house": "Passivhaus (U=0,8)"
+        "single_pane": "Einzelscheibe (U=5,0 W/m²K)",
+        "double_pane": "Doppelverglasung (U=2,7 W/m²K)",
+        "triple_pane": "Dreifachverglasung (U=1,0 W/m²K)",
+        "passive_house": "Passivhaus (U=0,8 W/m²K)"
       }
     },
     "window_predicted_mode": {
       "options": {
-        "active": "Aktiv (HLK-abhängig)",
-        "passive": "Passiv (HLK-unabhängig)",
+        "active": "Aktiv (abhängig von Heizung/Kühlung)",
+        "passive": "Passiv (unabhängig von Heizung/Kühlung)",
         "auto": "Auto (empfohlen)"
       }
     },
@@ -1355,18 +1359,18 @@
     "wc_smoothing_method": {
       "options": {
         "none": "Keine (Echtzeit)",
-        "ema": "EMA (Exponentieller gleitender Durchschnitt)",
+        "ema": "EMA (exponentieller gleitender Durchschnitt)",
         "rolling_average": "Gleitender Durchschnitt"
       }
     },
     "reset_scope": {
       "options": {
         "everything": "Alles zurücksetzen",
-        "smart_comfort": "Intelligenter Komfort",
-        "thermal_analytics": "Thermische Analytik",
+        "smart_comfort": "Smart Comfort",
+        "thermal_analytics": "Wärmeanalyse",
         "weather_compensation": "Wetterkompensation",
-        "bridge": "Internet-Brücke",
-        "polling_api": "Abfrage & API",
+        "bridge": "Internet Bridge",
+        "polling_api": "Abfrage, Verzögerungen & Standardwerte",
         "homekit": "HomeKit",
         "comfort_safety": "Komfort & Sicherheit",
         "external_data_sources": "Externe Datenquellen"
@@ -1375,8 +1379,34 @@
     "svc_mode": {
       "options": {
         "off": "Aus",
-        "valve_target": "Ventilziel (Fortgeschrittene)",
-        "offset_sync": "Offset-Synchronisation (empfohlen)"
+        "valve_target": "Valve Target (fortgeschritten)",
+        "offset_sync": "Offset Sync (empfohlen)"
+      }
+    },
+    "zone_display_temp_source": {
+      "options": {
+        "auto": "Automatisch",
+        "homekit": "HomeKit",
+        "cloud": "Cloud"
+      }
+    },
+    "zone_heating_type": {
+      "options": {
+        "radiator": "Heizkörper",
+        "ufh": "Fußbodenheizung"
+      }
+    },
+    "zone_overlay_mode": {
+      "options": {
+        "manual": "Bis Sie den Zeitplan fortsetzen",
+        "tado_mode": "Bis zur nächsten automatischen Änderung",
+        "timer": "Timer"
+      }
+    },
+    "zone_write_route": {
+      "options": {
+        "auto": "Automatisch (HomeKit für „Bis Sie den Zeitplan fortsetzen“)",
+        "cloud": "Tado-Cloud"
       }
     }
   },
@@ -1385,13 +1415,13 @@
       "message": "Entität {entity_id} nicht in Entitätsregistrierung gefunden"
     },
     "entity_not_tado_ce": {
-      "message": "Entität {entity_id} ist keine Tado CE Entität (platform={platform})"
+      "message": "Entität {entity_id} ist keine Tado-CE-Entität (platform={platform})"
     },
     "entity_no_config_entry": {
       "message": "Entität {entity_id} hat keine Zuordnung zu einem Konfigurationseintrag"
     },
     "entry_not_loaded": {
-      "message": "Kein Tado CE Eintrag geladen für {entity_id} (config_entry_id={config_entry_id})"
+      "message": "Kein Tado-CE-Eintrag für {entity_id} geladen (config_entry_id={config_entry_id})"
     },
     "device_entry_not_loaded": {
       "message": "Gerät {device_serial} gefunden, aber sein Konfigurationseintrag ist nicht geladen"
@@ -1400,40 +1430,40 @@
       "message": "Gerät {device_serial} nicht in der Geräteregistrierung gefunden. Prüfen Sie, ob die Seriennummer korrekt ist."
     },
     "no_entries_loaded": {
-      "message": "Es sind keine Tado CE Einträge geladen"
+      "message": "Es sind keine Tado-CE-Einträge geladen"
     },
     "multiple_entries": {
-      "message": "Es sind mehrere Tado-Heime konfiguriert ({home_ids}). Bitte verwenden Sie einen Dienst, der auf eine bestimmte Entität abzielt, um zum richtigen Home zu leiten."
+      "message": "Es sind mehrere Tado-Häuser konfiguriert ({home_ids}). Bitte verwenden Sie einen Dienst, der auf eine bestimmte Entität abzielt, um zum richtigen Haus zu leiten."
     },
     "api_quota_critically_low": {
-      "message": "API-Kontingent kritisch niedrig - Aktion blockiert, um Bootstrap-Reserve zu erhalten. Bitte warten Sie auf das Zurücksetzen der API."
+      "message": "API-Kontingent kritisch niedrig. Aktion blockiert, um die Bootstrap-Reserve zu erhalten. Bitte warten Sie, bis die API zurückgesetzt wird."
     },
     "water_heater_not_found": {
-      "message": "Wassererhitzer Entität nicht gefunden: {entity_id}"
+      "message": "Warmwasserbereiter-Entität nicht gefunden: {entity_id}"
     },
     "timer_set_failed": {
-      "message": "Der Zeitgeber {duration}min für {zone_name} konnte nicht gesetzt werden: {error}"
+      "message": "Timer ({duration} min) für {zone_name} konnte nicht gesetzt werden: {error}"
     },
     "bridge_auth_failed": {
-      "message": "Ungültiger Serien- oder Authentifizierungscode der Brücke"
+      "message": "Ungültige Seriennummer oder ungültiger Authentifizierungscode der Bridge"
     },
     "offset_write_failed": {
-      "message": "Der Temperatur-Offset für „{entity_id}“ konnte nicht festgelegt werden: Alle Geräte mit der Anzahl „{device_count}“ haben den Schreibvorgang nicht akzeptiert. Überprüfen Sie, ob die Geräte online sind, und versuchen Sie es erneut."
+      "message": "Der Temperatur-Offset für {entity_id} konnte nicht gesetzt werden: Alle {device_count} Geräte haben den Schreibvorgang nicht akzeptiert. Prüfen Sie, ob die Geräte online sind, und versuchen Sie es erneut."
     },
     "timer_set_failed_all": {
-      "message": "Der Timer konnte in keiner der Zonen unter „{entity_count}“ eingestellt werden. Gründe: {reasons}"
+      "message": "Der Timer konnte auf keiner der {entity_count} Zone(n) gesetzt werden. Gründe: {reasons}"
     },
     "state_restore_failed": {
-      "message": "Die Statuswiederherstellung für „{entity_id}“ ist fehlgeschlagen. Die Cloud hat den Aufruf abgelehnt. Der erfasste Status wurde gespeichert, sodass Sie es erneut versuchen können."
+      "message": "Die Wiederherstellung des Zustands für {entity_id} ist fehlgeschlagen. Die Cloud hat den Aufruf abgelehnt. Der erfasste Zustand wurde beibehalten, sodass Sie es erneut versuchen können."
     },
     "resume_schedule_failed": {
-      "message": "Der Plan zur Wiederaufnahme für „{entity_id}“ ist fehlgeschlagen. Die Cloud hat den Aufruf abgelehnt. Bitte versuchen Sie es erneut."
+      "message": "Zeitplan fortsetzen ist für {entity_id} fehlgeschlagen. Die Cloud hat den Aufruf abgelehnt. Bitte versuchen Sie es erneut."
     },
     "turn_off_all_no_climate_zones": {
-      "message": "In diesem Tado-Haus wurden keine Heiz- oder Klimatisierungszonen gefunden, daher gibt es nichts, was ausgeschaltet werden könnte."
+      "message": "In diesem Tado-Haus wurden keine Heiz- oder AC-Zonen gefunden, daher gibt es nichts auszuschalten."
     },
     "turn_off_all_failed_all": {
-      "message": "Es ist nicht gelungen, eine Zone auszuschalten. Die Tado-Cloud hat in diesem Zyklus jeden Aufruf abgelehnt. Gründe: {reasons}. Überprüfen Sie das API-Kontingent der Integration oder versuchen Sie es erneut."
+      "message": "Keine Zone konnte ausgeschaltet werden. Die Tado-Cloud hat in diesem Zyklus jeden Aufruf abgelehnt. Gründe: {reasons}. Prüfen Sie das API-Kontingent der Integration oder versuchen Sie es erneut."
     },
     "auth_required": {
       "message": "Eine Tado-Authentifizierung ist erforderlich. Bitte führen Sie die Authentifizierung für die Integration erneut durch."
@@ -1442,31 +1472,31 @@
       "message": "Der Schreibvorgang in die Tado-Cloud ist fehlgeschlagen. Die Cloud hat die Anfrage abgelehnt. Bitte versuchen Sie es erneut."
     },
     "rate_limited": {
-      "message": "Die Tado-API unterliegt einer Ratenbegrenzung. Bitte versuche es in {retry_after_minutes} Minuten erneut."
+      "message": "Die Tado-API ist ratenbegrenzt. Bitte versuchen Sie es in {retry_after_minutes} Min. erneut."
     },
     "ac_set_temperature_failed": {
-      "message": "{zone_name} der Klimaanlage: Temperatur kann nicht eingestellt werden"
+      "message": "AC {zone_name}: Temperatur einstellen fehlgeschlagen"
     },
     "ac_set_hvac_mode_failed": {
-      "message": "AC-{zone_name}: Einstellung des „{hvac_mode}“-Modus fehlgeschlagen"
+      "message": "AC {zone_name}: Modus {hvac_mode} einstellen fehlgeschlagen"
     },
     "ac_set_fan_mode_failed": {
-      "message": "{zone_name} der Klimaanlage: Einstellen des Lüftungsmodus fehlgeschlagen"
+      "message": "AC {zone_name}: Lüftermodus einstellen fehlgeschlagen"
     },
     "ac_set_swing_mode_failed": {
-      "message": "AC-{zone_name}: Einstellen des Schwingmodus fehlgeschlagen"
+      "message": "AC {zone_name}: Schwenkmodus einstellen fehlgeschlagen"
     },
     "presence_mode_set_failed": {
-      "message": "Das Einstellen des Präsenzmodus auf „{option}“ ist fehlgeschlagen"
+      "message": "Einstellen des Anwesenheitsmodus auf {option} fehlgeschlagen"
     },
     "early_start_queue_full": {
-      "message": "{zone_name} von „Early Start“: Warteschlange für die Gerätesynchronisierung voll"
+      "message": "Early Start {zone_name}: Warteschlange für die Gerätesynchronisierung voll"
     },
     "child_lock_queue_full": {
-      "message": "Kindersicherung „{zone_name}“: Synchronisierungswarteschlange des Geräts voll"
+      "message": "Kindersicherung {zone_name}: Warteschlange für die Gerätesynchronisierung voll"
     },
     "water_heater_set_mode_failed": {
-      "message": "Heißwasser für „{zone_name}“: Das Setzen von „{operation_mode}“ ist nach {attempts} Versuchen fehlgeschlagen"
+      "message": "Warmwasser für {zone_name}: {operation_mode} einstellen nach {attempts} Versuchen fehlgeschlagen"
     },
     "bridge_client_not_available": {
       "message": "Bridge-API-Client nicht verfügbar"
@@ -1478,29 +1508,29 @@
   "issues": {
     "auth_token_expired": {
       "title": "Tado CE: Authentifizierung abgelaufen",
-      "description": "Das Aktualisierungs-Token für das Haus **{home_id}** ist abgelaufen. Bitte konfigurieren Sie die Integration neu, um sich erneut zu authentifizieren.\n\nGehen Sie zu **Einstellungen → Geräte & Dienste → Tado CE → Rekonfigurieren**."
+      "description": "Das Refresh-Token für das Haus **{home_id}** ist abgelaufen. Bitte konfigurieren Sie die Integration neu, um sich erneut zu authentifizieren.\n\nGehen Sie zu **Einstellungen → Geräte & Dienste → Tado CE → Neu konfigurieren**."
     },
     "svc_sensor_missing": {
-      "title": "„Smart Valve Control“ für „{zone_name}“ deaktiviert",
-      "description": "Die intelligente Ventilsteuerung ({mode}) für **{zone_name}** benötigt einen externen Temperatursensor, es ist jedoch keiner konfiguriert.\n\nDie Funktion wurde für diese Zone automatisch deaktiviert, bis Sie einen Sensor auswählen.\n\n**So aktivieren Sie sie wieder:**\n\nGehen Sie zu **Einstellungen → Tado CE → Konfigurieren → Zonenkonfiguration → {zone_name} → Externe Sensoren** und wählen Sie einen Temperatursensor aus.\n\nAlternativ können Sie diese Benachrichtigung schließen, um die Funktion für diese Zone deaktiviert zu lassen."
+      "title": "Smart Valve Control für {zone_name} ausgeschaltet",
+      "description": "Smart Valve Control ({mode}) für **{zone_name}** benötigt einen externen Temperatursensor, aber es ist keiner konfiguriert.\n\nSmart Valve Control ist für diese Zone ausgeschaltet, bis Sie einen Sensor auswählen.\n\n**So schalten Sie es wieder ein:**\n\nGehen Sie zu **Einstellungen → Geräte & Dienste → Tado CE → Konfigurieren → Zonenkonfiguration → {zone_name} → Externe Sensoren und Ventilsteuerung** und wählen Sie einen Temperatursensor aus."
     },
     "rate_limited": {
-      "title": "Tado CE: Cloud-Bandbreitenbegrenzung",
-      "description": "Die Tado-Cloud-API unterliegt einer Ratenbegrenzung für die **{home_id}**. Die Abfrage wird in {retry_after_minutes} Minuten fortgesetzt."
+      "title": "Tado CE: Cloud ratenbegrenzt",
+      "description": "Die Tado-Cloud-API ist für das Haus **{home_id}** ratenbegrenzt. Die Abfrage wird in {retry_after_minutes} Minuten fortgesetzt."
     },
     "homekit_pairing_invalid": {
-      "title": "HomeKit-Kopplung unterbrochen",
-      "description": "Die HomeKit-Kopplung Ihrer Tado-Bridge ist nicht mehr gültig; möglicherweise wurde das Gerät auf die Werkseinstellungen zurückgesetzt. Tado CE läuft bis zur erneuten Kopplung im reinen Cloud-Modus.\n\nSo führen Sie die erneute Kopplung durch: „Einstellungen“ → „Tado CE“ → „Konfigurieren“ → „Erweiterte Einstellungen“ → „HomeKit“, dann aktivieren Sie „Erneut koppeln“ und geben Sie den 8-stelligen Einrichtungscode Ihrer Bridge ein."
+      "title": "HomeKit-Kopplung verloren",
+      "description": "Die HomeKit-Kopplung der Tado Bridge ist nicht mehr gültig, möglicherweise wurde sie auf Werkseinstellungen zurückgesetzt. Tado CE läuft im reinen Cloud-Modus, bis Sie erneut koppeln.\n\nSo koppeln Sie erneut: Einstellungen → Tado CE → Konfigurieren → Erweiterte Einstellungen → HomeKit, dann „Erneut koppeln“ ankreuzen und den 8-stelligen Einrichtungscode Ihrer Bridge eingeben."
     },
     "zone_reassigned": {
       "title": "Die Einstellungen einer Zone wurden zurückgesetzt",
-      "description": "Tado hat eine Zonen-ID für einen anderen Raum wiederverwendet. Die für den vorherigen Raum konfigurierten Einstellungen für die intelligente Ventilsteuerung, die Zuordnung externer Sensoren und die Temperaturgrenzwerte wurden in der Zonen{zone_id} gelöscht, da sie für den neuen Raum nicht mehr gelten. Geben Sie diese Werte unter **Zonenkonfiguration** erneut ein, falls der neue Raum sie benötigt."
+      "description": "Tado hat eine Zonen-ID für einen anderen Raum wiederverwendet. Die Einrichtung von Smart Valve Control, die Zuordnung externer Sensoren und die Temperaturgrenzen, die für den vorherigen Raum konfiguriert waren, wurden für Zone {zone_id} gelöscht, da sie für den neuen Raum nicht mehr gelten. Geben Sie sie unter **Zonenkonfiguration** erneut ein, falls der neue Raum sie benötigt."
     }
   },
   "config": {
     "step": {
       "user": {
-        "title": "Tado CE-Einrichtung",
+        "title": "Tado-CE-Einrichtung",
         "description": "Wählen Sie, wie Sie sich bei Tado authentifizieren möchten.",
         "menu_options": {
           "device_auth": "Geräteautorisierung (empfohlen)",
@@ -1513,7 +1543,7 @@
       },
       "manual_token": {
         "title": "Manuelles Token",
-        "description": "Füge ein Tado-Aktualisierungstoken ein, um dich zu authentifizieren. Verwende diese Methode, wenn der normale Autorisierungsablauf für das Gerät nicht funktioniert. So erhältst du ein Token: Melde dich unter {tado_web_app_url} an, öffne die Entwicklertools deines Browsers (F12) → „Anwendung“ → „Lokaler Speicher“ → „{tado_web_app}“ → suche den Wert „refresh_token“ und kopiere ihn.",
+        "description": "Fügen Sie ein Tado-Refresh-Token ein, um sich zu authentifizieren. Verwenden Sie diese Methode, wenn der normale Ablauf der Geräteautorisierung nicht funktioniert. So erhalten Sie ein Token: Melden Sie sich unter {tado_web_app_url} an, öffnen Sie die Entwicklertools Ihres Browsers (F12) → Application → Local Storage → {tado_web_app}, suchen Sie den Wert `refresh_token` und kopieren Sie ihn.",
         "data": {
           "refresh_token": "Refresh-Token"
         },
@@ -1523,16 +1553,16 @@
       },
       "authorize": {
         "title": "Tado autorisieren",
-        "description": "**Schritt 1:** Klicken Sie auf den unten stehenden Link, um das Tado-Login zu öffnen:\n\n**[Zum Autorisieren hier klicken]({url})**\n\n**Schritt 2:** Melden Sie sich bei Ihrem Tado-Konto an und autorisieren Sie die Verbindung.\n\n**Schritt 3:** Wenn Sie auf der Tado-Website \"Erfolgreich verbunden\" sehen, klicken Sie unten auf Senden."
+        "description": "**Schritt 1:** Klicken Sie auf den unten stehenden Link, um die Tado-Anmeldung zu öffnen:\n\n**[Zum Autorisieren hier klicken]({url})**\n\n**Schritt 2:** Melden Sie sich bei Ihrem Tado-Konto an und autorisieren Sie die Verbindung.\n\n**Schritt 3:** Wenn Sie auf der Tado-Website „Successfully connected“ sehen, klicken Sie unten auf Senden."
       },
       "select_home": {
-        "title": "Startseite auswählen",
-        "description": "Es wurden mehrere Tado-Haushalte erkannt. Wählen Sie den aus, den Sie überwachen möchten. Jeder Haushalt ist ein separater Integrations-Eintrag, sodass Sie die anderen später hinzufügen können.",
+        "title": "Haus auswählen",
+        "description": "Es wurden mehrere Tado-Häuser erkannt. Wählen Sie dasjenige aus, das überwacht werden soll. Jedes Haus ist ein eigener Integrationseintrag, sodass Sie die anderen später hinzufügen können.",
         "data": {
-          "home": "Startseite"
+          "home": "Haus"
         },
         "data_description": {
-          "home": "Die Tado-Homepage zur Verbindung dieser Integration mit"
+          "home": "Das Tado-Haus, mit dem diese Integration verbunden werden soll"
         }
       },
       "reauth_confirm": {
@@ -1541,7 +1571,7 @@
       },
       "reauth_authorize": {
         "title": "Tado autorisieren",
-        "description": "**Schritt 1:** Klicken Sie auf den unten stehenden Link, um das Tado-Login zu öffnen:\n\n**[Zum Autorisieren hier klicken]({url})**\n\n**Schritt 2:** Melden Sie sich bei Ihrem Tado-Konto an und autorisieren Sie die Verbindung.\n\n**Schritt 3:** Wenn Sie auf der Tado-Website \"Erfolgreich verbunden\" sehen, klicken Sie unten auf Senden."
+        "description": "**Schritt 1:** Klicken Sie auf den unten stehenden Link, um die Tado-Anmeldung zu öffnen:\n\n**[Zum Autorisieren hier klicken]({url})**\n\n**Schritt 2:** Melden Sie sich bei Ihrem Tado-Konto an und autorisieren Sie die Verbindung.\n\n**Schritt 3:** Wenn Sie auf der Tado-Website „Successfully connected“ sehen, klicken Sie unten auf Senden."
       },
       "reconfigure": {
         "title": "Tado CE neu authentifizieren",
@@ -1549,26 +1579,26 @@
       },
       "reconfigure_authorize": {
         "title": "Tado autorisieren",
-        "description": "**Schritt 1:** Klicken Sie auf den unten stehenden Link, um das Tado-Login zu öffnen:\n\n**[Zum Autorisieren hier klicken]({url})**\n\n**Schritt 2:** Melden Sie sich bei Ihrem Tado-Konto an und autorisieren Sie die Verbindung.\n\n**Schritt 3:** Wenn Sie auf der Tado-Website \"Erfolgreich verbunden\" sehen, klicken Sie unten auf Senden."
+        "description": "**Schritt 1:** Klicken Sie auf den unten stehenden Link, um die Tado-Anmeldung zu öffnen:\n\n**[Zum Autorisieren hier klicken]({url})**\n\n**Schritt 2:** Melden Sie sich bei Ihrem Tado-Konto an und autorisieren Sie die Verbindung.\n\n**Schritt 3:** Wenn Sie auf der Tado-Website „Successfully connected“ sehen, klicken Sie unten auf Senden."
       },
       "reconfigure_select_home": {
-        "title": "Startseite auswählen",
-        "description": "Wechseln Sie das Tado-Haus, das dieser Eintrag überwacht.",
+        "title": "Haus auswählen",
+        "description": "Ihr ursprüngliches Tado-Haus befindet sich nicht mehr in diesem Konto. Wählen Sie das Haus aus, das dieser Eintrag stattdessen überwachen soll.",
         "data": {
-          "home": "Startseite"
+          "home": "Haus"
         }
       }
     },
     "progress": {
-      "poll": "Ich warte auf die Genehmigung... Bitte loggen Sie sich in Ihrem Browser ein."
+      "poll": "Warten auf die Autorisierung... Bitte schließen Sie die Anmeldung in Ihrem Browser ab."
     },
     "abort": {
-      "already_configured": "Tado CE ist bereits konfiguriert",
+      "already_configured": "Dieses Tado-Haus ist bereits in Tado CE eingerichtet.",
       "timeout": "Die Autorisierung ist abgelaufen. Bitte versuchen Sie es erneut.",
       "authorization_failed": "Autorisierung fehlgeschlagen. Bitte versuchen Sie es erneut.",
-      "no_homes": "Keine Tado-Wohnungen für dieses Konto gefunden.",
-      "reauth_successful": "Re-Authentifizierung erfolgreich! Ihre Anmeldedaten wurden aktualisiert.",
-      "reconfigure_successful": "Re-Authentifizierung erfolgreich! Ihre neuen Anmeldedaten wurden gespeichert."
+      "no_homes": "Für dieses Konto wurden keine Tado-Häuser gefunden.",
+      "reauth_successful": "Erneute Authentifizierung erfolgreich! Ihre Anmeldedaten wurden aktualisiert.",
+      "reconfigure_successful": "Fertig. Ihre neue Tado-Anmeldung wurde gespeichert."
     },
     "error": {
       "cannot_connect": "Die Verbindung zu Tado konnte nicht hergestellt werden. Bitte überprüfen Sie Ihre Internetverbindung.",
@@ -1581,10 +1611,10 @@
   "options": {
     "step": {
       "init": {
-        "title": "Tado CE Optionen",
-        "description": "Richten Sie Tado CE ganz nach Ihren Wünschen ein – von der Community entwickelt, für die Community.",
+        "title": "Tado-CE-Optionen",
+        "description": "Wählen Sie aus, was geändert werden soll.",
         "menu_options": {
-          "zone_config": "Zone Konfiguration",
+          "zone_config": "Zonenkonfiguration",
           "general_settings": "Allgemeine Einstellungen",
           "advanced_settings": "Erweiterte Einstellungen",
           "reset_to_defaults": "Auf Standardwerte zurücksetzen",
@@ -1592,72 +1622,74 @@
         }
       },
       "zone_config": {
-        "title": "Zone Konfiguration",
-        "description": "Wählen Sie eine zu konfigurierende Zone aus.",
+        "title": "Zonenkonfiguration",
+        "description": "Wählen Sie eine Zone zum Konfigurieren aus. Nur Heiz- und AC-Zonen.",
         "data": {
           "zone_id": "Zone"
         }
       },
       "zone_sensor_config": {
         "title": "Zonenkonfiguration: {zone_name}",
-        "description": "Konfigurieren Sie die Einstellungen pro Zone. Die Abschnitte können erweitert werden, um weitere Optionen zu erhalten.",
+        "description": "Konfigurieren Sie die Einstellungen pro Zone. Abschnitte lassen sich aufklappen, um weitere Optionen anzuzeigen.",
         "sections": {
           "heating_section": {
             "name": "Heizung",
             "data": {
-              "heating_type": "Typ des Wärmestrahlers",
+              "heating_type": "Typ der Wärmeabgabe",
               "ufh_buffer_minutes": "UFH-Puffer (Minuten)",
-              "adaptive_preheat": "Adaptiver Vorwärmmodus"
+              "adaptive_preheat": "Modus für adaptives Vorheizen"
             },
             "data_description": {
               "heating_type": "Heizkörper oder Fußbodenheizung",
-              "ufh_buffer_minutes": "Zusätzliche Minuten für das Aufwärmen des UFH (0-60)",
-              "adaptive_preheat": "Aus: deaktiviert. Aktiv: automatischer Start der Heizung und Erfassung des Zustands für die Wiederherstellung. Passiv: automatischer Start nur, wenn kein Overlay aktiv ist."
+              "ufh_buffer_minutes": "Zusätzliche Minuten, die den Vorheizschätzungen für die Fußbodenheizung hinzugefügt werden (0-60, Standard 30). Wird nur verwendet, wenn der Typ der Wärmeabgabe UFH ist.",
+              "adaptive_preheat": "Aus: nicht verwendet. Aktiv: startet die Heizung früher und setzt die Zone danach in den vorherigen Zustand zurück. Passiv: startet die Heizung nur dann früher, wenn keine manuelle Überschreibung läuft. Nur Heizzonen. Erfordert, dass Adaptives Vorheizen und Smart Comfort in den Allgemeinen Einstellungen eingeschaltet sind."
             }
           },
           "comfort_section": {
             "name": "Komfort",
             "data": {
-              "smart_comfort_mode": "Intelligenter Komfort-Modus",
-              "window_type": "Fenster Typ",
+              "smart_comfort_mode": "Smart-Comfort-Modus",
+              "window_type": "Fenstertyp",
               "window_predicted_mode": "Modus der Fenstererkennung",
               "window_predicted_sensitivity": "Empfindlichkeit der Fenstererkennung"
             },
             "data_description": {
-              "smart_comfort_mode": "Anpassung der Zieltemperatur an die Außenbedingungen",
-              "window_type": "Fenstertyp für die Berechnung des Schimmelpilzrisikos",
-              "window_predicted_mode": "Aktiv: Erfasst nur, wenn die HLK läuft. Passiv: erkennt unabhängig vom HLK-Zustand. Auto: verwendet Aktiv, wenn die HLK eingeschaltet ist, Passiv, wenn sie ausgeschaltet ist.",
+              "smart_comfort_mode": "Noch nicht in Verwendung. Der hausweite Smart-Comfort-Modus in den erweiterten Einstellungen gilt für jede Zone.",
+              "window_type": "Fenstertyp für die Berechnung des Schimmelrisikos",
+              "window_predicted_mode": "Aktiv: prüft nur, solange die Heizung oder Kühlung läuft. Passiv: prüft durchgehend. Auto: Aktiv, solange Heizung oder Kühlung läuft, sonst Passiv.",
               "window_predicted_sensitivity": "Wie leicht die Fenstererkennung anspricht. Höhere Empfindlichkeit = mehr Fehlalarme, erkennt aber auch kleinere Zugluft."
             }
           },
           "sensor_section": {
-            "name": "Externe Sensoren",
+            "name": "Externe Sensoren und Ventilsteuerung",
             "data": {
-              "use_external_temp": "Tados Temperatursensor überschreiben",
+              "use_external_temp": "Temperatursensor von Tado überschreiben",
               "external_temp_sensor": "Externer Temperatursensor",
-              "use_external_humidity": "Tados Feuchtigkeitssensor außer Kraft setzen",
+              "use_external_humidity": "Luftfeuchtigkeitssensor von Tado überschreiben",
               "external_humidity_sensor": "Externer Luftfeuchtigkeitssensor",
-              "svc_mode": "Intelligenter Ventilsteuerungsmodus",
-              "svc_offset_min_change": "Empfindlichkeit der Offset-Synchronisation"
+              "svc_mode": "Modus für Smart Valve Control",
+              "svc_offset_min_change": "Minimale Änderung für Offset Sync"
             },
             "data_description": {
-              "use_external_temp": "Deaktivieren Sie diese Funktion, um vorübergehend wieder auf den integrierten Sensor von Tado zurückzugreifen. Ihre Auswahl bleibt gespeichert, sodass Sie die Funktion jederzeit wieder aktivieren können.",
-              "external_temp_sensor": "Wählen Sie einen Sensor aus, um den integrierten Messwert von Tado zu überschreiben. Deaktivieren Sie den Schalter oben, um die Funktion anzuhalten, ohne die Auswahl zu verlieren.",
-              "use_external_humidity": "Deaktivieren Sie diese Funktion, um vorübergehend wieder den integrierten Feuchtigkeitssensor von Tado zu verwenden. Ihre Auswahl bleibt gespeichert, sodass Sie die Funktion jederzeit wieder aktivieren können.",
-              "external_humidity_sensor": "Wählen Sie einen Feuchtigkeitssensor aus, um den integrierten Messwert von Tado zu überschreiben. Deaktivieren Sie den Schalter oben, um die Funktion zu unterbrechen, ohne die Auswahl zu verlieren.",
-              "svc_mode": "Nutzen Sie Ihren externen Sensor, um die Genauigkeit des Thermostatventils zu verbessern. „Offset Sync“ (empfohlen) korrigiert die Temperaturmessung des Thermostatventils unauffällig. Diese Funktion arbeitet mit Tado zusammen und sorgt für eine längere Batterielebensdauer des Thermostatventils. „Valve Target“ überschreibt den Sollwert des Thermostatventils direkt. Da diese Funktion aggressiver ist, sollten Sie sie nur verwenden, wenn „Offset Sync“ nicht ausreicht.",
-              "svc_offset_min_change": "Um wie viel sich der Offset ändern muss, bevor ein Eintrag in den TRV erfolgt. Höhere Werte bedeuten weniger Schreibvorgänge (besser für die Batterielebensdauer), jedoch eine weniger genaue Temperaturanzeige in der Tado-App"
+              "use_external_temp": "Schalten Sie dies ein, um Ihren eigenen Temperatursensor anstelle des in Tado eingebauten zu verwenden. Wenn Sie es ausschalten und speichern, wird der gewählte Sensor entfernt, Sie müssen ihn dann erneut auswählen.",
+              "external_temp_sensor": "Der Sensor, der anstelle des eingebauten Temperaturwerts von Tado verwendet wird. Schalten Sie oben den Schalter ein, um ihn zu verwenden.",
+              "use_external_humidity": "Schalten Sie dies ein, um Ihren eigenen Luftfeuchtigkeitssensor anstelle des in Tado eingebauten zu verwenden. Wenn Sie es ausschalten und speichern, wird der gewählte Sensor entfernt, Sie müssen ihn dann erneut auswählen.",
+              "external_humidity_sensor": "Der Sensor, der anstelle des eingebauten Luftfeuchtigkeitswerts von Tado verwendet wird. Schalten Sie oben den Schalter ein, um ihn zu verwenden.",
+              "svc_mode": "Nutzen Sie Ihren externen Sensor, um die Genauigkeit des Thermostatventils zu verbessern. Dies erscheint, sobald für diese Zone ein externer Temperatursensor gespeichert ist. Offset Sync (empfohlen) korrigiert unauffällig die Temperaturmessung des Thermostatventils und pausiert außerhalb der in den erweiterten Einstellungen festgelegten Tagesstunden. Es arbeitet zusammen mit Tado und schont die Batterie des Thermostatventils. Valve Target überschreibt direkt den Sollwert des Thermostatventils. Es ist aggressiver, verwenden Sie es daher nur, wenn Offset Sync nicht ausreicht.",
+              "svc_offset_min_change": "Offset Sync schreibt nur dann einen neuen Offset in das Thermostat, wenn er sich mindestens um diesen Wert ändern würde (0,5–3,0 °C, Standard 0,5). Höhere Werte bedeuten weniger Schreibvorgänge und eine bessere Batterielebensdauer, aber die Temperatur in der Tado-App ist weniger genau. Erscheint, nachdem Sie mit ausgewähltem Offset Sync gespeichert haben."
             }
           },
           "overlay_section": {
-            "name": "Manuelle Temperaturübersteuerung",
+            "name": "Manuelle Temperaturüberschreibung",
             "data": {
-              "overlay_mode": "Verhalten überschreiben",
-              "timer_duration": "Dauer des Timers überschreiben (Minuten)"
+              "overlay_mode": "Überschreibungsverhalten",
+              "timer_duration": "Timer-Dauer (Minuten)",
+              "write_route": "Änderungen senden über"
             },
             "data_description": {
-              "overlay_mode": "Wie lange eine Temperaturänderung über HA, die Tado-App oder einen Serviceeinsatz anhält, bevor der Zeitplan von Tado wieder in Kraft tritt.",
-              "timer_duration": "Dauer für den Timer-Überschreibungsmodus (15 Minuten bis 12 Stunden)"
+              "overlay_mode": "Wie lange eine von Home Assistant aus vorgenommene Temperaturänderung (einschließlich Dienstaufrufen) gilt, bevor der Zeitplan von Tado wieder übernimmt. In der Tado-App vorgenommene Änderungen sind nicht betroffen. Leeren Sie das Feld, um die Einstellung Dauer der Überschreibung am Tado-CE-Hub zu verwenden.",
+              "timer_duration": "Dauer des Timers, wenn das Überschreibungsverhalten Timer ist (15 Minuten bis 12 Stunden). Leeren Sie das Feld, um die Einstellung Overlay-Timer des Hubs zu verwenden.",
+              "write_route": "Automatisch verwendet HomeKit, wenn das Überschreibungsverhalten oben „Bis Sie den Zeitplan fortsetzen“ ist, und die Tado-Cloud für Timer und „Bis zur nächsten automatischen Änderung“. Wählen Sie Tado-Cloud, wenn das Display eines Wandthermostats in Home Assistant vorgenommene Änderungen nicht anzeigt. Cloud-Änderungen verbrauchen API-Aufrufe; Temperaturmesswerte kommen weiterhin von HomeKit."
             }
           },
           "temperature_section": {
@@ -1665,203 +1697,205 @@
             "data": {
               "min_temp": "Minimale Temperatur",
               "max_temp": "Maximale Temperatur",
-              "surface_temp_offset": "Oberflächentemperatur-Offset",
-              "display_temp_source": "Temperaturquelle"
+              "surface_temp_offset": "Offset der Oberflächentemperatur",
+              "display_temp_source": "Quelle der Messwerte (HomeKit oder Cloud)"
             },
             "data_description": {
               "min_temp": "Minimal zulässige Zieltemperatur (5-25°C)",
               "max_temp": "Maximal zulässige Zieltemperatur (15-30°C)",
-              "surface_temp_offset": "Optimieren Sie die Schätzwerte für die Oberflächentemperatur zur Schimmelgefahr. Passen Sie diese an, wenn sich Ihre Wände kälter anfühlen, als von Tado angenommen. (-5 bis +5 °C)",
-              "display_temp_source": "Dies zeigt die Anzeige für diese Zone. „Automatisch“ bevorzugt den aktuellen HomeKit-Wert, sobald dieser verfügbar ist, und greift andernfalls auf die Tado-Cloud zurück. „HomeKit“ bevorzugt immer den lokalen Wert; „Cloud“ zeigt immer den Wert von Tado an. Wenn Sie für diese Zone einen externen Temperatursensor eingerichtet haben, hat dieser Vorrang vor dieser Einstellung."
+              "surface_temp_offset": "Korrektur, die zur Schätzung von Tado CE für die Wandoberflächentemperatur dieser Zone beim Schimmelrisiko addiert wird (-5 bis +5 °C). Wenn sich Ihre Wände kälter anfühlen als geschätzt, verwenden Sie einen negativen Wert.",
+              "display_temp_source": "Woher Raumtemperatur, Zieltemperatur und Ein/Aus-Status dieser Zone kommen, wenn HomeKit verbunden ist. Automatisch verwendet HomeKit, solange dessen Wert aktuell ist, und sonst die Tado-Cloud. HomeKit bevorzugt den lokalen Wert, greift aber trotzdem zurück. Cloud verwendet immer den Wert von Tado. Ein externer Temperatursensor für diese Zone überschreibt die Raumtemperatur."
             }
           }
         }
       },
       "general_settings": {
-        "description": "Schalten Sie Funktionen ein oder aus. Für alle Einstellungen werden empfohlene Standardwerte verwendet. Verwenden Sie die erweiterten Einstellungen zur Feinabstimmung.",
+        "description": "Schalten Sie Funktionen ein oder aus. Die meisten Funktionen sind zunächst ausgeschaltet. Beim Einschalten von Internet Bridge oder Lokale Steuerung (HomeKit) werden zusätzliche Angaben abgefragt. Zur Feinabstimmung verwenden Sie die erweiterten Einstellungen.",
         "title": "Allgemeine Einstellungen",
         "sections": {
           "tado_features": {
-            "name": "Funktionen von Tado",
+            "name": "Tado-Funktionen",
             "description": "Funktionen, die Tado von Haus aus unterstützt. Aktivieren Sie die Funktionen, die in Home Assistant angezeigt werden sollen.",
             "data": {
-              "home_state_sync_enabled": "Heim- und Auswärtsspiele",
+              "home_state_sync_enabled": "Anwesenheit im Haus (Zuhause/Abwesend)",
               "weather_enabled": "Wetterdaten",
               "mobile_devices_enabled": "Ortung mobiler Geräte",
-              "schedule_calendar_enabled": "Terminkalender",
-              "offset_enabled": "Gerätetemperatur-Offsets",
+              "schedule_calendar_enabled": "Zeitplankalender",
+              "offset_enabled": "Temperatur-Offsets der Geräte",
               "heating_circuit_enabled": "Steuerung des Heizkreises"
             },
             "data_description": {
-              "home_state_sync_enabled": "Synchronisieren Sie den Gesamtstatus Ihres Zuhauses (Zuhause/Nicht zu Hause). Pro Aktualisierung erfolgt etwa ein API-Aufruf. Das Aktualisierungsintervall lässt sich unter „Erweiterte Einstellungen“ → „Abfrage & API“ konfigurieren.",
-              "weather_enabled": "Außentemperatur und Sonneneinstrahlung von Tado. Pro Aktualisierung etwa ein API-Aufruf. Das Aktualisierungsintervall lässt sich unter „Erweiterte Einstellungen“ → „Abfrage & API“ konfigurieren.",
-              "mobile_devices_enabled": "Verfolgen Sie den Standort jedes Telefons, um die Anwesenheit pro Gerät zu ermitteln. Aktualisierungen erfolgen nur beim Neustart von HA. Um die Daten im Hintergrund zu aktualisieren, aktivieren Sie diese Option, speichern Sie die Einstellungen und aktivieren Sie anschließend „Häufige mobile Synchronisierung“ unter „Erweiterte Einstellungen“ → „Abfrage & API“.",
-              "schedule_calendar_enabled": "Zeige deine Tado-Heizungszeitpläne als Kalendereinträge in HA an",
-              "offset_enabled": "Zeige den Temperaturkalibrierungs-Offset an, der in der Tado-App bei Klimageräten angezeigt wird (+1 API-Aufruf pro Gerät beim Neustart)",
-              "heating_circuit_enabled": "Weisen Sie jede Heizzone einem Kesselkreis zu oder gar keinem, damit deren Ventile für Restwärme weiterhin geöffnet bleiben, ohne den Kessel zu zünden. Erfordert eine Brücke zu den Kesselkreisen. Die Aktualisierung erfolgt im normalen Synchronisationsrhythmus, nicht sofort."
+              "home_state_sync_enabled": "Synchronisieren Sie die Gesamtanwesenheit Ihres Hauses (Zuhause/Abwesend). Etwa 1 API-Aufruf pro Aktualisierung. Das Aktualisierungsintervall ist unter Erweiterte Einstellungen → Abfrage, Verzögerungen & Standardwerte einstellbar.",
+              "weather_enabled": "Außentemperatur und Sonnenintensität von Tado. Etwa 1 API-Aufruf pro Aktualisierung. Das Aktualisierungsintervall ist unter Erweiterte Einstellungen → Abfrage, Verzögerungen & Standardwerte einstellbar.",
+              "mobile_devices_enabled": "Verfolgen Sie den Standort jedes Telefons für die Anwesenheit pro Gerät. Die Standorte werden etwa einmal pro Stunde aktualisiert (alle 4 Stunden beim kostenlosen Tado-Kontingent). Für schnellere Aktualisierungen schalten Sie dies ein, speichern und aktivieren dann Häufige mobile Synchronisierung unter Erweiterte Einstellungen → Abfrage, Verzögerungen & Standardwerte.",
+              "schedule_calendar_enabled": "Zeigen Sie Ihre Tado-Heizungszeitpläne als Kalendereinträge in HA an",
+              "offset_enabled": "Zeigt den Temperaturkalibrierungs-Offset aus der Tado-App bei Klima-Entitäten an. Kostet 1 API-Aufruf pro Thermostat bei jeder vollständigen Synchronisierung (etwa stündlich).",
+              "heating_circuit_enabled": "Weisen Sie jede Heizzone einem Kesselkreis zu oder keinem, damit ihre Ventile für Restwärme weiterhin öffnen, ohne den Kessel zu zünden. Erfordert eine Bridge mit Kesselkreisen. Die Aktualisierung erfolgt im normalen Synchronisierungsrhythmus, nicht sofort."
             }
           },
           "hardware_connections": {
-            "name": "Hardware-Anschlüsse",
-            "description": "Physische Brücken, die eine lokale Steuerung in Echtzeit ermöglichen.",
+            "name": "Hardware-Verbindungen",
+            "description": "Ihre Tado Internet Bridge und die lokale HomeKit-Verbindung.",
             "data": {
-              "bridge_enabled": "Internetbrücke",
+              "bridge_enabled": "Internet Bridge",
               "homekit_enabled": "Lokale Steuerung (HomeKit)"
             },
             "data_description": {
-              "bridge_enabled": "Stellen Sie eine Verbindung zu Ihrer Tado-Internet-Bridge her, um die Vorlauftemperatur des Heizkessels abzulesen (erforderlich für die Wetterkompensation)",
-              "homekit_enabled": "Steuern Sie die Heizung lokal über HomeKit – auch wenn die Tado-Cloud ausfällt"
+              "bridge_enabled": "Stellen Sie eine Verbindung zu Ihrer Tado Internet Bridge her, um die Vorlauftemperatur des Heizkessels auszulesen (erforderlich für die Wetterkompensation)",
+              "homekit_enabled": "Steuern Sie Heizzonen lokal über HomeKit, auch wenn die Tado-Cloud ausgefallen ist. AC- und Warmwasserzonen nutzen immer die Cloud."
             }
           },
           "smart_automations": {
             "name": "Intelligente Automatisierungen",
-            "description": "Erweiterungen für Tado CE, die auf der Tado-eigenen Steuerung aufbauen.",
+            "description": "Erweiterungen von Tado CE, die auf der eigenen Steuerung von Tado aufbauen.",
             "data": {
-              "smart_comfort_enabled": "Intelligenter Komfort",
+              "smart_comfort_enabled": "Smart Comfort",
               "thermal_analytics_enabled": "Wärmeanalyse",
-              "adaptive_preheat_enabled": "Adaptive Vorheizung",
-              "wc_enabled": "Wetterausgleich"
+              "adaptive_preheat_enabled": "Adaptives Vorheizen",
+              "wc_enabled": "Wetterkompensation"
             },
             "data_description": {
-              "smart_comfort_enabled": "Komfortbewertung, Schimmelrisiko, Kondensations- und Taupunktsensoren für jede Zone",
-              "thermal_analytics_enabled": "Verfolgen Sie, wie schnell sich Ihre Räume aufheizen und wie sich die Leistung Ihrer Anlage im Laufe der Zeit entwickelt",
-              "adaptive_preheat_enabled": "Starten Sie die Heizung automatisch früher, damit Ihr Zimmer warm ist, wenn der Zeitplan in Kraft tritt. Ersetzt die „Early Start“-Funktion von Tado durch eine lokale Logik",
-              "wc_enabled": "Zuvor muss die Internet-Brücke aktiviert werden. Passt die Vorlauftemperatur Ihres Heizkessels automatisch an die Außenlufttemperatur an."
+              "smart_comfort_enabled": "Fügt für jede Zone Sensoren für Zeitplanabweichung, nächsten Zeitplan, Vorheiz-Empfehlung und Smart-Comfort-Zieltemperatur hinzu. Die Sensoren für Komfort, Schimmelrisiko, Kondensation und Taupunkt sind immer eingeschaltet.",
+              "thermal_analytics_enabled": "Verfolgen Sie, wie schnell sich Ihre Räume aufheizen und wie sich Ihre Anlage im Lauf der Zeit verhält",
+              "adaptive_preheat_enabled": "Startet die Heizung früher, damit ein Raum warm ist, wenn sein Zeitplanblock beginnt. Erfordert eingeschaltetes Smart Comfort und für jede Heizzone in der Zonenkonfiguration die Einstellung Aktiv oder Passiv (Standard ist Aus). Verwenden Sie es anstelle von Early Start von Tado und schalten Sie Early Start für diese Zonen aus.",
+              "wc_enabled": "Erfordert zuerst eine eingeschaltete Internet Bridge. Passt die Vorlauftemperatur Ihres Heizkessels automatisch an das Außenwetter an."
             }
           },
           "advanced": {
             "name": "Erweitert",
-            "description": "Funktionen für fortgeschrittene Benutzer zur detaillierten Steuerung einzelner Zonen.",
+            "description": "Konfiguration pro Zone und ein optionaler Zähler, der hilft abzustimmen, wie lange Tado CE auf eine von Tado angezeigte Änderung wartet.",
             "data": {
-              "zone_configuration_enabled": "Konfiguration pro Zone"
+              "zone_configuration_enabled": "Konfiguration pro Zone",
+              "write_timing_enabled": "Schreibzeiten teilen"
             },
             "data_description": {
-              "zone_configuration_enabled": "Sensoren, manuelle Übersteuerungen und die Heizung pro Zone individuell anpassen"
+              "zone_configuration_enabled": "Fügt ein Menü Zonenkonfiguration hinzu, mit Temperaturgrenzen, Sensoren, Überschreibungsverhalten, Typ der Wärmeabgabe, Komfort- und Anzeigeeinstellungen pro Zone.",
+              "write_timing_enabled": "Zählt, wie lange Tado braucht, um eine von Ihnen vorgenommene Änderung anzuzeigen, in Zeitbereichen. Die Zählwerte enthalten keine Namen, IDs oder Temperaturen, und die Datei hält nur fest, wann das Zählen begann. Sie werden in einer kleinen Datei im Speicher von Home Assistant abgelegt. Es wird nichts irgendwohin gesendet: Sie senden die Datei selbst. Wenn Sie dies ausschalten, werden die Zählwerte gelöscht."
             }
           }
         }
       },
       "advanced_settings": {
-        "description": "Nehmen Sie eine Feinabstimmung der aktivierten Funktionen vor. Um Funktionen zu aktivieren oder zu deaktivieren, gehen Sie zu Allgemeine Einstellungen.",
+        "description": "Passen Sie eingeschaltete Funktionen und die Einstellungen an, die immer gelten. Zum Ein- oder Ausschalten von Funktionen wechseln Sie zu den Allgemeinen Einstellungen.",
         "title": "Erweiterte Einstellungen",
         "sections": {
           "smart_comfort": {
-            "name": "Intelligenter Komfort",
+            "name": "Smart Comfort",
             "data": {
-              "smart_comfort_mode": "Intelligenter Komfort-Modus",
-              "use_feels_like": "Verwenden Sie die gefühlte Temperatur",
-              "mold_risk_window_type": "Fenster Typ",
+              "smart_comfort_mode": "Smart-Comfort-Modus",
+              "use_feels_like": "Gefühlte Temperatur verwenden",
+              "mold_risk_window_type": "Fenstertyp",
               "smart_comfort_history_days": "Temperaturverlauf (Tage)"
             },
             "data_description": {
-              "smart_comfort_mode": "Wie stark Tado CE die Zieltemperatur in Richtung Komfort anpasst. „Leicht“ = kaum spürbar, „Aggressiv“ = deutlich spürbar. Beginnen Sie mit „Leicht“.",
-              "use_feels_like": "Berücksichtigung von Windchill und Luftfeuchtigkeit anstelle der Rohtemperatur",
-              "mold_risk_window_type": "Ihr Fenstertyp. Beeinflusst die Schätzung der Oberflächentemperatur im Hinblick auf das Schimmelrisiko",
-              "smart_comfort_history_days": "Wie viele Tage der Temperaturdaten für die Schätzung der Heizrate verwendet werden sollen (1-30)"
+              "smart_comfort_mode": "Wie stark Tado CE die Außentemperatur berücksichtigt, wenn es schätzt, wie lange ein Raum zum Aufheizen braucht. Leicht ändert die Schätzung ein wenig, Aggressiv stark. Es ändert keine Zieltemperatur. Erfordert eine Entität für die Außentemperatur (Externe Datenquellen weiter unten). Beginnen Sie mit Leicht.",
+              "use_feels_like": "Verwendet die gefühlte Temperatur der Wetter-Entität als Außenwert, sofern diese eine liefert. Keine Wirkung bei einem einfachen Temperatursensor. Gilt auch für die Wetterkompensation.",
+              "mold_risk_window_type": "Ihr Fenstertyp. Beeinflusst, wie die Oberflächentemperatur für das Schimmelrisiko geschätzt wird",
+              "smart_comfort_history_days": "Wie viele Tage an Temperaturdaten für die Schätzung der Heizrate verwendet werden (1–30, Standard 7)"
             }
           },
           "thermal_analytics": {
-            "name": "Thermische Analytik",
+            "name": "Wärmeanalyse",
             "data": {
-              "thermal_analytics_zones": "Thermische Analyse-Zonen",
-              "heating_cycle_history_days": "Heizzyklus-Historie (Tage)",
+              "thermal_analytics_zones": "Zonen der Wärmeanalyse",
+              "heating_cycle_history_days": "Heizzyklusverlauf (Tage)",
               "heating_cycle_min_cycles": "Minimale Heizzyklen",
-              "heating_cycle_inertia_threshold": "Trägheitsschwellenwert (°C)"
+              "heating_cycle_inertia_threshold": "Trägheitsschwelle (°C)"
             },
             "data_description": {
               "thermal_analytics_zones": "Wählen Sie aus, in welchen Zonen Wärmeanalysesensoren angezeigt werden sollen (für alle Zonen leer lassen)",
-              "heating_cycle_history_days": "Wie viele Tage der Heizzyklusdaten aufbewahrt werden sollen (1-30)",
-              "heating_cycle_min_cycles": "Warten Sie auf so viele abgeschlossene Zyklen, bevor Sie Ergebnisse anzeigen (1-10)",
-              "heating_cycle_inertia_threshold": "Eine Temperaturveränderung unterhalb dieses Wertes wird nach Beendigung der Heizung als \"ausgeglichen\" betrachtet (0,05-0,5°C)."
+              "heating_cycle_history_days": "Wie viele Tage an Heizzyklusdaten aufbewahrt werden (1–30, Standard 7)",
+              "heating_cycle_min_cycles": "Warten Sie auf diese Anzahl abgeschlossener Zyklen, bevor Ergebnisse angezeigt werden (1–10, Standard 3)",
+              "heating_cycle_inertia_threshold": "Eine Temperaturänderung unterhalb dieses Werts gilt nach dem Ende der Heizung als „eingeschwungen“ (0,05–0,5 °C, Standard 0,1)"
             }
           },
           "polling_api": {
-            "name": "Abfrage & API",
+            "name": "Abfrage, Verzögerungen & Standardwerte",
             "data": {
-              "day_start_hour": "Tag Beginn Stunde",
-              "night_start_hour": "Nacht Startzeit",
+              "day_start_hour": "Beginn des Tages (Stunde)",
+              "night_start_hour": "Beginn der Nacht (Stunde)",
               "custom_day_interval": "Benutzerdefiniertes Tagesintervall (für automatische Einstellung leer lassen)",
               "custom_night_interval": "Benutzerdefiniertes Nachtintervall (für automatische Einstellung leer lassen)",
               "refresh_debounce_seconds": "Aktualisierungsverzögerung nach einer Änderung (Sekunden)",
-              "api_history_retention_days": "Aufbewahrung der API-Historie (Tage)",
-              "smart_actions_debounce_seconds": "Verzögerung des Temperaturreglers (Sekunden)",
-              "device_sync_delay_seconds": "Verzögerung bei der Gerätesynchronisierung (Sekunden)",
+              "api_history_retention_days": "Aufbewahrung des API-Verlaufs (Tage)",
+              "smart_actions_debounce_seconds": "Verzögerung des Temperatur-Schiebereglers (Sekunden)",
+              "device_sync_delay_seconds": "Verzögerung der Gerätesynchronisierung (Sekunden)",
               "mobile_devices_frequent_sync": "Häufige mobile Synchronisierung",
-              "hot_water_timer_duration": "Standardwert für Warmwasser-Timer (Minuten)",
-              "presence_min_refresh_minutes": "Startseite – Anwesenheits-Aktualisierungsintervall",
-              "weather_min_refresh_minutes": "Aktualisierungsintervall für Wetterdaten",
-              "mobile_devices_min_refresh_minutes": "Aktualisierungsintervall für die Ortung mobiler Geräte"
+              "hot_water_timer_duration": "Standard-Timer für Warmwasser (Minuten)",
+              "presence_min_refresh_minutes": "Mindestwartezeit für die Anwesenheit im Haus",
+              "weather_min_refresh_minutes": "Mindestwartezeit für Wetterdaten",
+              "mobile_devices_min_refresh_minutes": "Mindestwartezeit für die Ortung mobiler Geräte"
             },
             "data_description": {
-              "day_start_hour": "Wenn die tageszeitliche Abfrage beginnt (0–23, Standard: 7). Wenn die Ruhezeiten von „Offset Sync“ aktiviert sind, werden zu diesem Zeitpunkt auch die nächtlichen Korrekturen wieder fortgesetzt.",
-              "night_start_hour": "Wenn die nächtliche Abfrage beginnt. Nachts erfolgt die Abfrage seltener (0–23, Standard: 23). Wenn die „Ruhezeiten“ von Offset Sync aktiviert sind, werden zu diesem Zeitpunkt auch keine nächtlichen Korrekturen mehr geschrieben.",
-              "custom_day_interval": "Überschreiben Sie die automatische Abfrage während des Tages durch ein festes Intervall. Lassen Sie das Feld leer, damit Tado CE die Abfrage entsprechend Ihrer API-Quote anpasst. (1–1440 Min.)",
-              "custom_night_interval": "Überschreiben Sie die automatische nächtliche Abfrage durch ein festes Intervall. Lassen Sie das Feld leer, damit Tado CE die Abfrage entsprechend Ihrer API-Quote anpasst. (1–1440 Min.)",
-              "refresh_debounce_seconds": "Warte so lange nach einer Änderung, bevor du neue Daten von Tado abrufst (1-60s)",
-              "api_history_retention_days": "Wie viele Tage des API-Aufrufverlaufs für das Nutzungsdiagramm aufbewahrt werden sollen (0 = für immer)",
-              "smart_actions_debounce_seconds": "Warten Sie beim Ziehen des Temperaturreglers so lange, bevor Sie den endgültigen Wert senden (0 = sofort senden)",
-              "device_sync_delay_seconds": "Wie lange soll zwischen aufeinanderfolgenden Änderungen gewartet werden, die an dasselbe Gerät gesendet werden (z. B. Kindersicherung oder Temperaturkorrektur)? Erhöhen Sie diesen Wert, wenn schnelle Änderungen nicht alle wirksam werden (0,5–5 s, Standardwert 1).",
-              "mobile_devices_frequent_sync": "Die Standorte der Geräte sollten im Hintergrund aktualisiert werden und nicht erst beim Neustart von HA. Dabei ist jeweils etwa ein API-Aufruf erforderlich.",
-              "hot_water_timer_duration": "Standarddauer beim Einschalten des Warmwassers ohne Angabe einer Zeitschaltuhr (1–1440 Min.)",
-              "presence_min_refresh_minutes": "Wie oft soll die Anwesenheit zu Hause überprüft werden (1–60 Min., Standardwert 5). Bei 1 Min.: ca. 1.440 Anrufe/Tag; bei 5 Min.: ca. 288 Anrufe/Tag.",
-              "weather_min_refresh_minutes": "Wie oft sollen Wetterdaten abgerufen werden (15–120 Min., Standardwert 30). Tado aktualisiert die Wetterdaten etwa stündlich, daher führt eine Einstellung unter 15 Minuten nicht zu aktuelleren Werten.",
-              "mobile_devices_min_refresh_minutes": "Wie oft die Standorte mobiler Geräte aktualisiert werden sollen (1–60 Min., Standardwert 5). Bei 1 Min.: ca. 1.440 Anrufe/Tag pro Gerät; bei 5 Min.: ca. 288 Anrufe/Tag pro Gerät."
+              "day_start_hour": "Zeitpunkt, zu dem die Abfrage tagsüber beginnt (0–23, Standard: 7). Offset Sync schreibt Korrekturen nur tagsüber, daher beginnt die Schreibaktivität zu diesem Zeitpunkt wieder. Sind beide Stundenangaben identisch, gilt der gesamte Tag als Tageszeit.",
+              "night_start_hour": "Wann die nächtliche Abfrage beginnt. Nachts wird seltener abgefragt (0–23, Standard: 23). Offset Sync pausiert seine Korrekturen ab dieser Stunde bis zum Beginn des Tages.",
+              "custom_day_interval": "Verwenden Sie dieses Intervall für die Abfrage tagsüber anstelle des automatischen (1–1440 Min.). Würde Ihr API-Kontingent sonst aufgebraucht, fragt Tado CE seltener ab, um es zu schützen. Leer lassen für automatisch.",
+              "custom_night_interval": "Verwenden Sie dieses Intervall für die Abfrage nachts anstelle des automatischen (1–1440 Min.). Würde Ihr API-Kontingent sonst aufgebraucht, fragt Tado CE seltener ab, um es zu schützen. Leer lassen für automatisch.",
+              "refresh_debounce_seconds": "Wartet nach einer Änderung so lange, bevor frische Daten von Tado abgerufen werden (1–60 s, Standard 15)",
+              "api_history_retention_days": "Wie viele Tage API-Aufrufverlauf für das Nutzungsdiagramm aufbewahrt werden (0–365, Standard 14, 0 = für immer)",
+              "smart_actions_debounce_seconds": "Beim Ziehen des Temperatur-Schiebereglers wird so lange gewartet, bevor der endgültige Wert gesendet wird (0–10 s, Standard 3, 0 = sofort senden)",
+              "device_sync_delay_seconds": "Wie lange zwischen unmittelbar aufeinanderfolgenden Änderungen gewartet wird, die an dasselbe Gerät gesendet werden (z. B. Kindersicherung oder Temperatur-Offset). Erhöhen Sie den Wert, wenn schnelle Änderungen nicht alle wirksam werden (0,5–5 s, Standard 1).",
+              "mobile_devices_frequent_sync": "Aktualisiert die Gerätestandorte bei jeder Abfrage statt nur bei der vollständigen Synchronisierung (etwa stündlich). Etwa 1 API-Aufruf pro Vorgang.",
+              "hot_water_timer_duration": "Standarddauer, wenn Sie das Warmwasser einschalten, ohne einen Timer anzugeben (1–720 Min., Standard 60)",
+              "presence_min_refresh_minutes": "Die kürzeste Wartezeit zwischen Prüfungen der Anwesenheit im Haus (1–60 Min., Standard 5). Prüfungen finden nur statt, wenn Tado CE abfragt, die tatsächliche Pause kann also länger sein, und bei eingeschaltetem HomeKit ist sie nie kürzer als die Cloud-Datenaktualisierung. Jede Prüfung ist 1 API-Aufruf.",
+              "weather_min_refresh_minutes": "Die kürzeste Wartezeit zwischen Wetterabrufen (15–120 Min., Standard 30). Das Wetter von Tado wird etwa stündlich aktualisiert, und Abrufe finden nur statt, wenn Tado CE abfragt. Jeder Abruf ist 1 API-Aufruf.",
+              "mobile_devices_min_refresh_minutes": "Die kürzeste Wartezeit zwischen Abrufen der Standorte mobiler Geräte, wenn Häufige mobile Synchronisierung eingeschaltet ist (1–60 Min., Standard 5). Jeder Abruf ist 1 API-Aufruf für alle Geräte."
             }
           },
           "homekit": {
             "name": "HomeKit",
             "data": {
-              "homekit_cloud_sync_minutes": "Cloud Data Refresh",
+              "homekit_cloud_sync_minutes": "Cloud-Datenaktualisierung",
               "homekit_unpair": "HomeKit entkoppeln",
-              "homekit_repair": "Erneut koppeln (Setup-Code eingeben)"
+              "homekit_repair": "Erneut koppeln (Einrichtungscode eingeben)"
             },
             "data_description": {
-              "homekit_cloud_sync_minutes": "Wie oft Cloud-Daten wie Luftfeuchtigkeit, Heizleistung und Overlay-Status abgerufen werden sollen. Die Temperatur verwendet HomeKit lokal. Niedriger = frischere Luftfeuchtigkeit, aber mehr API-Aufrufe (5-120 min)",
-              "homekit_unpair": "Trennen Sie die lokale HomeKit-Verbindung und entfernen Sie die Pairing-Anmeldedaten",
-              "homekit_repair": "Öffnen Sie die Eingabeaufforderung für den Einrichtungscode erneut, um die Kopplung nach einem Fehlschlag oder einem Verlust der Verbindung erneut durchzuführen."
+              "homekit_cloud_sync_minutes": "Die kürzeste Wartezeit zwischen geplanten Cloud-Abrufen, solange HomeKit verbunden ist (5–120 Min., Standard 30). Sie bestimmt das Tempo für Luftfeuchtigkeit, Heizleistung, Überschreibungsstatus, Wetter, Anwesenheit im Haus und Standorte mobiler Geräte. Tado CE kann länger warten, um Ihr Kontingent zu schonen und nachts. Die Temperatur kommt lokal von HomeKit. Ein niedrigerer Wert liefert frischere Cloud-Daten, verbraucht aber mehr API-Aufrufe.",
+              "homekit_unpair": "Trennt die lokale HomeKit-Verbindung und entfernt die Kopplungs-Anmeldedaten",
+              "homekit_repair": "Öffnet die Eingabe des Einrichtungscodes erneut, um nach einer fehlgeschlagenen oder verlorenen Kopplung erneut zu koppeln"
             },
             "description": "Verbindungsstatus: {homekit_status}"
           },
           "internet_bridge": {
-            "name": "Internet-Brücke",
+            "name": "Internet Bridge",
             "data": {
-              "bridge_serial": "Seriennummer der Brücke",
-              "bridge_auth_key": "Bridge Auth Code"
+              "bridge_serial": "Seriennummer der Bridge",
+              "bridge_auth_key": "Auth-Code der Bridge"
             },
             "data_description": {
-              "bridge_serial": "Aufgedruckt auf der Unterseite Ihrer Brücke (beginnt mit IB, z. B. IB0123456789)",
-              "bridge_auth_key": "4-stelliger Code vom Aufkleber auf Ihrer Brücke (vertraulich behandeln)"
+              "bridge_serial": "Aufgedruckt auf der Unterseite Ihrer Bridge (beginnt mit IB, z. B. IB0123456789)",
+              "bridge_auth_key": "4-stelliger Code vom Aufkleber auf Ihrer Bridge (vertraulich behandeln)"
             }
           },
           "weather_compensation": {
             "name": "Wetterkompensation",
             "data": {
-              "wc_heating_system_preset": "Heizsystem Typ",
+              "wc_heating_system_preset": "Heizsystemtyp",
               "wc_slope": "Steigung der Heizkurve",
-              "wc_design_outdoor_temp": "Auslegung der Außentemperatur",
+              "wc_design_outdoor_temp": "Auslegungs-Außentemperatur",
               "wc_max_flow_temp": "Maximale Vorlauftemperatur",
               "wc_min_flow_temp": "Minimale Vorlauftemperatur",
-              "wc_shutoff_temp": "Heizung Abschalttemperatur",
-              "wc_smoothing_method": "Temperatur-Glättungsmethode",
+              "wc_shutoff_temp": "Abschalttemperatur der Heizung",
+              "wc_smoothing_method": "Methode zur Temperaturglättung",
               "wc_smoothing_window": "Glättungsfenster (Minuten)",
-              "wc_room_compensation_enabled": "Aktivieren der Raumkompensation",
+              "wc_room_compensation_enabled": "Raumkompensation einschalten",
               "wc_room_compensation_factor": "Raumkompensationsfaktor",
-              "wc_step_size": "Vorlauftemperatur Schrittweite",
-              "wc_hysteresis": "Hysterese ändern"
+              "wc_step_size": "Schrittweite der Vorlauftemperatur",
+              "wc_hysteresis": "Änderungshysterese"
             },
             "data_description": {
-              "wc_slope": "Wie stark steigt die Vorlauftemperatur an, wenn es draußen kälter wird? Je höher der Wert, desto stärker wird geheizt (0,3–3,0). Wird nur verwendet, wenn die oben angegebene Voreinstellung des Heizsystems auf „Benutzerdefiniert“ gesetzt ist; andernfalls wird der Wert anhand Ihrer Werte für Maximal-/Minimalvorlauf, Absperrtemperatur und Auslegungsaußentemperatur berechnet.",
+              "wc_slope": "Wie steil sich die Vorlauftemperatur mit der Außentemperatur ändert (0,3–3,0). Bei Temperaturen unterhalb Ihrer Auslegungs-Außentemperatur ergibt eine höhere Steigung einen höheren Vorlauf, bis zur maximalen Vorlauftemperatur. Bei wärmeren Temperaturen ergibt eine höhere Steigung einen niedrigeren Vorlauf. Wird nur verwendet, wenn die Voreinstellung des Heizsystems oben „Benutzerdefiniert“ ist; andernfalls wird sie aus Ihren Werten für maximale und minimale Vorlauftemperatur, Abschalttemperatur und Auslegungs-Außentemperatur berechnet.",
               "wc_design_outdoor_temp": "Die kälteste Temperatur, die Sie in Ihrem Gebiet erwarten (-30 bis 10°C)",
               "wc_max_flow_temp": "Höchste Vorlauftemperatur, die Ihr Heizkessel bei der kältesten Außentemperatur erreichen sollte (25–80 °C). Diese Angabe fließt in die automatische Steigungsberechnung ein, es sei denn, die oben genannte Voreinstellung lautet „Benutzerdefiniert“.",
-              "wc_min_flow_temp": "Niedrigste Vorlauftemperatur, die auch bei Abschaltung der Heizung verwendet wird (25–60 °C). Diese Wert wird für die automatische Steigungsberechnung herangezogen, sofern die oben angegebene Voreinstellung nicht auf „Benutzerdefiniert“ gesetzt ist.",
-              "wc_shutoff_temp": "Heizen stoppen, wenn die Außentemperatur über diesen Wert steigt (5-30°C)",
+              "wc_min_flow_temp": "Niedrigste Vorlauftemperatur, die auch verwendet wird, wenn die Heizung abschaltet (25–60 °C). Fließt in die automatische Steigungsberechnung ein, es sei denn, die Voreinstellung oben ist „Benutzerdefiniert“.",
+              "wc_shutoff_temp": "Ab dieser Außentemperatur sendet Tado CE die minimale Vorlauftemperatur, anstatt der Heizkurve zu folgen (5–30 °C)",
               "wc_smoothing_method": "Wie die Außentemperaturmesswerte gemittelt werden, um plötzliche Änderungen zu vermeiden",
-              "wc_smoothing_window": "Wie lange soll die Außentemperatur gemittelt werden (15-1440 min)",
-              "wc_room_compensation_factor": "Wie stark die Vorlauftemperatur angepasst werden soll, wenn ein Raum kälter oder wärmer als der Sollwert ist (1,0-5,0)",
-              "wc_step_size": "Vorwählbare Vorlauftemperatur in dieser Schrittweite. Größere Schritte bedeuten weniger Kesselanpassungen (0,5–2,0 °C)",
-              "wc_hysteresis": "Sende nur dann eine neue Vorlauftemperatur, wenn diese um mehr als diesen Wert (0,5–3,0 °C) von der letzten abweicht.",
-              "wc_heating_system_preset": "Mit „Benutzerdefiniert“ können Sie die Steigung selbst festlegen; die anderen Optionen berechnen diese automatisch anhand der oben angegebenen Werte für „Max./Min. Durchfluss“, „Absperrdruck“ und „Auslegungsaußentemperatur“.",
-              "wc_room_compensation_enabled": "Passen Sie die Vorlauftemperatur nach oben oder unten an, wenn ein Raum kälter oder wärmer als die Solltemperatur ist, und zwar zusätzlich zur Außenwetterkurve."
+              "wc_smoothing_window": "Über wie lange die Außentemperatur gemittelt wird (15–1440 Min.)",
+              "wc_room_compensation_factor": "Grad Vorlauftemperatur, die pro Grad hinzugefügt werden, um den die Heizzonen unter der Zieltemperatur liegen, bzw. pro Grad darüber abgezogen werden. 3,0 bedeutet: 1 °C zu wenig ergibt 3 °C mehr Vorlauf (1,0–5,0)",
+              "wc_step_size": "Rundet die Vorlauftemperatur auf diese Schrittweite. Größere Schritte bedeuten weniger Kesselanpassungen (0,5–2,0 °C)",
+              "wc_hysteresis": "Sendet nur dann eine neue Vorlauftemperatur, wenn sie sich um mehr als diesen Wert von der letzten unterscheidet (0,5–3,0 °C)",
+              "wc_heating_system_preset": "Derzeit ändert nur Benutzerdefiniert etwas: Damit legen Sie die Steigung selbst fest. Die drei Heizungstypen verhalten sich gleich und ermitteln die Steigung aus den Feldern für maximale und minimale Vorlauftemperatur, Abschalttemperatur und Auslegungs-Außentemperatur weiter unten.",
+              "wc_room_compensation_enabled": "Hebt oder senkt die Vorlauftemperatur zusätzlich zur Wetterkurve um die durchschnittliche Differenz zwischen Ziel- und Raumtemperatur der Zonen, die gerade heizen. Wird ignoriert, sobald die Außentemperatur die Abschalttemperatur erreicht."
             }
           },
           "comfort_safety": {
@@ -1870,7 +1904,7 @@
               "comfort_heat_vulnerable_group": "Hitze- und Kältewarnungen für schutzbedürftige Bewohner"
             },
             "data_description": {
-              "comfort_heat_vulnerable_group": "Hitze- und Kältewarnungen sollten für Haushalte mit älteren Menschen, Kleinkindern oder kranken Personen eine Stufe früher ausgegeben werden, da dort bereits bei derselben Temperatur ein höheres Risiko besteht. Standardmäßig deaktiviert."
+              "comfort_heat_vulnerable_group": "Für Haushalte mit älteren, kleinen oder kranken Bewohnern. Hitzewarnungen erscheinen eine Risikostufe früher, und die Kältewarnung für Räume bei ausgeschalteter Heizung wird auch ausgelöst, wenn ein Raum unter 16 °C liegt, unabhängig von seiner Zieltemperatur. Standardmäßig aus."
             }
           },
           "external_data_sources": {
@@ -1881,59 +1915,59 @@
               "boiler_flow_temp_entity": "Entität „Vorlauftemperatur des Heizkessels“"
             },
             "data_description": {
-              "use_outdoor_temp_entity": "Deaktivieren Sie diese Option, um Funktionen zu deaktivieren, für die die Außentemperatur benötigt wird (Fenstererkennung, Komfortbewertung, Schimmelrisiko).",
+              "use_outdoor_temp_entity": "Schalten Sie dies aus, um Ihren eigenen Außensensor nicht mehr zu verwenden. Beim Speichern wird die gewählte Entität entfernt. Das Schimmelrisiko greift dann auf die Raumtemperatur zurück, der Smart-Comfort-Modus passt nichts mehr an, und die Wetterkompensation verwendet die Wetterdaten von Tado, sofern Wetterdaten eingeschaltet sind.",
               "outdoor_temp_entity": "Sensor zur Erfassung der Außentemperatur (z. B. „weather.home“ oder ein lokaler Sensor)",
-              "boiler_flow_temp_entity": "Durchfluss- und Temperatursensor für Heizkessel von Drittanbietern (ebusd, OpenTherm Gateway, myVaillant) für Haushalte ohne Tado Internet Bridge. Liefert die Daten des Durchfluss- und Temperatursensors für den Heizkessel sowie Informationen zur Effizienz."
+              "boiler_flow_temp_entity": "Ihr eigener Sensor für die Vorlauftemperatur des Heizkessels (zum Beispiel ebusd, OpenTherm Gateway oder myVaillant), der verwendet wird, wenn Tado keine Vorlauftemperatur meldet. Speist den Sensor für die Vorlauftemperatur des Heizkessels und die Warnung zur Vorlauftemperatur des Heizkessels. Er steuert nicht die Wetterkompensation, die die Internet Bridge benötigt."
             }
           }
         }
       },
       "bridge_setup": {
-        "description": "Geben Sie Ihre Zugangsdaten für die Tado Internet Bridge ein. Sie finden die Seriennummer und den Zugangscode auf der Rückseite Ihrer Bridge.",
-        "title": "Internet-Brücke einrichten",
+        "description": "Geben Sie die Zugangsdaten Ihrer Tado Internet Bridge ein. Seriennummer und Auth-Code finden Sie auf der Rückseite Ihrer Bridge.",
+        "title": "Internet Bridge einrichten",
         "data": {
           "bridge_serial": "Seriennummer",
           "bridge_auth_key": "Auth-Code"
         },
         "data_description": {
           "bridge_serial": "Beginnt mit IB (z. B. IB0123456789)",
-          "bridge_auth_key": "4-stelliger Code vom Aufkleber auf Ihrer Brücke (bitte vertraulich behandeln)"
+          "bridge_auth_key": "4-stelliger Code vom Aufkleber auf Ihrer Bridge (bitte vertraulich behandeln)"
         }
       },
       "wc_bridge_prompt": {
-        "description": "Die Wetterkompensation funktioniert am besten mit der Internet-Brücke für Echtzeit-Vorlauftemperaturdaten.",
+        "description": "Die Wetterkompensation benötigt die Internet Bridge, um die Vorlauftemperatur des Heizkessels zu lesen und zu setzen. Ohne sie läuft die Wetterkompensation nicht.",
         "title": "Wetterkompensation",
         "data": {
-          "also_enable_bridge": "Aktivieren Sie auch Internet Bridge"
+          "also_enable_bridge": "Internet Bridge ebenfalls einschalten"
         },
         "data_description": {
-          "also_enable_bridge": "Richten Sie im nächsten Schritt die Bridge-Anmeldeinformationen ein"
+          "also_enable_bridge": "Aktivieren Sie das Kontrollkästchen, um im nächsten Schritt Seriennummer und Auth-Code Ihrer Bridge einzugeben. Lassen Sie es ausgeschaltet, bleibt die Wetterkompensation inaktiv, bis eine Bridge hinzugefügt wird."
         }
       },
       "reset_to_defaults": {
-        "description": "Wählen Sie aus, was zurückgesetzt werden soll. Beim Zurücksetzen nach Kategorien werden nur die Abstimmungsparameter zurückgesetzt, sodass die Funktion weiterhin aktiviert bleibt.",
+        "description": "Wählen Sie aus, was zurückgesetzt werden soll. Eine einzelne Kategorie setzt ihre Abstimmungswerte auf die Standardwerte zurück und lässt die Funktion eingeschaltet. Zwei Ausnahmen: Externe Datenquellen löscht die von Ihnen gewählten Sensoren, und Internet Bridge löscht Seriennummer und Auth-Code der Bridge und schaltet die Bridge aus. Alles zurücksetzen schaltet jede Funktion aus.",
         "title": "Auf Standardwerte zurücksetzen",
         "data": {
-          "reset_scope": "Umfang zurücksetzen"
+          "reset_scope": "Umfang des Zurücksetzens"
         }
       },
       "reset_confirm": {
-        "description": "Dadurch werden alle Einstellungen auf die Standardwerte zurückgesetzt. Ihr Tado-Konto, die Bridge-Verbindung und die HomeKit-Kopplung bleiben erhalten, sodass Sie diese nicht erneut einrichten müssen.",
-        "title": "Bestätigen Sie Reset"
+        "description": "Dadurch werden die von Ihnen gewählten Einstellungen auf die Standardwerte zurückgesetzt. Alles zurücksetzen schaltet außerdem jede Funktion aus, wodurch die von ihr erstellten Entitäten entfernt werden. Ihre Tado-Anmeldung und die Einstellungen pro Zone bleiben erhalten, ebenso Seriennummer und Auth-Code der Bridge, es sei denn, Sie haben Internet Bridge gewählt.",
+        "title": "Zurücksetzen bestätigen"
       },
       "homekit_pairing": {
         "title": "HomeKit-Kopplung",
-        "description": "Geben Sie die 8-stellige HomeKit-PIN Ihrer Tado-Bridge ein (Format: XXX-XX-XXX). Sie finden sie auf dem Etikett der Bridge oder in der Tado-App. Wenn Ihre Bridge bereits mit Apple Home gekoppelt ist, müssen Sie sie zuerst entkoppeln. Über die HA HomeKit Bridge-Integration können Sie die Klimaeinheiten erneut für Apple Home freigeben.",
+        "description": "Geben Sie die 8-stellige HomeKit-PIN Ihrer Tado Bridge ein (Format: XXX-XX-XXX). Sie finden sie auf dem Etikett der Bridge oder in der Tado-App. Wenn Ihre Bridge bereits mit Apple Home gekoppelt ist, müssen Sie sie zuerst entkoppeln. Über die Integration HA HomeKit Bridge können Sie Klima-Entitäten erneut für Apple Home bereitstellen. Lassen Sie den Code leer und senden Sie das Formular ab, um die Kopplung abzubrechen.",
         "data": {
           "homekit_pin": "HomeKit-PIN"
         },
         "data_description": {
-          "homekit_pin": "8-stelliger Code von Ihrer Tado Internet Bridge (z.B. 123-45-678)"
+          "homekit_pin": "8-stelliger Code Ihrer Tado Internet Bridge (z. B. 123-45-678)"
         }
       },
       "homekit_unpair": {
         "title": "HomeKit entkoppeln",
-        "description": "Dadurch wird die lokale HomeKit-Verbindung getrennt und die Anmeldeinformationen für die Kopplung werden entfernt. Sie können das Pairing später in den Verbindungseinstellungen erneut durchführen."
+        "description": "Dadurch wird die lokale HomeKit-Verbindung getrennt, die Kopplungs-Anmeldedaten werden entfernt und Lokale Steuerung (HomeKit) wird ausgeschaltet. Um später erneut zu koppeln, schalten Sie Lokale Steuerung (HomeKit) in den Allgemeinen Einstellungen wieder ein und geben Sie den Einrichtungscode ein."
       }
     },
     "abort": {
@@ -1942,21 +1976,22 @@
     },
     "error": {
       "interval_out_of_range": "Das Abfrageintervall muss zwischen 1 und 1440 Minuten liegen.",
-      "invalid_number": "Bitte geben Sie eine gültige Nummer ein",
+      "invalid_number": "Bitte geben Sie eine gültige Zahl ein",
       "bridge_auth_failed": "Ungültige Bridge-Seriennummer oder ungültiger Authentifizierungscode. Bitte überprüfen Sie die Angaben und versuchen Sie es erneut.",
       "wc_min_exceeds_max": "Die minimale Vorlauftemperatur kann die maximale Vorlauftemperatur nicht überschreiten.",
-      "bridge_serial_invalid": "Nur v3+ Internet Bridges (Seriennummern, die mit IB beginnen) unterstützen die lokale API. Ihre Seriennummer deutet auf eine v2-Brücke (GW-Präfix) hin, die nicht über eine lokale API verfügt. Die Wetterkompensation kann auch ohne Brücke über Cloud-Daten genutzt werden.",
+      "bridge_serial_invalid": "Nur Internet Bridges ab Version 3 (Seriennummer beginnt mit IB) haben die lokale API. Diese Seriennummer beginnt nicht mit IB, es könnte also eine ältere Bridge (Präfix GW) oder ein Tippfehler sein. Die Wetterkompensation benötigt eine Bridge mit der lokalen API.",
       "homekit_wrong_pin": "Die Bridge hat den Code abgelehnt. Entweder ist der 8-stellige HomeKit-Einrichtungscode falsch (überprüfen Sie ihn an der Bridge oder in der Tado-App), oder ein anderer HomeKit-Controller (Homebridge, Apple Home oder das HomeKit von Home Assistant) hat die Bridge bereits belegt. Beenden Sie den anderen Controller und versuchen Sie es dann erneut.",
-      "homekit_already_paired": "Die Bridge ist bereits mit einem anderen Controller gekoppelt. Heben Sie das Pairing mit Apple Home auf und versuchen Sie es dann erneut",
+      "homekit_already_paired": "Die Bridge hat die Kopplung abgelehnt. Möglicherweise ist sie bereits mit einem anderen Controller (z. B. Apple Home) gekoppelt oder alle ihre Kopplungsplätze sind belegt. Entfernen Sie eine alte Kopplung und versuchen Sie es dann erneut.",
       "homekit_network_error": "Die Bridge in Ihrem Netzwerk konnte nicht erreicht werden. Prüfen Sie, ob sie eingeschaltet und verbunden ist",
       "homekit_timeout": "Zeitlimit für die Kopplung abgelaufen. Die Bridge hat nicht rechtzeitig geantwortet.",
       "homekit_pairing_failed": "Die Kopplung ist fehlgeschlagen. Bitte versuchen Sie es erneut.",
-      "svc_active_sensor_clear": "Die intelligente Ventilsteuerung ist für diese Zone aktiviert. Durch Deaktivieren des externen Temperatursensors wird die intelligente Ventilsteuerung deaktiviert. Stellen Sie den Modus der intelligenten Ventilsteuerung zunächst auf „Aus“, wenn Sie den Sensor pausieren möchten, ohne die SVC zu stoppen.",
-      "homekit_max_tries": "Zu viele fehlgeschlagene Versuche. Die Brücke ist vorübergehend gesperrt. Warten Sie einige Minuten oder setzen Sie die Brücke zurück und versuchen Sie es erneut.",
-      "homekit_busy": "Auf der Brücke herrscht reger Betrieb. Möglicherweise findet gerade eine weitere Paarung statt. Versuchen Sie es in einem Moment erneut.",
+      "svc_active_sensor_clear": "Smart Valve Control ist für diese Zone eingeschaltet und benötigt den externen Temperatursensor. Stellen Sie zuerst den Modus für Smart Valve Control auf Aus und entfernen Sie dann den Sensor.",
+      "homekit_max_tries": "Zu viele fehlgeschlagene Versuche. Die Bridge ist vorübergehend gesperrt. Warten Sie einige Minuten oder setzen Sie die Bridge zurück und versuchen Sie es erneut.",
+      "homekit_busy": "Die Bridge ist ausgelastet. Möglicherweise läuft gerade eine andere Kopplung. Versuchen Sie es gleich noch einmal.",
       "homekit_no_zeroconf": "Für die HomeKit-Kopplung wird der Zeroconf-Dienst von Home Assistant benötigt, der auf diesem Host jedoch nicht läuft. Fügen Sie `default_config:` (oder `zeroconf:`) zu Ihrer configuration.yaml hinzu, starten Sie das System neu und versuchen Sie es dann erneut.",
       "homekit_pin_format": "Das sieht nicht nach einem HomeKit-Einrichtungscode aus. Geben Sie den 8-stelligen Code im Format 123-45-678 ein (nicht den 4-stelligen Authentifizierungscode), der auf Ihrer Bridge oder in der Tado-App angezeigt wird.",
-      "homekit_no_bridge_detected": "In keiner Ihrer Zonen ist eine Internet-Bridge der Version v3 oder v3+ aufgeführt – die einzige Hardware, die dieser Kopplungsablauf erkennen kann. Eine Internet-Bridge der Version v2 (seriell, GW) unterstützt HomeKit nicht, und Smart-AC-Steuergeräte werden separat mit ihrem eigenen HomeKit-Code gekoppelt, was dieser Ablauf ebenfalls nicht unterstützt. Klicken Sie auf „Absenden“, um ohne Kopplung zurückzukehren."
+      "homekit_no_bridge_detected": "In diesem Haus wurde keine Tado Internet Bridge (Version 3 oder höher) gefunden. Ältere Bridges (Seriennummer GW) unterstützen HomeKit nicht, und Smart-AC-Control-Geräte werden separat mit ihrem eigenen Code gekoppelt. Senden Sie das Formular ab, um ohne Kopplung zurückzukehren.",
+      "bridge_credentials_required": "Geben Sie sowohl die Seriennummer als auch den Authentifizierungscode ein."
     }
   }
 }

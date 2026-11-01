@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.climate import ATTR_HVAC_MODE, ClimateEntity  # type: ignore[attr-defined]
@@ -46,6 +45,7 @@ from .const import (
 )
 from .device_manager import get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY
+from .error_dispatch import is_typed_cloud_rejection
 from .format_helpers import (
     format_overlay_type as _format_overlay_type,
 )
@@ -60,7 +60,6 @@ from .helpers import (
 )
 from .optimistic_helpers import (
     OptimisticUpdateResult,
-    clear_optimistic_state,
     resolve_optimistic_update,
     set_optimistic_fields,
 )
@@ -81,6 +80,7 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
     """Tado CE Heating Climate Entity."""
 
     _attr_has_entity_name = True
+    _write_timing_zone_kind = "heating"
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, home_id: str) -> None:
         super().__init__(coordinator)
@@ -176,6 +176,7 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
 
     def _calculate_hvac_action(
         self, target_temp: float | None = None, hvac_mode: HVACMode | None = None,
+        *, ignore_expected: bool = False,
     ) -> HVACAction:
         """Calculate hvac_action for heating zone.
 
@@ -183,6 +184,7 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
         heating_power > temperature-aware HEAT fallback > IDLE. The
         target_temp branch must run before _expected_hvac_action so a
         new optimistic update overrides a stale expected action.
+        ignore_expected skips the expected rung to derive the action from Tado's data.
         """
         mode = hvac_mode if hvac_mode is not None else self._attr_hvac_mode
 
@@ -190,15 +192,18 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
         if mode == HVACMode.OFF:
             return HVACAction.OFF
 
-        # If target_temp is provided (optimistic call), assume HEATING
-        # This MUST be checked before _expected_hvac_action to ensure new
-        # optimistic updates override stale expected actions
+        # Optimistic call: judge the new target against the room, before the stale expected action
         if target_temp is not None and mode == HVACMode.HEAT:
-            return HVACAction.HEATING
+            current = self._attr_current_temperature
+            if current is None or target_temp > current + 0.5:
+                return HVACAction.HEATING
+            if target_temp > current and self._heating_power and self._heating_power > 0:
+                return HVACAction.HEATING
+            return HVACAction.IDLE
 
         # If we have optimistic state with expected action, use it
         # This ensures optimistic updates work even when current temp >= target
-        if self._expected_hvac_action is not None:
+        if self._expected_hvac_action is not None and not ignore_expected:
             return self._expected_hvac_action
 
         # API confirms heating (highest priority when available)
@@ -502,6 +507,14 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
             )
             if scheduled is not None:
                 self._attr_target_temperature = scheduled
+            # Records what Tado reports for an off zone without a manual overlay, once per change.
+            off_state = (power, self._overlay_type, repr(zone_data.get("setting")))
+            if off_state != getattr(self, "_prev_off_state", None):
+                self._prev_off_state = off_state
+                _LOGGER.debug(
+                    "Climate Heating: %s is off without a manual overlay, power=%s overlayType=%s setting=%s scheduled=%s",
+                    self._zone_name, power, self._overlay_type, zone_data.get("setting"), scheduled,
+                )
 
         return HVACMode.OFF
 
@@ -566,12 +579,9 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
 
         api_target_temperature is added to api_values when non-None so
         optimistic resolution preserves the user's target until the API
-        propagates it (usually one poll cycle).
+        propagates it (usually one poll cycle). hvac_action is derived, so Tado never confirms it.
         """
-        api_values: dict[str, Any] = {
-            "hvac_mode": api_hvac_mode,
-            "hvac_action": api_hvac_action,
-        }
+        api_values: dict[str, Any] = {"hvac_mode": api_hvac_mode}
         if api_target_temperature is not None:
             api_values["target_temperature"] = api_target_temperature
 
@@ -596,6 +606,12 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
                 self._attr_target_temperature,
             )
         else:
+            # Cloud state first, so a resend started below keeps its optimistic state
+            self._attr_hvac_mode = api_hvac_mode
+            self._attr_hvac_action = api_hvac_action
+            if power != "ON" and api_hvac_mode == HVACMode.OFF:
+                self._attr_hvac_action = HVACAction.OFF
+
             if result == OptimisticUpdateResult.EXPIRED:
                 _LOGGER.warning(
                     "Climate Heating: %s. Tado did not confirm the last "
@@ -624,11 +640,6 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
                 if write_tracker is not None:
                     write_tracker.record_success()
                 self._last_write_source = ""
-
-            self._attr_hvac_mode = api_hvac_mode
-            self._attr_hvac_action = api_hvac_action
-            if power != "ON" and api_hvac_mode == HVACMode.OFF:
-                self._attr_hvac_action = HVACAction.OFF
 
     def _record_smart_comfort(self) -> None:
         """Record temperature for Smart Comfort analytics."""
@@ -698,7 +709,7 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
             api_target_temp = (setting.get("temperature") or {}).get("celsius")
 
             # Calculate hvac_action
-            api_hvac_action = self._calculate_hvac_action(hvac_mode=api_hvac_mode)
+            api_hvac_action = self._calculate_hvac_action(hvac_mode=api_hvac_mode, ignore_expected=True)
 
             # Apply state
             self._apply_optimistic_or_api_state(
@@ -746,10 +757,9 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
         client = self.coordinator.api_client
         state = "AWAY" if preset_mode == PRESET_AWAY else "HOME"
 
-        # Optimistic update BEFORE API call
+        # Preset is rebuilt from home state in update(), so it arms no optimistic window
         old_preset = self._attr_preset_mode
         self._attr_preset_mode = preset_mode
-        self._optimistic_set_at = time.monotonic()
         self.async_write_ha_state()
 
         api_success = False
@@ -784,7 +794,6 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
                 self._zone_name,
             )
             self._attr_preset_mode = old_preset
-            clear_optimistic_state(self)
             self.async_write_ha_state()
 
     async def _write_via_cloud(
@@ -1248,6 +1257,9 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
                 reason=f"set timer at {temperature}°C {term_desc}",
                 capture_source="set_timer",
             )
-        except HomeAssistantError:
+        except HomeAssistantError as err:
+            # A typed 429 or auth error keeps its translated message; a plain failure reports False.
+            if is_typed_cloud_rejection(err):
+                raise
             return False
         return True

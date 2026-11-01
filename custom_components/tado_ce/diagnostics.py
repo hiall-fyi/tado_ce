@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.diagnostics import async_redact_data
+from homeassistant.const import __version__ as HA_VERSION
+from homeassistant.loader import async_get_integration
+
+from .const import DOMAIN
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
     from .coordinator import TadoConfigEntry, TadoDataUpdateCoordinator
+
+_LOGGER = logging.getLogger(__name__)
 
 # Keys to redact from config entry data
 TO_REDACT_CONFIG = {
@@ -54,16 +61,34 @@ TO_REDACT_DATA = {
 }
 
 
+def _redact_entry(entry: TadoConfigEntry) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Return the entry data and options with credentials and identifiers redacted."""
+    return (
+        async_redact_data(dict(entry.data), TO_REDACT_CONFIG),
+        async_redact_data(dict(entry.options), TO_REDACT_CONFIG),
+    )
+
+
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant,
     entry: TadoConfigEntry,
 ) -> dict[str, Any]:
     """Return diagnostics for a config entry."""
-    coordinator = entry.runtime_data
+    redacted_entry_data, redacted_options = _redact_entry(entry)
 
-    # Redact sensitive fields from entry data and options
-    redacted_entry_data = async_redact_data(dict(entry.data), TO_REDACT_CONFIG)
-    redacted_options = async_redact_data(dict(entry.options), TO_REDACT_CONFIG)
+    coordinator = getattr(entry, "runtime_data", None)
+    if coordinator is None:
+        # Setup failed or is retrying: runtime_data is only assigned at the end of setup.
+        return {
+            "entry": {
+                "entry_id": entry.entry_id,
+                "version": entry.version,
+                "state": entry.state.value,
+                "data": redacted_entry_data,
+                "options": redacted_options,
+            },
+            "coordinator": None,
+        }
 
     # Build coordinator data summary (redact PII from nested dicts)
     coord_data = coordinator.data or {}
@@ -124,7 +149,23 @@ async def async_get_config_entry_diagnostics(
         "coordinator": redacted_coord,
         "homekit": homekit_diag,
         "data_flow_health": _build_data_flow_health(coordinator),
+        "write_timing": await _build_write_timing(hass, coordinator),
     }
+
+
+async def _build_write_timing(hass: HomeAssistant, coordinator: TadoDataUpdateCoordinator) -> dict[str, Any]:
+    """Return the opt-in write timing counters, or just `{"enabled": False}` when the option is off."""
+    recorder = getattr(coordinator, "write_timing", None)
+    if recorder is None or not recorder.is_enabled():
+        return {"enabled": False}
+    try:
+        integration_version = str((await async_get_integration(hass, DOMAIN)).version)
+    except Exception:
+        # A missing version must not stop the rest of the diagnostics download.
+        _LOGGER.warning("Diagnostics: could not read the integration version for write timing", exc_info=True)
+        integration_version = "unknown"
+    payload: dict[str, Any] = recorder.diagnostics(integration_version, HA_VERSION)
+    return payload
 
 
 def _build_data_flow_health(

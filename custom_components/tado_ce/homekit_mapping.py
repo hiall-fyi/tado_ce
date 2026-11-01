@@ -24,6 +24,17 @@ _BRIDGE_MODEL: str = "IB01"
 _STORE_VERSION = 1
 
 
+def device_serials(device: Any) -> set[str]:
+    """Return the non-empty string serialNo and shortSerialNo of a cloud device."""
+    if not isinstance(device, dict):
+        return set()
+    return {
+        value
+        for value in (device.get("serialNo"), device.get("shortSerialNo"))
+        if isinstance(value, str) and value
+    }
+
+
 def build_serial_mapping(
     accessories: list[dict[str, Any]],
     cloud_zones_info: list[dict[str, Any]],
@@ -61,7 +72,7 @@ def build_serial_mapping(
             continue
         zone_id = str(raw_id)
         devices = zone.get("devices") or []
-        zone_serials[zone_id] = {d.get("serialNo", "") for d in devices} - {""}
+        zone_serials[zone_id] = set().union(*(device_serials(d) for d in devices))
 
     _LOGGER.debug(
         "HomeKit: cloud zone serial counts: %s",
@@ -184,7 +195,7 @@ def mapping_covers_all_zones(
         str(z.get("id"))
         for z in zones_info
         if str(z.get("id")) in climate_ids
-        and any(d.get("serialNo") for d in (z.get("devices") or []))
+        and any(device_serials(d) for d in (z.get("devices") or []))
     }
     return mappable.issubset(set(zone_aid_map))
 

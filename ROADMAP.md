@@ -10,21 +10,24 @@ For completed features, see [CHANGELOG.md](CHANGELOG.md).
 
 ### Current Release
 
-- Stable: v4.5.1 (2026-10-17)
+- Stable: v4.6.0 (2026-11-01)
 - Headliners:
-  - A wireless sensor that has gone offline no longer leaves its last reading on show as if it were current
-  - Smart Valve Control retries handing a zone back to Tado when the first attempt fails, and no longer removes a temperature you set yourself
-  - Polling no longer spends the last few API calls kept back for manual changes
+  - Heating zones can send their changes through the Tado cloud, and a zone with no Override behaviour of its own now follows the hub
+  - The dropdown options in Zone Configuration and the hub's Override duration follow your language
+  - A new action shows the flow temperature setting Tado keeps for an OpenTherm system
+  - Tado CE sets up again on Home Assistant before 2026.7, and timers shorter than 15 minutes go out as you set them
 - Supported versions: v4.1.0 and later
 
 ### Next Release
 
-- Major: v5.0.0 (in development)
+- Next: v5.0.0, which reworks how Tado CE talks to Tado and to HomeKit and clears out the old compatibility code. It is in development with no release date, and a beta you can opt into comes first
+- After v4.6.0 there is no further v4.x release, except for a serious security problem or a problem that stops heating from working
+- Help wanted: if you have HomeKit connected, counts of how long Tado takes to show a change would help set the timings v5.0.0 depends on, see [Discussion #391](https://github.com/hiall-fyi/tado_ce/discussions/391)
 - Breaking changes: see [Breaking Changes](#breaking-changes-v500) below
 
 ### End of Life
 
-- v4.x support continues until v5.0.0 launches
+- v4.6.0 is the last planned v4.x release, and until v5.0.0 launches it only gets fixes for a serious security problem or a problem that stops heating from working
 - v5.0 launch will trigger v4.x EOL
 
 ## Upgrade Paths
@@ -124,7 +127,7 @@ Wanted and well-specified, and the foundation it builds on (persistence, polling
 
 ## Support Timeline
 
-v4.x support continues until v5.0.0 launches. EOL dates will be announced closer to the v5.0.0 release.
+v4.6.0 is the last planned v4.x release. Until v5.0.0 launches it is supported for a serious security problem or a problem that stops heating from working, and nothing else. EOL dates will be announced closer to the v5.0.0 release.
 
 ---
 
@@ -134,7 +137,7 @@ A spring-clean release that drops backward-compat code accumulated through the v
 
 **You will need v4.1.0 or later installed before you upgrade to v5.0.0, and if you are older than that, go through the current v4.x release first.** Two different numbers, so worth separating. v4.1.0 is the line v5.0.0 refuses to load below, because that is where the saved-settings format it reads begins. Any 4.1.0+ release updates your settings to that format, including the current one (v4.5.1), so there is no reason to pick an older one. Coming from v4.1.0 or later, there is nothing to do. v5.0.0 will not auto-migrate the v3.x option keys, entity unique_ids or storage layouts, because the code that handled those upgrades is removed in that release. The path through the current v4.x release stays open, so there is no rush to do it in one jump.
 
-Note this is v5.0.0's rule, not this release's. v4.5.1 itself still accepts an entry from v3.0.0 onwards.
+Note this is v5.0.0's rule, not this release's. v4.6.0 itself still accepts an entry from v3.0.0 onwards.
 
 Planned removals:
 

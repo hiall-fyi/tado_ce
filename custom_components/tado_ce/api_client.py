@@ -169,17 +169,22 @@ class TadoApiClient(TadoAuthMixin):
         """
         policy = ""
         ratelimit = ""
+        others: dict[str, Any] = {}
         for key, value in headers.items():
             key_lower = key.lower()
             if key_lower == "ratelimit-policy":
                 policy = value
             elif key_lower == "ratelimit":
                 ratelimit = value
+            elif key_lower.startswith(("ratelimit", "x-ratelimit")) or key_lower == "retry-after":
+                others[key] = value
 
         _LOGGER.debug(
             "API: rate-limit headers, policy=%s, ratelimit=%s",
             policy, ratelimit,
         )
+        if others:
+            _LOGGER.debug("API: other rate-limit headers: %s", others)
 
         if "q=" in policy:
             with suppress(ValueError, IndexError):
@@ -245,10 +250,22 @@ class TadoApiClient(TadoAuthMixin):
         window = max(QUOTA_RESET_EARLY_WINDOW_MINUTES, slack)
 
         # Remaining only falls between resets, so any rise near or after the predicted reset counts; the jump threshold misses quiet days.
-        if prev_remaining is not None and remaining is not None:
+        # A reset leaves calls remaining, so an exhausted count (used is then the limit, not a counter) never is one.
+        if prev_remaining is not None and remaining is not None and remaining > 0:
             reset_threshold = max(20, int(limit * 0.05))
             rise = remaining - prev_remaining
             next_reset = predicted_next_reset(last_reset_utc)
+            prev_limit = prev_data.get("limit")
+            prev_used = prev_data.get("used")
+            if not isinstance(prev_used, int) or isinstance(prev_used, bool):
+                prev_used = (
+                    prev_limit - prev_remaining
+                    if isinstance(prev_limit, int) and not isinstance(prev_limit, bool)
+                    else None
+                )
+            # A fall in used is the counter resetting; a raised limit lifts remaining without it.
+            if prev_used is not None:
+                rise = prev_used - used
             reason = ""
             if rise > reset_threshold:
                 reason = "jump above the threshold"
@@ -258,6 +275,14 @@ class TadoApiClient(TadoAuthMixin):
                 and now_utc >= next_reset - timedelta(minutes=window)
             ):
                 reason = "rise near the predicted reset"
+            elif (
+                isinstance(prev_limit, int)
+                and not isinstance(prev_limit, bool)
+                and limit != prev_limit
+                and prev_used is not None
+                and used < prev_used
+            ):
+                reason = "limit changed and used fell"
             if reason:
                 last_reset_utc = now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
                 slack = self._reset_record_lag_minutes(now_utc, prev_data)
@@ -491,8 +516,9 @@ class TadoApiClient(TadoAuthMixin):
         now_utc = dt_util.utcnow()
         prev_data = await self._load_ratelimit()
 
-        real_limit = self._rate_limit.get("limit", 5000)
-        real_remaining = self._rate_limit.get("remaining", 5000)
+        # No response parsed since start: keep the saved numbers, not a made-up 5000 that reads as a reset.
+        real_limit = self._rate_limit.get("limit", prev_data.get("limit", 5000))
+        real_remaining = self._rate_limit.get("remaining", prev_data.get("remaining", 5000))
         reset_seconds = self._rate_limit.get("reset_seconds", 0)
 
         prev_remaining = prev_data.get("remaining")
@@ -902,6 +928,19 @@ class TadoApiClient(TadoAuthMixin):
         if result is None:
             return None
         return result.get("celsius")
+
+    async def get_flow_temperature_settings(self) -> dict[str, Any] | None:
+        """Return Tado's stored flow temperature body (also for a refused 403), `{}` for an empty body, None on failure."""
+        # WHY: a refused request here must come back as a body, never as the retry-then-reauth path.
+        result = await self.api_call(
+            "flowTemperatureOptimization",
+            extra_success_statuses=frozenset({HTTPStatus.NOT_FOUND, HTTPStatus.FORBIDDEN}),
+        )
+        _LOGGER.debug(
+            "API: flowTemperatureOptimization read finished (%s)",
+            "failed" if result is None else "empty" if not result else "body",
+        )
+        return result
 
     async def set_device_offset(self, serial: str, offset: float) -> bool:
         """Write `offset` to the device, rejecting out-of-range values without an API call."""

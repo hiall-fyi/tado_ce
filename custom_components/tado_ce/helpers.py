@@ -30,6 +30,9 @@ from .const import (
     OVERLAY_MODE_MANUAL,
     RETRY_BASE_DELAY,
     TIMER_DURATION_DEFAULT,
+    TIMER_DURATION_MAX,
+    TIMER_DURATION_MIN,
+    WRITE_ROUTE_CLOUD,
 )
 
 if TYPE_CHECKING:
@@ -224,6 +227,9 @@ def resolve_boiler_flow_temperature(
         return None, None
 
 
+_merge_logged: dict[str, tuple[Any, ...]] = {}
+
+
 def merge_homekit_into_zone_data(
     zone_data: dict[str, Any],
     zone_id: str,
@@ -262,10 +268,12 @@ def merge_homekit_into_zone_data(
                 **(sensor_data.get("humidity") or {}),
                 "percentage": merged_hum,
             }
-        # Only log when the merge actually changed something,
-        # otherwise multi-zone homes would emit a debug line per
-        # zone per poll for no signal.
-        if cloud_temp != merged_temp or cloud_humidity != merged_hum:
+        # Only log when the merge changed something and differs from the last line
+        # logged for this zone; with no cloud data every entity update
+        # would otherwise repeat the same line.
+        merge_state = (cloud_temp, merged_temp, temp_src, cloud_humidity, merged_hum, hum_src)
+        if (cloud_temp != merged_temp or cloud_humidity != merged_hum) and _merge_logged.get(zone_id) != merge_state:
+            _merge_logged[zone_id] = merge_state
             _LOGGER.debug(
                 "Helpers: zone %s merge, temp %s → %s (%s), "
                 "humidity %s → %s (%s)",
@@ -310,9 +318,9 @@ def should_use_homekit_for_overlay(hass: HomeAssistant, zone_id: str, entry_id: 
     next automatic change") and TIMER need the explicit termination sent through
     the cloud API.
 
-    Resolves the per-zone overlay mode first, then the global mode. Returns
-    True only when the effective mode is MANUAL; False otherwise. With no
-    entry_id (or on a lookup error) falls back to the integration default.
+    A zone set to send changes via the cloud never uses HomeKit. Otherwise resolves
+    the zone's own overlay mode, else the hub's, and returns True only for MANUAL.
+    With no entry_id (or on a lookup error) falls back to the integration default.
     """
     if not entry_id:
         return OVERLAY_MODE_DEFAULT == OVERLAY_MODE_MANUAL
@@ -322,10 +330,17 @@ def should_use_homekit_for_overlay(hass: HomeAssistant, zone_id: str, entry_id: 
         if coordinator is None:
             return OVERLAY_MODE_DEFAULT == OVERLAY_MODE_MANUAL
 
-        mode = None
-        if coordinator.zone_config_manager:
-            mode = coordinator.zone_config_manager.get_zone_value(zone_id, "overlay_mode", None)
-        if not mode:
+        zone_config_manager = coordinator.zone_config_manager
+        if zone_config_manager:
+            if zone_config_manager.get_write_route(zone_id) == WRITE_ROUTE_CLOUD:
+                _LOGGER.debug(
+                    "Helpers: routing this write through the cloud API because zone %s "
+                    "is set to send changes via the cloud",
+                    zone_id,
+                )
+                return False
+            mode = zone_config_manager.get_effective_overlay_mode(zone_id, coordinator.overlay_mode)
+        else:
             mode = coordinator.overlay_mode or OVERLAY_MODE_DEFAULT
 
         if mode != OVERLAY_MODE_MANUAL:
@@ -677,7 +692,7 @@ def get_overlay_termination(hass: HomeAssistant, entry_id: str | None = None) ->
             coordinator = _get_coordinator(hass, entry_id)
             if coordinator:
                 mode = coordinator.overlay_mode or OVERLAY_MODE_DEFAULT
-                duration = coordinator.timer_duration or TIMER_DURATION_DEFAULT
+                duration = normalise_timer_minutes(coordinator.timer_duration)
         except (AttributeError, TypeError):
             _LOGGER.debug("helpers: entry %s coordinator missing overlay/timer attrs, using defaults", entry_id)
 
@@ -693,9 +708,7 @@ def get_overlay_termination(hass: HomeAssistant, entry_id: str | None = None) ->
 def get_zone_overlay_termination(hass: HomeAssistant, zone_id: str, entry_id: str | None = None) -> dict[str, Any]:
     """Get the termination dict for overlay API calls with per-zone support.
 
-    Uses the per-zone overlay_mode (defaults merged in, so it's always present)
-    unless it's TADO_MODE, in which case it falls through to the global
-    overlay_mode instead.
+    Uses the zone's own overlay mode and timer when set, otherwise the hub's.
 
     Args:
         hass: Home Assistant instance
@@ -716,22 +729,39 @@ def get_zone_overlay_termination(hass: HomeAssistant, zone_id: str, entry_id: st
             _LOGGER.debug("helpers: entry %s coordinator has no zone_config_manager yet", entry_id)
 
     if zone_config_manager:
-        # Get per-zone overlay mode (UPPERCASE values)
-        zone_mode = zone_config_manager.get_zone_value(zone_id, "overlay_mode", None)
+        mode = _map_overlay_to_api(
+            zone_config_manager.get_effective_overlay_mode(zone_id, coordinator.overlay_mode),
+        )
+        if mode == "TIMER":
+            minutes = normalise_timer_minutes(
+                zone_config_manager.get_effective_timer_duration(zone_id, coordinator.timer_duration),
+            )
+            return {"type": "TIMER", "durationInSeconds": minutes * 60}
+        return {"type": mode}
 
-        if zone_mode and zone_mode != "TADO_MODE":
-            # Map to API values
-            api_mode = _map_overlay_to_api(zone_mode)
-
-            # Handle Timer mode with duration
-            if api_mode == "TIMER":
-                duration = zone_config_manager.get_zone_value(zone_id, "timer_duration", TIMER_DURATION_DEFAULT)
-                return {"type": "TIMER", "durationInSeconds": duration * 60}
-
-            return {"type": api_mode}
-
-    # Fallback to global overlay mode (handles TADO_MODE and when no per-zone config)
     return get_overlay_termination(hass, entry_id=entry_id)
+
+
+_timer_normalised_logged: set[int] = set()
+
+
+def normalise_timer_minutes(value: Any) -> int:
+    """Bring a stored timer duration into the allowed range, logging each distinct correction once."""
+    try:
+        minutes = int(value)
+    except (TypeError, ValueError):
+        return TIMER_DURATION_DEFAULT
+    if minutes < TIMER_DURATION_MIN:
+        return TIMER_DURATION_DEFAULT
+    if minutes > TIMER_DURATION_MAX:
+        if minutes not in _timer_normalised_logged:
+            _timer_normalised_logged.add(minutes)
+            _LOGGER.info(
+                "Timer: saved duration %d minutes is above the %d minute limit, using %d",
+                minutes, TIMER_DURATION_MAX, TIMER_DURATION_MAX,
+            )
+        return TIMER_DURATION_MAX
+    return minutes
 
 
 def build_timer_termination(
@@ -750,10 +780,11 @@ def build_timer_termination(
     4. fallback → per-zone overlay termination
     """
     if duration_minutes:
-        from .const import TIMER_DURATION_MAX, TIMER_DURATION_MIN
-
-        clamped = max(TIMER_DURATION_MIN, min(int(duration_minutes), TIMER_DURATION_MAX))
-        return {"type": "TIMER", "durationInSeconds": clamped * 60}
+        minutes = int(duration_minutes)
+        if not TIMER_DURATION_MIN <= minutes <= TIMER_DURATION_MAX:
+            msg = f"Timer duration must be {TIMER_DURATION_MIN} to {TIMER_DURATION_MAX} minutes, got {minutes}"
+            raise ValueError(msg)
+        return {"type": "TIMER", "durationInSeconds": minutes * 60}
 
     if overlay:
         overlay_upper = overlay.upper()

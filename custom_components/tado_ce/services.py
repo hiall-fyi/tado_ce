@@ -24,6 +24,7 @@ from .const import (
     SERVICE_ACTIVATE_OPEN_WINDOW,
     SERVICE_ADD_METER_READING,
     SERVICE_DEACTIVATE_OPEN_WINDOW,
+    SERVICE_GET_FLOW_TEMPERATURE_SETTINGS,
     SERVICE_GET_TEMP_OFFSET,
     SERVICE_IDENTIFY_DEVICE,
     SERVICE_REFRESH,
@@ -36,8 +37,12 @@ from .const import (
     SERVICE_SET_TEMP_OFFSET,
     SERVICE_SET_WATER_HEATER_TIMER,
     SERVICE_TURN_OFF_ALL_ZONES,
+    TIMER_DURATION_MAX,
+    TIMER_DURATION_MIN,
     is_climate_zone,
 )
+from .error_dispatch import dispatch_to_service_call
+from .exceptions import TadoAuthError, TadoRateLimitError, TadoSyncError
 from .helpers import async_trigger_immediate_refresh, build_timer_termination, live_zones, mask_serial
 from .services_helpers import run_service_call
 from .write_optimizer import ResumeGuard
@@ -53,10 +58,9 @@ _LOGGER = logging.getLogger(__name__)
 
 # Timer validation constants
 TIMER_PARTS_COUNT = 3  # HH:MM:SS format
-MAX_TIMER_HOURS = 24
+MAX_TIMER_HOURS = TIMER_DURATION_MAX // 60
 MAX_TIMER_MINUTES = 59
 MAX_TIMER_SECONDS = 59
-MAX_TIMER_DURATION_MINUTES = 1440  # 24 hours in minutes
 
 # Water heater temperature bounds (°C)
 WATER_HEATER_MIN_TEMP = 30
@@ -418,7 +422,7 @@ def _sanitize_termination_for_request(
 
 
 def _parse_time_period(time_period: Any) -> int:
-    """Convert `timedelta` or `HH:MM:SS` to a duration in minutes (1–1440)."""
+    """Convert `timedelta` or `HH:MM:SS` to a duration in minutes (1–720)."""
     from datetime import timedelta
 
     if isinstance(time_period, timedelta):
@@ -434,7 +438,7 @@ def _parse_time_period(time_period: Any) -> int:
         seconds = int(time_parts[2])
 
         if not (0 <= hours <= MAX_TIMER_HOURS):
-            msg = f"Hours must be 0-24, got {hours}"
+            msg = f"Hours must be 0-{MAX_TIMER_HOURS}, got {hours}"
             raise ValueError(msg)
         if not (0 <= minutes <= MAX_TIMER_MINUTES):
             msg = f"Minutes must be 0-59, got {minutes}"
@@ -445,11 +449,11 @@ def _parse_time_period(time_period: Any) -> int:
 
         duration_minutes = hours * 60 + minutes + (seconds // 60)
 
-    if duration_minutes < 1:
-        msg = f"Duration must be at least 1 minute, got {duration_minutes}"
+    if duration_minutes < TIMER_DURATION_MIN:
+        msg = f"Duration must be at least {TIMER_DURATION_MIN} minute, got {duration_minutes}"
         raise ValueError(msg)
-    if duration_minutes > MAX_TIMER_DURATION_MINUTES:
-        msg = f"Duration must be at most 1440 minutes (24 hours), got {duration_minutes}"
+    if duration_minutes > TIMER_DURATION_MAX:
+        msg = f"Duration must be at most {TIMER_DURATION_MAX} minutes ({TIMER_DURATION_MAX // 60} hours), got {duration_minutes}"
         raise ValueError(msg)
 
     return duration_minutes
@@ -1371,8 +1375,9 @@ def _build_open_window_overlay(
         termination: dict[str, str | int] = build_timer_termination(overlay="manual")
         duration_desc = "indefinite"
     else:
-        termination = build_timer_termination(duration_minutes=int(timeout) // 60)
-        duration_desc = f"{int(timeout) // 60} min"
+        timeout_minutes = min(int(timeout) // 60, TIMER_DURATION_MAX)
+        termination = build_timer_termination(duration_minutes=timeout_minutes)
+        duration_desc = f"{timeout_minutes} min"
 
     return setting, termination, duration_desc
 
@@ -1491,6 +1496,76 @@ async def handle_get_temp_offset(hass: HomeAssistant, call: ServiceCall) -> None
         entity_id,
     )
     return {"offset_celsius": None, "error": "Entity not found"}  # type: ignore[return-value]
+
+
+_FLOW_TEMPERATURE_KNOWN_KEYS = frozenset({
+    "maxFlowTemperature",
+    "openThermDeviceSerialNumber",
+    "autoAdaptation",
+    "maxFlowTemperatureConstraints",
+    "hasMultipleBoilerControlDevices",
+})
+
+
+def _mask_serials(value: Any, in_serial: bool = False) -> Any:
+    """Return `value` with everything under a key containing 'serial' shortened, keys included."""
+    if isinstance(value, dict):
+        return {
+            (mask_serial(key) if in_serial and isinstance(key, str) else key): _mask_serials(
+                item, in_serial or "serial" in str(key).lower(),
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_mask_serials(item, in_serial) for item in value]
+    if in_serial and value is not None:
+        return mask_serial(str(value))
+    return value
+
+
+def _classify_flow_temperature_body(body: dict[str, Any] | None) -> tuple[str, str, dict[str, Any]]:
+    """Return (status, message, masked settings) for the flowTemperatureOptimization body."""
+    if body is None:
+        return "failed", "The request to Tado failed, see the Home Assistant log for details.", {}
+    if not body:
+        return (
+            "not_applicable",
+            "Tado has no flow temperature setting for this home, which is normal without an OpenTherm heat source.",
+            {},
+        )
+    errors = body.get("errors")
+    if isinstance(errors, list) and any(isinstance(e, dict) and e.get("code") == "accessDenied" for e in errors):
+        return (
+            "access_denied",
+            "Tado refused the request for this home (HTTP 403). Nothing was changed.",
+            {},
+        )
+    if _FLOW_TEMPERATURE_KNOWN_KEYS & body.keys():
+        return "ok", "Tado's stored flow temperature setting, serial numbers shortened.", _mask_serials(body)
+    return (
+        "unexpected_response",
+        "Tado answered with a body this integration does not recognise, returned as it came, serial numbers shortened.",
+        _mask_serials(body),
+    )
+
+
+async def handle_get_flow_temperature_settings(hass: HomeAssistant, call: ServiceCall) -> dict[str, Any]:
+    """Service handler for `get_flow_temperature_settings`: read Tado's stored flow temperature setting."""
+    coord = _resolve_single_coordinator(hass)
+    body: dict[str, Any] | None
+    try:
+        body = await coord.api_client.get_flow_temperature_settings()
+    except (TadoAuthError, TadoRateLimitError) as err:
+        dispatch_to_service_call(err, coord.config_entry, hass, coord)
+    except TadoSyncError:
+        _LOGGER.debug("Services: get_flow_temperature_settings hit a Tado sync error", exc_info=True)
+        body = None
+    status, message, settings = _classify_flow_temperature_body(body)
+    _LOGGER.debug(
+        "Services: get_flow_temperature_settings status=%s keys=%s body=%s",
+        status, sorted(settings), settings,
+    )
+    return {"status": status, "message": message, "settings": settings}
 
 
 async def handle_restore_previous_state(hass: HomeAssistant, call: ServiceCall) -> None:
@@ -1812,6 +1887,14 @@ async def _async_register_services(hass: HomeAssistant) -> None:
                 vol.Required("entity_id"): cv.entity_id,
             },
         ),
+        supports_response=True,  # type: ignore[arg-type]
+    )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_GET_FLOW_TEMPERATURE_SETTINGS,
+        functools.partial(handle_get_flow_temperature_settings, hass),
+        schema=vol.Schema({}),
         supports_response=True,  # type: ignore[arg-type]
     )
 

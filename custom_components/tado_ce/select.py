@@ -22,10 +22,8 @@ from .climate_helpers import inject_presence_state
 from .const import (
     DOMAIN,
     OVERLAY_MODE_DEFAULT,
-    OVERLAY_MODE_DEFAULT_DISPLAY,
-    OVERLAY_MODE_MAP,
-    OVERLAY_MODE_OPTIONS,
-    OVERLAY_MODE_REVERSE_MAP,
+    OVERLAY_MODE_KEYS,
+    OVERLAY_MODE_LEGACY_LABELS,
     TIMER_DURATION_DEFAULT,
     TIMER_DURATION_OPTIONS,
 )
@@ -274,7 +272,7 @@ class TadoOverlayModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sele
     """
 
     _attr_has_entity_name = True
-    _attr_options = OVERLAY_MODE_OPTIONS
+    _attr_options = list(OVERLAY_MODE_KEYS)
     _attr_translation_key = "overlay_mode"
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator, home_id: str) -> None:
@@ -285,7 +283,7 @@ class TadoOverlayModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sele
         if _meta.translation_key is not None:
             self._attr_translation_key = _meta.translation_key
         self._attr_entity_category = get_entity_category(_meta)
-        self._attr_current_option = OVERLAY_MODE_DEFAULT_DISPLAY
+        self._attr_current_option = OVERLAY_MODE_DEFAULT.lower()
         self._attr_device_info = get_hub_device_info(home_id)
         self._attr_icon = _meta.icon
 
@@ -311,7 +309,8 @@ class TadoOverlayModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sele
         """Read the cached overlay mode (set by previous user selections)."""
         try:
             overlay_mode = self.coordinator.overlay_mode or OVERLAY_MODE_DEFAULT
-            self._attr_current_option = OVERLAY_MODE_REVERSE_MAP.get(overlay_mode, OVERLAY_MODE_DEFAULT_DISPLAY)
+            key = overlay_mode.lower()
+            self._attr_current_option = key if key in OVERLAY_MODE_KEYS else OVERLAY_MODE_DEFAULT.lower()
         except (AttributeError, TypeError) as e:
             _LOGGER.warning(
                 "Select: overlay mode update failed (%s), keeping "
@@ -321,10 +320,13 @@ class TadoOverlayModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sele
 
     async def async_select_option(self, option: str) -> None:
         """Persist a new overlay mode locally (no cloud call)."""
-        self._attr_current_option = option
+        if option in OVERLAY_MODE_KEYS:
+            api_mode = option.upper()
+        else:
+            api_mode = OVERLAY_MODE_LEGACY_LABELS.get(option, OVERLAY_MODE_DEFAULT)
+        self._attr_current_option = api_mode.lower()
         self.async_write_ha_state()
 
-        api_mode = OVERLAY_MODE_MAP.get(option, OVERLAY_MODE_DEFAULT)
         success = self.coordinator.data_loader.save_overlay_mode(api_mode)
 
         if success:

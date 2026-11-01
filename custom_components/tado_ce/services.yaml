@@ -184,6 +184,8 @@ get_temperature_offset:
           integration: tado_ce
           domain: climate
 
+get_flow_temperature_settings:
+
 activate_open_window:
   target:
     entity:

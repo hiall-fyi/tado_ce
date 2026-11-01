@@ -6,6 +6,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.button import ButtonEntity
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import slugify
 
@@ -15,13 +16,12 @@ from .device_manager import get_device_name_suffix, get_hub_device_info, get_zon
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
 from .helpers import (
     async_trigger_immediate_refresh,
-    build_timer_termination,
     get_zone_states,
     mask_serial,
     merge_homekit_into_zone_data,
 )
 from .ratelimit import async_check_bootstrap_reserve_or_raise as _check_bootstrap_reserve_or_raise
-from .services_helpers import run_service_call
+from .services import _find_entity_by_id
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -298,8 +298,6 @@ class TadoWaterHeaterTimerButton(CoordinatorEntity[TadoDataUpdateCoordinator], B
     async def async_press(self) -> None:
         """Apply the preset timer to the matching water heater entity."""
         from homeassistant.exceptions import HomeAssistantError
-        from homeassistant.helpers import entity_registry as er
-
         _LOGGER.debug(
             "Button: timer pressed: %s for %s minutes",
             self._zone_name, self._duration,
@@ -469,6 +467,22 @@ SMART_BOOST_MAX_DURATION = 180  # Maximum duration in minutes (3 hours)
 SMART_BOOST_DEFAULT_RATE = 1.0  # Default heating rate if unknown (°C/h)
 
 
+def _find_heating_climate(
+    hass: HomeAssistant, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str,
+) -> Any | None:
+    """Return the zone's live heating climate entity, or None (with a warning) when it is not loaded."""
+    # Registry unique_id first (stable), slug only for entries created before unique ids were stable.
+    unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_climate"
+    entity_id = er.async_get(hass).async_get_entity_id("climate", DOMAIN, unique_id) or f"climate.{slugify(zone_name)}"
+    ent = _find_entity_by_id(hass, "climate", entity_id)
+    if ent is None:
+        _LOGGER.warning(
+            "Button: boost for %s skipped, climate entity %s not found (was the integration reloaded?)",
+            zone_name, entity_id,
+        )
+    return ent
+
+
 class TadoBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonEntity):
     """Mirror the Tado app boost: 25°C for 30 minutes, then back to schedule."""
 
@@ -488,29 +502,12 @@ class TadoBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonEntity
 
     async def async_press(self) -> None:
         """Apply the 25°C / 30-minute boost overlay to this zone."""
-        await _check_bootstrap_reserve_or_raise(self.hass, f"Boost {self._zone_name}", coordinator=self.coordinator)
-
         _LOGGER.debug("Button: Boost pressed for %s", self._zone_name)
 
-        client = self.coordinator.api_client
-
-        setting = {
-            "type": "HEATING",
-            "power": "ON",
-            "temperature": {"celsius": BOOST_TEMPERATURE},
-        }
-        termination = build_timer_termination(duration_minutes=BOOST_DURATION_MINUTES)
-
-        api_success = await run_service_call(
-            hass=self.hass,
-            coordinator=self.coordinator,
-            zone_id=self._zone_id,
-            entity_type="climate_heating",
-            api_coro=client.set_zone_overlay(self._zone_id, setting, termination),
-            capture_source="boost",
-            refresh_entity_id=self.entity_id,
-            reason="boost",
-        )
+        ent = _find_heating_climate(self.hass, self.coordinator, self._zone_id, self._zone_name)
+        if ent is None:
+            return
+        api_success = await ent.async_set_timer(BOOST_TEMPERATURE, BOOST_DURATION_MINUTES, None)
 
         if api_success:
             _LOGGER.info(
@@ -589,8 +586,6 @@ class TadoSmartBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonE
 
     async def async_press(self) -> None:
         """Apply a smart boost: target temp from schedule, duration from heating rate."""
-        await _check_bootstrap_reserve_or_raise(self.hass, f"Smart Boost {self._zone_name}", coordinator=self.coordinator)
-
         _LOGGER.debug("Button: Smart Boost pressed for %s", self._zone_name)
 
         coord_data = self.coordinator.data or {}
@@ -656,25 +651,10 @@ class TadoSmartBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonE
             duration_minutes,
         )
 
-        client = self.coordinator.api_client
-
-        setting = {
-            "type": "HEATING",
-            "power": "ON",
-            "temperature": {"celsius": target_temp},
-        }
-        termination = build_timer_termination(duration_minutes=duration_minutes)
-
-        api_success = await run_service_call(
-            hass=self.hass,
-            coordinator=self.coordinator,
-            zone_id=self._zone_id,
-            entity_type="climate_heating",
-            api_coro=client.set_zone_overlay(self._zone_id, setting, termination),
-            capture_source="smart_boost",
-            refresh_entity_id=self.entity_id,
-            reason="smart_boost",
-        )
+        ent = _find_heating_climate(self.hass, self.coordinator, self._zone_id, self._zone_name)
+        if ent is None:
+            return
+        api_success = await ent.async_set_timer(target_temp, duration_minutes, None)
 
         if api_success:
             _LOGGER.info(

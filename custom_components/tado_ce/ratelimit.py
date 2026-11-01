@@ -222,16 +222,11 @@ async def async_check_bootstrap_reserve_or_raise(
 
 
 def _find_reset_in_history(history: list[Any]) -> datetime | None:
-    """Return the reset time inferred from a list of history states, or None.
-
-    Scans for either an explicit reset (value dropped > 80% or below
-    10 from a > 50 baseline) or the minimum-value timestamp when the
-    minimum is below 20. Falls through to None on inputs too noisy
-    to interpret.
-    """
+    """Return the most recent reset time inferred from history states, or None."""
     min_value = float("inf")
     min_time = None
     prev_value = None
+    last_drop_time = None
 
     for state in history:
         try:
@@ -244,7 +239,7 @@ def _find_reset_in_history(history: list[Any]) -> datetime | None:
                         "Rate Limit: detected reset in history (%s → %s at %s)",
                         prev_value, value, state_time,
                     )
-                    return state_time.replace(tzinfo=UTC) if state_time.tzinfo is None else state_time  # type: ignore[no-any-return]
+                    last_drop_time = state_time
 
             if value < min_value:
                 min_value = value
@@ -254,6 +249,9 @@ def _find_reset_in_history(history: list[Any]) -> datetime | None:
 
         except (ValueError, TypeError):
             continue
+
+    if last_drop_time is not None:
+        return last_drop_time.replace(tzinfo=UTC) if last_drop_time.tzinfo is None else last_drop_time  # type: ignore[no-any-return]
 
     if min_time and min_value < 20:
         _LOGGER.debug(
