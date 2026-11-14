@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, NoReturn
 from homeassistant.exceptions import HomeAssistantError
 
 from .const import DOMAIN
-from .exceptions import TadoAuthError, TadoRateLimitError
+from .exceptions import TadoAuthError, TadoBlockedError, TadoRateLimitError
 from .helpers import retry_after_to_minutes
 
 if TYPE_CHECKING:
@@ -19,12 +19,12 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def is_typed_cloud_rejection(err: HomeAssistantError) -> bool:
-    """Return whether `err` is the translated 429 or auth error `dispatch_to_service_call` raised."""
-    return isinstance(err.__cause__, (TadoAuthError, TadoRateLimitError))
+    """Return whether `err` is the translated 429, auth or blocked error `dispatch_to_service_call` raised."""
+    return isinstance(err.__cause__, (TadoAuthError, TadoRateLimitError, TadoBlockedError))
 
 
 def _apply_cloud_error_recovery(
-    exc: TadoAuthError | TadoRateLimitError,
+    exc: TadoAuthError | TadoRateLimitError | TadoBlockedError,
     config_entry: ConfigEntry,
     hass: HomeAssistant,
     coordinator: Any,
@@ -34,9 +34,8 @@ def _apply_cloud_error_recovery(
     Single source of truth for both dispatchers: an auth error starts the
     reauth flow (per HA docs, `ConfigEntryAuthFailed` raised from a
     service-call path does NOT trigger reauth, so the explicit
-    `async_start_reauth` is required); a rate-limit error records the
-    coordinator back-off window (+ repair issue) so every path that hits the
-    quota gets the same recovery the read path does. Both are idempotent.
+    `async_start_reauth` is required). Rate-limit and blocked errors need no
+    side effect: the API client wrapper already recorded them in CloudHealth.
 
     `coordinator` is typed `Any` to avoid a circular import: annotating it
     as TadoDataUpdateCoordinator would import coordinator.py, which imports
@@ -44,12 +43,10 @@ def _apply_cloud_error_recovery(
     """
     if isinstance(exc, TadoAuthError):
         config_entry.async_start_reauth(hass)
-    elif isinstance(exc, TadoRateLimitError):
-        coordinator.record_cloud_backoff(exc.retry_after)
 
 
 def handle_background_write_error(
-    exc: TadoAuthError | TadoRateLimitError,
+    exc: TadoAuthError | TadoRateLimitError | TadoBlockedError,
     config_entry: ConfigEntry,
     hass: HomeAssistant,
     coordinator: Any,
@@ -70,7 +67,7 @@ def handle_background_write_error(
 
 
 def dispatch_to_service_call(
-    exc: TadoAuthError | TadoRateLimitError,
+    exc: TadoAuthError | TadoRateLimitError | TadoBlockedError,
     config_entry: ConfigEntry,
     hass: HomeAssistant,
     coordinator: Any,
@@ -96,6 +93,12 @@ def dispatch_to_service_call(
             translation_placeholders={
                 "retry_after_minutes": retry_after_to_minutes(exc.retry_after),
             },
+        ) from exc
+
+    if isinstance(exc, TadoBlockedError):
+        raise HomeAssistantError(
+            translation_domain=DOMAIN,
+            translation_key="cloud_blocked",
         ) from exc
 
     # Unreachable per type signature, but keep a safe fallback

@@ -20,23 +20,21 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
 from .const import (
-    ASSUMED_DAILY_LIMIT_UNKNOWN_TIER,
     DAY_TYPES,
     DOMAIN,
     MANUFACTURER,
     MAX_SCHEDULE_FETCH_CALLS,
-    SCHEDULE_FILL_MAX_QUOTA_FRACTION,
 )
 from .device_manager import hub_parent_kwargs
 from .entity_registry import ENTITY_REGISTRY
-from .helpers import hard_quota_reserve
+from .exceptions import TadoAuthError, TadoBlockedError, TadoRateLimitError
+from .quota_levels import QuotaLevels
 
 if TYPE_CHECKING:
     from homeassistant.core import Event
     from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
     from .coordinator import TadoConfigEntry, TadoDataUpdateCoordinator
-    from .data_loader import DataLoader
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -63,17 +61,8 @@ def schedule_fetch_budget(ratelimit_data: dict[str, Any]) -> int:
     than a fraction of a day's allowance in one run, since a large SEVEN_DAY
     home would otherwise fetch 72 calls at once.
     """
-    # Defaulted separately: an unknown tier budgets as the smallest, an
-    # unknown `remaining` assumes a full day. Defaulting both together would
-    # discard a known-low `remaining` when only the limit is missing.
-    limit = ratelimit_data.get("limit") or ASSUMED_DAILY_LIMIT_UNKNOWN_TIER
-    remaining = ratelimit_data.get("remaining")
-    if remaining is None:
-        remaining = limit
-
-    spendable = remaining - hard_quota_reserve(limit)
-    per_run_cap = int(limit * SCHEDULE_FILL_MAX_QUOTA_FRACTION)
-    return max(0, min(spendable, per_run_cap))
+    levels = QuotaLevels(QuotaLevels.normalise_limit(ratelimit_data.get("limit")))
+    return levels.schedule_budget(ratelimit_data.get("remaining"))
 
 
 def get_schedule_device_info(home_id: str) -> DeviceInfo:
@@ -120,6 +109,7 @@ async def async_setup_entry(
     starting_budget = call_budget
 
     schedules: dict[str, Any] = {}
+    fetched_schedules: dict[str, Any] = {}
     cached_hits = 0
     fetched = 0
     skipped_low_quota = 0
@@ -149,7 +139,7 @@ async def async_setup_entry(
             schedule_data = await client.get_zone_schedule(zone_id)
             if schedule_data:
                 schedule_type = schedule_data.get("type", "ONE_DAY")
-                schedules[zone_id] = {
+                schedules[zone_id] = fetched_schedules[zone_id] = {
                     "name": zone_name,
                     "type": schedule_type,
                     "blocks": schedule_data.get("blocks") or {},
@@ -157,6 +147,14 @@ async def async_setup_entry(
                 }
                 fetched += 1
                 call_budget -= len(DAY_TYPES.get(schedule_type, DAY_TYPES["ONE_DAY"]))
+        except (TadoAuthError, TadoRateLimitError, TadoBlockedError):
+            # The cloud is refusing us: the remaining zones fill on the next setup instead of re-hitting it.
+            _LOGGER.warning(
+                "Calendar: Tado refused the schedule fetch for %s, the remaining "
+                "zones will be fetched on the next setup",
+                zone_name,
+            )
+            break
         except Exception:
             _LOGGER.warning(
                 "Calendar: schedule fetch for %s failed, zone "
@@ -165,13 +163,9 @@ async def async_setup_entry(
                 exc_info=True,
             )
 
-    # Merge this run's results onto the full on-disk cache, so a zone this
-    # run didn't touch (a different zone type, or one this run skipped)
-    # keeps whatever schedule it already had rather than being dropped.
+    # Only the zones fetched this run are sent, so every other zone keeps whatever schedule it has.
     if fetched > 0:
-        merged = dict(cached_schedules)
-        merged.update(schedules)
-        await _async_save_schedules(hass, merged, home_id, data_loader=data_loader)
+        await data_loader.async_merge_store("schedules", fetched_schedules)
 
     _LOGGER.info(
         "Calendar: %d zone(s) loaded: %d from cache, %d fetched, "
@@ -205,17 +199,6 @@ async def async_setup_entry(
     async_add_entities(calendars)
 
 
-async def _async_save_schedules(
-    hass: HomeAssistant,
-    schedules: dict[str, Any],
-    home_id: str | None = None,
-    data_loader: DataLoader | None = None,
-) -> None:
-    """Persist the latest schedules dict via DataLoader's auxiliary store."""
-    if data_loader is not None:
-        await data_loader.async_update_store("schedules", schedules)
-
-
 class TadoZoneScheduleCalendar(CoordinatorEntity["TadoDataUpdateCoordinator"], CalendarEntity):
     """Read-only calendar surfacing one heating zone's schedule blocks as events."""
 
@@ -244,7 +227,6 @@ class TadoZoneScheduleCalendar(CoordinatorEntity["TadoDataUpdateCoordinator"], C
             self._attr_icon = _meta.icon
 
         self._event: CalendarEvent | None = None
-        self._unsub_schedule_update = None
 
     async def async_added_to_hass(self) -> None:
         """Listen for the Refresh Schedule button's bus event.
@@ -268,17 +250,9 @@ class TadoZoneScheduleCalendar(CoordinatorEntity["TadoDataUpdateCoordinator"], C
                 )
                 self.hass.async_create_task(self._async_reload_schedule())
 
-        self._unsub_schedule_update = self.hass.bus.async_listen(  # type: ignore[assignment]
-            f"{DOMAIN}_schedule_updated",
-            _handle_schedule_update,
+        self.async_on_remove(
+            self.hass.bus.async_listen(f"{DOMAIN}_schedule_updated", _handle_schedule_update),
         )
-
-    async def async_will_remove_from_hass(self) -> None:
-        """Unregister event listener when entity is removed."""
-        if self._unsub_schedule_update:
-            self._unsub_schedule_update()
-            self._unsub_schedule_update = None
-        await super().async_will_remove_from_hass()
 
     async def _async_reload_schedule(self) -> None:
         """Pull the latest schedule for this zone from the DataLoader cache."""

@@ -43,15 +43,6 @@ class HeatingCycleReading(_SerializableMixin):
 
 
 @dataclass
-class InsightTemperatureReading:
-    """A temperature reading with humidity for the insights engine (mold/condensation/window detection)."""
-
-    temperature: float
-    humidity: float | None
-    timestamp: datetime
-
-
-@dataclass
 class SmartComfortReading(_SerializableMixin):
     """A single temperature reading with heating context for comfort analysis."""
 

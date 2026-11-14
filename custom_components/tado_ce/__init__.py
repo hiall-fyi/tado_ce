@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import functools
 import logging
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.const import Platform
@@ -15,26 +16,15 @@ from .const import (
     DATA_DIR,
     DOMAIN,
     EVENT_READY,
-    SERVICE_ACTIVATE_OPEN_WINDOW,
-    SERVICE_ADD_METER_READING,
-    SERVICE_DEACTIVATE_OPEN_WINDOW,
-    SERVICE_GET_FLOW_TEMPERATURE_SETTINGS,
-    SERVICE_GET_TEMP_OFFSET,
-    SERVICE_IDENTIFY_DEVICE,
-    SERVICE_REFRESH,
-    SERVICE_RESTORE_PREVIOUS_STATE,
-    SERVICE_RESUME_SCHEDULE,
-    SERVICE_SET_AWAY_CONFIG,
+    SERVICE_NAMES,
     SERVICE_SET_CLIMATE_TIMER,
-    SERVICE_SET_OPEN_WINDOW_MODE,
-    SERVICE_SET_TEMP_OFFSET,
-    SERVICE_SET_WATER_HEATER_TIMER,
 )
 from .coordinator import TadoDataUpdateCoordinator
 from .data_loader import DataLoader
 from .device_manager import _hub_identifier, clear_cached_hub_device_id
-from .exceptions import TadoAuthError
-from .helpers import mask_home_id
+from .entry_lifecycle import async_teardown_entry, new_homekit_holder, new_setup_handles
+from .exceptions import TadoAuthError, TadoBlockedError
+from .helpers import get_entity_zone_identity, get_entity_zone_ids, mask_home_id
 from .migration import (
     async_migrate_entry as async_migrate_entry,
 )
@@ -107,6 +97,10 @@ async def _async_init_data_layer(
         raise ConfigEntryNotReady(
             "Authentication failed during setup; check credentials",
         ) from err
+    except TadoBlockedError as err:
+        raise ConfigEntryNotReady(
+            "Tado is blocking requests during setup; will retry",
+        ) from err
     except (OSError, TimeoutError) as err:
         raise ConfigEntryNotReady(
             "Failed to create entry components; will retry",
@@ -122,6 +116,7 @@ async def _async_init_optional_components(
     zone_config_manager: ZoneConfigManager,
     components: dict[str, Any],
     home_id: str | None,
+    handles: SimpleNamespace | None = None,
 ) -> dict[str, Any]:
     """Initialise the four optional feature managers (Smart Comfort / heating cycle / preheat / state restore)."""
     from .setup_entry_helpers import (
@@ -131,19 +126,22 @@ async def _async_init_optional_components(
         async_init_state_restore,
     )
 
+    smart_comfort = await async_init_smart_comfort(hass, data_loader, config_manager, home_id)
+    heating_cycle = await async_init_heating_cycle(hass, config_manager, home_id)
+    preheat = await async_init_adaptive_preheat(
+        hass, config_manager,
+        api_client=components["api_client"],
+        data_loader=data_loader,
+        zone_config_manager=zone_config_manager,
+        home_id=home_id or "default",
+    )
+    # Preheat registered its listeners inside the initialiser, so a later raise must still reach its unload.
+    if handles is not None:
+        handles.preheat = preheat
     return {
-        "smart_comfort_manager": await async_init_smart_comfort(
-            hass, data_loader, config_manager, home_id,
-        ),
-        "heating_cycle_coordinator": await async_init_heating_cycle(
-            hass, config_manager, home_id,
-        ),
-        "adaptive_preheat_manager": await async_init_adaptive_preheat(
-            hass, config_manager,
-            api_client=components["api_client"],
-            data_loader=data_loader,
-            zone_config_manager=zone_config_manager,
-        ),
+        "smart_comfort_manager": smart_comfort,
+        "heating_cycle_coordinator": heating_cycle,
+        "adaptive_preheat_manager": preheat,
         "state_restore_manager": await async_init_state_restore(
             hass, config_manager, data_loader,
         ),
@@ -195,19 +193,10 @@ async def _async_wire_and_start_coordinator(
     await coordinator.async_load_zone_type_baseline()
 
     saved = await coordinator.data_loader.async_load_homekit_savings()
-    if saved and isinstance(saved, dict):
-        coordinator._homekit_reads_saved = saved.get("reads_saved", 0)
-        coordinator._homekit_writes_saved = saved.get("writes_saved", 0)
-        coordinator._savings_last_reset_seen = saved.get("last_reset_utc")
-        _LOGGER.debug(
-            "Setup: HomeKit savings loaded, reads=%s, writes=%s",
-            coordinator._homekit_reads_saved,
-            coordinator._homekit_writes_saved,
-        )
-    else:
-        _LOGGER.debug(
-            "Setup: HomeKit savings, no persisted data, starting fresh",
-        )
+    coordinator.apply_saved_homekit_savings(saved)
+
+    # Loaded before the first poll so that poll's sweep can judge a change still owed across the restart.
+    coordinator.write_ledger.from_store(await coordinator.data_loader.async_load_write_ledger())
 
     # Loads the saved write timing counters when the option is on, deletes them when it is off.
     await coordinator.write_timing.async_load()
@@ -274,6 +263,8 @@ async def _async_finalize_entry(
             "will be loaded",
         )
 
+    coordinator.entity_zone_ids = get_entity_zone_ids(coordinator.data)
+    coordinator.entity_zone_identity = get_entity_zone_identity(coordinator.data)
     await hass.config_entries.async_forward_entry_setups(entry, platforms_to_load)
     coordinator.loaded_platforms = frozenset(platforms_to_load)
 
@@ -293,10 +284,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: TadoConfigEntry) -> bool
         mask_home_id(entry.data.get("home_id")),
     )
 
-    from .setup_entry_helpers import async_log_file_system_state
-
-    await async_log_file_system_state(hass)
-
     # Check for duplicate entries and remove old ones
     from .migration import async_deduplicate_entries
 
@@ -304,9 +291,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: TadoConfigEntry) -> bool
     if not should_continue:
         return False
 
-    from .migration import async_migrate_entity_platforms
+    from .migration import async_migrate_registry
 
-    await async_migrate_entity_platforms(hass, entry)
+    await async_migrate_registry(hass, entry)
+
+    from .repair_helpers import (
+        UNSUPPORTED_UPGRADE_PATH_ISSUE,
+        async_dismiss_issue,
+        async_dismiss_legacy_sensor_missing_issues,
+    )
+
+    async_dismiss_issue(
+        hass,
+        UNSUPPORTED_UPGRADE_PATH_ISSUE,
+        home_id=entry.data.get("home_id"),
+    )
+    # Repair id gained the home id; clear one left under the old unscoped id.
+    async_dismiss_legacy_sensor_missing_issues(hass)
 
     def _ensure_data_dir() -> None:
         try:
@@ -341,6 +342,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: TadoConfigEntry) -> bool
         await _async_init_data_layer(hass, entry, config_manager, home_id)
     )
 
+    # The client is live from here, so a setup failure before the coordinator exists must still shut it down.
+    handles = new_setup_handles(
+        new_homekit_holder(components.get("homekit_client"), components.get("homekit_controller")),
+        components.get("api_tracker"),
+    )
+
+    # A failed setup never reaches async_unload_entry, so HA's unload callback is its only teardown; after a clean unload it does nothing.
+    async def _async_release_setup() -> None:
+        await async_teardown_entry(handles)
+
+    entry.async_on_unload(_async_release_setup)
+
     config_cached = data_loader.get_cached("config")
     if not config_cached:
         _LOGGER.debug(
@@ -351,6 +364,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: TadoConfigEntry) -> bool
 
     optional = await _async_init_optional_components(
         hass, config_manager, data_loader, zone_config_manager, components, home_id,
+        handles,
     )
 
     coordinator = TadoDataUpdateCoordinator(
@@ -366,29 +380,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: TadoConfigEntry) -> bool
         adaptive_preheat_manager=optional["adaptive_preheat_manager"],
         state_restore_manager=optional["state_restore_manager"],
     )
+    handles.coordinator = coordinator
+    coordinator.setup_handles = handles
 
     homekit_client = components.get("homekit_client")
     if homekit_client is not None:
         from .homekit_provider import HomeKitLocalProvider
         from .state_reconciler import StateReconciler
-        from .write_health_tracker import WriteHealthTracker
 
         coordinator.homekit_client = homekit_client
         coordinator.homekit_controller = components.get("homekit_controller")
+        # Swapped only once it holds the client: a failure before this point still tears down the original holder.
+        handles.homekit = coordinator
         provider = HomeKitLocalProvider(homekit_client, hass, coordinator.home_id)
+        provider.put_rejection_listener = coordinator.record_homekit_put_rejection
+        provider.change_listener = coordinator.note_homekit_change
         coordinator.homekit_provider = provider
         coordinator.state_reconciler = StateReconciler()
-        coordinator.write_health_tracker = WriteHealthTracker()
 
-        from .setup_entry_helpers import async_activate_homekit
-
-        # Bring HomeKit online (refresh + subscribe when connected, else
-        # start the background reconnect). Degrades on any failure so a
-        # bridge dropping mid-setup can't crash the whole entry.
-        try:
-            await async_activate_homekit(coordinator, provider, homekit_client)
-        except Exception as e:
-            _LOGGER.warning("HomeKit activation failed, degrading to cloud-only: %s", e)
+        from .setup_entry_helpers import async_start_homekit
 
         # On bridge reconnect we re-subscribe events and reset the
         # write-health circuit breaker so the integration recovers
@@ -396,8 +406,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: TadoConfigEntry) -> bool
         async def _on_homekit_reconnect() -> None:
             await provider.async_refresh_accessories()
             await provider.async_subscribe_events()
-            if coordinator.write_health_tracker:
-                coordinator.write_health_tracker.reset()
+            coordinator.reset_write_health()
             coordinator._reset_write_metrics()
             coordinator.reset_mapping_retry_budget()
             _LOGGER.info(
@@ -405,7 +414,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: TadoConfigEntry) -> bool
                 "re-subscribed, write-health circuit breaker reset",
             )
 
-        homekit_client.add_reconnect_callback(_on_homekit_reconnect)
+        await async_start_homekit(coordinator, provider, homekit_client, _on_homekit_reconnect)
 
     await _async_wire_and_start_coordinator(
         hass, entry, coordinator, optional, overlay_mode, timer_duration, home_id,
@@ -431,15 +440,19 @@ def _async_schedule_ready_event(
     from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
     from homeassistant.core import CoreState, callback
 
+    fired = False
+
     @callback
     def _fire(_event: object | None = None) -> None:
+        nonlocal fired
+        fired = True
         zones_info = (coordinator.data or {}).get("zones_info") or []
         hass.bus.async_fire(EVENT_READY, {
             "home_id": coordinator.home_id,
             "entry_id": entry.entry_id,
             "zone_count": len(zones_info),
         })
-        _LOGGER.info(
+        _LOGGER.debug(
             "Fired %s for home %s (%d zones), boot automations can now trigger",
             EVENT_READY,
             mask_home_id(coordinator.home_id),
@@ -449,7 +462,15 @@ def _async_schedule_ready_event(
     if hass.state is CoreState.running:
         _fire()
     else:
-        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _fire)
+        unsub = hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _fire)
+
+        @callback
+        def _release() -> None:
+            # HA logs an exception when an already-fired once-listener is removed
+            if not fired:
+                unsub()
+
+        entry.async_on_unload(_release)
 
 
 # Tracks options per entry to distinguish real options changes from data-only mutations
@@ -514,83 +535,19 @@ async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-async def _async_shutdown_coordinator(coordinator: TadoDataUpdateCoordinator) -> None:
-    """Persist dirty state and cancel timers when an entry unloads.
-
-    HA's `EVENT_HOMEASSISTANT_FINAL_WRITE` covers debounced HA
-    Store data automatically; this function only flushes
-    components that hold dirty state outside the Store
-    (insight_history, api_tracker, insight runtime state) and
-    cleanly tears down the timers / queues.
-    """
-    _LOGGER.info("Unload: persisting state before shutdown")
-
-    if hasattr(coordinator, "refresh_handler") and coordinator.refresh_handler:
-        coordinator.refresh_handler.cancel()
-        coordinator.refresh_handler = None  # type: ignore[assignment]
-        _LOGGER.debug("Unload: cancelled coordinator refresh handler")
-
-    coordinator.action_debouncer.cancel_all()
-    await coordinator.cancel_bridge_poll()
-    await coordinator.device_sync_queue.shutdown()
-    _LOGGER.debug(
-        "Unload: cancelled write-optimisation components "
-        "(debouncer, bridge poll, device-sync queue)",
-    )
-
-    if hasattr(coordinator, "insight_history"):
-        await coordinator.insight_history.async_save()
-
-    if coordinator.api_tracker:
-        await coordinator.api_tracker.async_save_if_dirty()
-
-    await coordinator.async_shutdown_state_restore()
-
-    await coordinator.async_shutdown_valve_controllers()
-
-    # Bypass the debouncer for insight runtime state: the Store
-    # may already be torn down before the debouncer fires during
-    # unload, causing lost anomaly / humidity history.
-    await coordinator.async_shutdown_insight_state()
-
-
 def _unregister_all_services(hass: HomeAssistant) -> None:
     """Drop every Tado CE service when the final config entry unloads."""
-    for service_name in (
-        SERVICE_SET_CLIMATE_TIMER,
-        SERVICE_SET_WATER_HEATER_TIMER,
-        SERVICE_RESUME_SCHEDULE,
-        SERVICE_SET_TEMP_OFFSET,
-        SERVICE_GET_TEMP_OFFSET,
-        SERVICE_GET_FLOW_TEMPERATURE_SETTINGS,
-        SERVICE_ADD_METER_READING,
-        SERVICE_REFRESH,
-        SERVICE_IDENTIFY_DEVICE,
-        SERVICE_SET_AWAY_CONFIG,
-        SERVICE_ACTIVATE_OPEN_WINDOW,
-        SERVICE_DEACTIVATE_OPEN_WINDOW,
-        SERVICE_SET_OPEN_WINDOW_MODE,
-        SERVICE_RESTORE_PREVIOUS_STATE,
-    ):
+    for service_name in SERVICE_NAMES:
         if hass.services.has_service(DOMAIN, service_name):
             hass.services.async_remove(DOMAIN, service_name)
-    _LOGGER.debug(
-        "Unload: dropped all Tado CE services, last entry unloaded",
-    )
+    _LOGGER.debug("Unload: dropped all Tado CE services")
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: TadoConfigEntry) -> bool:
-    """Tear down one Tado CE config entry: coordinator, components, platforms, services."""
+    """Unload one Tado CE config entry's platforms and services; HA then runs the teardown registered at setup."""
     _LOGGER.info("Unload: starting for entry %s", entry.entry_id)
 
     coordinator: TadoDataUpdateCoordinator | None = getattr(entry, "runtime_data", None)
-
-    if coordinator:
-        await _async_shutdown_coordinator(coordinator)
-
-    from .entry_lifecycle import async_cleanup_entry_components
-
-    await async_cleanup_entry_components(hass, coordinator)
 
     config_manager = getattr(coordinator, "config_manager", None) if coordinator else None
     platforms_to_unload = list(BASE_PLATFORMS)
@@ -600,6 +557,15 @@ async def async_unload_entry(hass: HomeAssistant, entry: TadoConfigEntry) -> boo
         platforms_to_unload.append(CALENDAR_PLATFORM)
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, platforms_to_unload)
+
+    if not unload_ok:
+        # HA marks the entry FAILED_UNLOAD and refuses any later unload or reload, so everything keeps running until HA restarts; services and the options snapshot stay.
+        _LOGGER.warning("Unload: entry %s could not unload its platforms and stays loaded", entry.entry_id)
+        return unload_ok
+
+    # Awaited here so the next setup cannot start while teardown runs; HA's later unload callback then finds nothing left to do.
+    if coordinator is not None:
+        await async_teardown_entry(coordinator.setup_handles)
 
     other_entries = [e for e in hass.config_entries.async_entries(DOMAIN) if e.entry_id != entry.entry_id]
     if len(other_entries) == 0:
@@ -615,17 +581,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: TadoConfigEntry) -> boo
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Clean up Repair issues when the config entry is removed."""
-    from .repair_helpers import (
-        async_dismiss_auth_issue,
-        async_dismiss_homekit_pairing_invalid_issue,
-        async_dismiss_rate_limit_issue,
-    )
+    from .repair_helpers import async_dismiss_home_issues
     from .write_timing import async_remove_saved_counts
 
     home_id = entry.data.get("home_id")
-    async_dismiss_homekit_pairing_invalid_issue(hass, home_id)
-    async_dismiss_rate_limit_issue(hass, home_id)
-    async_dismiss_auth_issue(hass, home_id)
+    async_dismiss_home_issues(hass, home_id)
     # Last, so a failed delete cannot skip the dismissals above.
     await async_remove_saved_counts(hass, home_id)
 

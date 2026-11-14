@@ -34,6 +34,7 @@ from .sensor_hub import (
     TadoApiResetSensor,
     TadoApiStatusSensor,
     TadoApiUsageSensor,
+    TadoDataAgeSensor,
     TadoHomeIdSensor,
     TadoHomekitReadsSavedSensor,
     TadoHomekitWritesSavedSensor,
@@ -289,11 +290,11 @@ def _create_bridge_sensors(
     """Create bridge dynamic discovery sensors and meta sensors."""
     if bridge_data:
         from .bridge_discovery import flatten_response, resolve_entities
-        from .bridge_enrichment import FIELD_ENRICHMENT, LEGACY_UNIQUE_ID_MAP
+        from .bridge_enrichment import FIELD_ENRICHMENT
 
         fields = flatten_response(bridge_data)
         resolved = resolve_entities(
-            fields, FIELD_ENRICHMENT, LEGACY_UNIQUE_ID_MAP,
+            fields, FIELD_ENRICHMENT,
             skip_paths=frozenset({"bridgeConnected"}),
         )
         bridge_sensor_count = 0
@@ -356,6 +357,7 @@ async def async_setup_entry(
     sensors.append(TadoPollingIntervalSensor(coordinator))
     sensors.append(TadoApiHistorySensor(coordinator))
     sensors.append(TadoApiBreakdownSensor(coordinator))
+    sensors.append(TadoDataAgeSensor(coordinator))
     sensors.append(TadoHomeInsightsSensor(coordinator))
 
     if await hass.async_add_executor_job(_has_boiler_flow_temperature_data, data_loader, config_manager):

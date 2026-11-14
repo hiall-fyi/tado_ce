@@ -9,25 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.util import dt as dt_util
 
-from .const import (
-    WEATHER_COMPENSATION_PRESETS,
-)
 from .models import SmartComfortReading
-
-try:
-    from .sensor_helpers import get_outdoor_temperature as _get_outdoor_temp
-except (ImportError, ModuleNotFoundError):
-    # Fallback for isolated test loading via _load_module() with synthetic package
-    # names (e.g. "_test_sc_.smart_comfort").  sensor_helpers has no relative
-    # imports so it can be loaded standalone.
-    import importlib.util as _ilu
-    from pathlib import Path as _Path
-
-    _sh_path = str(_Path(__file__).resolve().parent / "sensor_helpers.py")
-    _sh_spec = _ilu.spec_from_file_location("_isolated_sensor_helpers", _sh_path)
-    _sh_mod = _ilu.module_from_spec(_sh_spec)  # type: ignore[arg-type]
-    _sh_spec.loader.exec_module(_sh_mod)  # type: ignore[union-attr]
-    _get_outdoor_temp = _sh_mod.get_outdoor_temperature
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -137,10 +119,7 @@ def get_next_schedule_change(
     schedule = data_loader.get_zone_schedule(zone_id) if data_loader is not None else None
 
     if current_time is None:
-        try:
-            current_time = dt_util.now()
-        except ImportError:
-            current_time = datetime.now(UTC)
+        current_time = dt_util.now()
 
     if not schedule:
         _LOGGER.debug(
@@ -211,6 +190,15 @@ class PreheatAdvice:
         return f"Start at {start_str} ({self.estimated_duration_minutes} min to reach {self.target_temp:.1f}°C)"
 
 
+def _is_duplicate_reading(reading: SmartComfortReading, last: SmartComfortReading) -> bool:
+    """Return True when a reading repeats the previous one: same temperature and heating flag inside the dedup window."""
+    return (
+        abs(reading.temperature - last.temperature) < TEMP_EPSILON
+        and reading.is_heating == last.is_heating
+        and (reading.timestamp - last.timestamp).total_seconds() < DEDUP_TIME_WINDOW
+    )
+
+
 class ZoneHistory:
     """Rolling temperature history and rate calculation for one zone."""
 
@@ -251,16 +239,8 @@ class ZoneHistory:
         # Deduplicate: skip if same temp/heating and < 5 min apart
         deduplicated: list[Any] = []
         for reading in raw_readings:
-            if deduplicated:
-                last = deduplicated[-1]
-                time_diff = (reading.timestamp - last.timestamp).total_seconds()
-                # Skip duplicate: same temp, same heating state, < 5 min
-                if (
-                    abs(reading.temperature - last.temperature) < TEMP_EPSILON
-                    and reading.is_heating == last.is_heating
-                    and time_diff < DEDUP_TIME_WINDOW
-                ):
-                    continue
+            if deduplicated and _is_duplicate_reading(reading, deduplicated[-1]):
+                continue
             deduplicated.append(reading)
 
         zone.readings = deduplicated
@@ -278,16 +258,8 @@ class ZoneHistory:
         rows; the dedup check keeps real transitions and time-spaced
         snapshots.
         """
-        if self.readings:
-            last = self.readings[-1]
-            time_diff = (reading.timestamp - last.timestamp).total_seconds()
-
-            if (
-                abs(reading.temperature - last.temperature) < TEMP_EPSILON
-                and reading.is_heating == last.is_heating
-                and time_diff < DEDUP_TIME_WINDOW
-            ):
-                return
+        if self.readings and _is_duplicate_reading(reading, self.readings[-1]):
+            return
 
         self.readings.append(reading)
         self._prune_old_readings()
@@ -475,10 +447,7 @@ class ZoneHistory:
         if len(self.readings) < MIN_DATA_POINTS:
             return None
 
-        try:
-            now = dt_util.now()
-        except (ValueError, TypeError):
-            now = datetime.now(UTC)
+        now = dt_util.now()
         current_time_minutes = now.hour * 60 + now.minute
 
         historical_temps = []
@@ -594,16 +563,13 @@ class SmartComfortManager:
     ) -> None:
         """Initialise the manager."""
         self._zones: dict[str, ZoneHistory] = {}
+        self._forget_save_pending = False
         self._enabled = False
         self._hass = hass
         self._home_id = home_id
         self._history_days = history_days
         self._data_loader = data_loader
         self._last_save_time: datetime | None = None
-        # Weather compensation settings
-        self._outdoor_temp_entity: str = ""
-        self._weather_compensation: str = "none"
-        self._use_feels_like: bool = False
 
     def set_history_days(self, days: int) -> None:
         """Update history retention for all zones to the new day count."""
@@ -614,9 +580,9 @@ class SmartComfortManager:
             "Smart Comfort: history retention set to %d day(s)", days,
         )
 
-    def save_to_file(self) -> bool:
-        """Persist zone history through the DataLoader store (debounced)."""
-        if not self._zones:
+    def save_to_file(self, *, write_empty: bool = False) -> bool:
+        """Persist zone history through the DataLoader store (debounced); `write_empty` also writes a manager with no zones."""
+        if not self._zones and not write_empty:
             return True
 
         if not self._data_loader:
@@ -717,24 +683,6 @@ class SmartComfortManager:
         if elapsed.total_seconds() >= CACHE_SAVE_INTERVAL_MINUTES * 60:
             self.save_to_file()
 
-    def configure_weather(
-        self,
-        outdoor_temp_entity: str = "",
-        weather_compensation: str = "none",
-        use_feels_like: bool = False,
-    ) -> None:
-        """Update the manager's weather-compensation settings."""
-        self._outdoor_temp_entity = outdoor_temp_entity
-        self._weather_compensation = weather_compensation
-        self._use_feels_like = use_feels_like
-        _LOGGER.info(
-            "Smart Comfort: weather compensation configured "
-            "(entity=%s, preset=%s, feels-like=%s)",
-            outdoor_temp_entity,
-            weather_compensation,
-            use_feels_like,
-        )
-
     def enable(self) -> None:
         """Turn Smart Comfort tracking on."""
         self._enabled = True
@@ -749,6 +697,17 @@ class SmartComfortManager:
     def is_enabled(self) -> bool:
         """Return True when Smart Comfort tracking is active."""
         return self._enabled
+
+    def forget_zone(self, zone_id: str) -> bool:
+        """Drop a zone's history and persist that; raises OSError on a failed save so the registry retries, True when the zone was held."""
+        held = self._zones.pop(zone_id, None) is not None
+        if held:
+            self._forget_save_pending = True
+        if self._forget_save_pending:
+            if not self.save_to_file(write_empty=True):
+                raise OSError(f"Smart Comfort: could not persist the removal of zone {zone_id}")
+            self._forget_save_pending = False
+        return held
 
     def get_zone(self, zone_id: str, zone_name: str = "") -> ZoneHistory:
         """Return the zone's history tracker, creating one on first access."""
@@ -841,70 +800,14 @@ class SmartComfortManager:
         )
 
 
-    def get_compensated_rate(self, base_rate: float, for_heating: bool = True) -> float:
-        """Apply weather compensation to a heating or cooling rate.
-
-        Returns base_rate unchanged when compensation is "none" or the
-        outdoor temperature is unavailable. Heating slows in cold
-        weather (factor < 1), cooling speeds up. Warm weather inverts.
-        """
-        if self._weather_compensation == "none":
-            return base_rate
-
-        outdoor_temp = _get_outdoor_temp(
-            self._hass,  # type: ignore[arg-type]
-            self._outdoor_temp_entity,
-            self._use_feels_like,
-        )
-        if outdoor_temp is None:
-            return base_rate
-
-        preset = WEATHER_COMPENSATION_PRESETS.get(
-            self._weather_compensation,
-            WEATHER_COMPENSATION_PRESETS["none"],
-        )
-        cold_thresh, cold_factor, warm_thresh, warm_factor = preset
-
-        # For heating: cold weather = slower heating (more heat loss)
-        # For cooling: cold weather = faster cooling (more heat loss)
-        factor = 1.0
-
-        if cold_thresh is not None and outdoor_temp < cold_thresh:
-            if for_heating:
-                # Cold weather: heating takes longer (divide by factor)
-                factor = 1.0 / cold_factor
-            else:
-                # Cold weather: cooling is faster (multiply by factor)
-                factor = cold_factor
-        elif warm_thresh is not None and outdoor_temp > warm_thresh:
-            if for_heating:
-                # Warm weather: heating is faster (multiply by factor)
-                factor = 1.0 / warm_factor
-            else:
-                # Warm weather: cooling is slower (divide by factor)
-                factor = warm_factor
-
-        compensated = base_rate * factor
-
-        _LOGGER.debug(
-            "Smart Comfort: weather compensation outdoor=%.1f°C preset=%s "
-            "factor=%.2f base=%.2f°C/h compensated=%.2f°C/h",
-            outdoor_temp,
-            self._weather_compensation,
-            factor,
-            base_rate,
-            compensated,
-        )
-
-        return round(compensated, 2)
-
-
 def _process_entity_history(
     history: list[Any],
     zone: ZoneHistory,
+    since: datetime | None = None,
 ) -> int:
     """Convert recorder history states into readings, returning the count added."""
     points_added = 0
+    last_added: SmartComfortReading | None = None
     for state in history:
         try:
             if state.state in ("unavailable", "unknown"):
@@ -919,9 +822,12 @@ def _process_entity_history(
             is_heating = hvac_action in ("heating", "cooling")
             target_temp = attrs.get("temperature")
 
-            timestamp = state.last_changed
+            # last_updated, not last_changed: attribute-only updates leave last_changed on the last mode change.
+            timestamp = state.last_updated
             if timestamp.tzinfo is None:
                 timestamp = timestamp.replace(tzinfo=dt_util.UTC)
+            if since is not None and timestamp < since:
+                continue
 
             reading = SmartComfortReading(
                 timestamp=timestamp,
@@ -929,7 +835,10 @@ def _process_entity_history(
                 is_heating=is_heating,
                 target_temperature=float(target_temp) if target_temp else None,
             )
+            if last_added is not None and _is_duplicate_reading(reading, last_added):
+                continue
             zone.readings.append(reading)
+            last_added = reading
             points_added += 1
 
         except (ValueError, TypeError, AttributeError) as e:
@@ -945,6 +854,7 @@ async def async_load_history_from_recorder(
     manager: SmartComfortManager,
     climate_entity_ids: list[str],
     entity_to_zone_id: dict[str, str] | None = None,
+    zone_since: dict[str, datetime] | None = None,
 ) -> int:
     """Prime the manager with the last 24 h of climate history from the recorder.
 
@@ -952,12 +862,13 @@ async def async_load_history_from_recorder(
     restart instead of waiting hours for fresh readings.
     `entity_to_zone_id` is required because slugified entity names
     don't always match Tado's numeric zone IDs.
+    `zone_since` holds each zone's current dateCreated: readings before it belong to a previous room.
     """
     if not climate_entity_ids or not entity_to_zone_id:
         return 0
 
     try:
-        from homeassistant.components.recorder import get_instance  # type: ignore[attr-defined]
+        from homeassistant.components.recorder import get_instance
         from homeassistant.components.recorder.history import get_significant_states
 
         end_time = dt_util.utcnow()
@@ -997,7 +908,7 @@ async def async_load_history_from_recorder(
 
             zone_name = entity_name.replace("_", " ").title()
             zone = manager.get_zone(zone_id, zone_name)
-            points_added = _process_entity_history(history, zone)
+            points_added = _process_entity_history(history, zone, (zone_since or {}).get(zone_id))
 
             zone.readings.sort(key=lambda r: r.timestamp)
             zone._prune_old_readings()
@@ -1064,10 +975,25 @@ def _calculate_zone_baseline(
     }
 
 
+def _stats_since(sensor_stats: list[dict[str, Any]], since: datetime | None) -> list[dict[str, Any]]:
+    """Keep the hourly points that start at or after `since`; an hour holding the cut-off is dropped."""
+    if since is None:
+        return sensor_stats
+    kept = []
+    for entry in sensor_stats:
+        start = entry.get("start")
+        if isinstance(start, (int, float)):
+            start = datetime.fromtimestamp(start, tz=UTC)
+        if start is None or start >= since:
+            kept.append(entry)
+    return kept
+
+
 async def async_load_baseline_from_statistics(
     hass: HomeAssistant,
     manager: SmartComfortManager,
     zone_sensor_mapping: dict[str, str],
+    zone_since: dict[str, datetime] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Seed each zone's baseline rates from 7 days of long-term statistics.
 
@@ -1080,7 +1006,7 @@ async def async_load_baseline_from_statistics(
         return {}
 
     try:
-        from homeassistant.components.recorder import get_instance  # type: ignore[attr-defined]
+        from homeassistant.components.recorder import get_instance
         from homeassistant.components.recorder.statistics import statistics_during_period
 
         end_time = dt_util.utcnow()
@@ -1113,7 +1039,7 @@ async def async_load_baseline_from_statistics(
             if sensor_id not in stats:
                 continue
 
-            sensor_stats = stats[sensor_id]
+            sensor_stats = _stats_since(stats[sensor_id], (zone_since or {}).get(zone_id))
             baseline = _calculate_zone_baseline(sensor_stats)
             if baseline is None:
                 _LOGGER.debug(

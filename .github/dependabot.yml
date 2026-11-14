@@ -4,7 +4,7 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    # One PR a week; homeassistant and pytest-homeassistant-custom-component must move together.
+    # One PR a week; homeassistant and pytest-homeassistant must move together.
     groups:
       dev-dependencies:
         patterns: ["*"]

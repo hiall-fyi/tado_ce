@@ -16,7 +16,7 @@ from homeassistant.helpers.selector import (
     TextSelectorConfig,
     TextSelectorType,
 )
-import voluptuous as vol
+import probatio as vol
 
 from .config_flow_options import TadoCEOptionsFlow
 from .const import (
@@ -205,7 +205,7 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             result = await self._check_authorization()
 
             if result == "success":
-                _LOGGER.info("Config Flow: device-code authorisation succeeded")
+                _LOGGER.debug("Config Flow: device-code authorisation succeeded")
                 return await self.async_step_select_home()
             if result == "pending":
                 # Still waiting - show form again with hint
@@ -446,7 +446,7 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             result = await self._check_authorization()
 
             if result == "success":
-                _LOGGER.info("Config Flow: reauth authorisation succeeded")
+                _LOGGER.debug("Config Flow: reauth authorisation succeeded")
                 return await self._async_finish_reauth()
             if result == "pending":
                 errors["base"] = "auth_pending"
@@ -477,9 +477,9 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             mask_home_id(home_id),
         )
 
-        from .repair_helpers import async_dismiss_auth_issue
+        from .repair_helpers import async_dismiss_auth_issue, repair_home_id
 
-        async_dismiss_auth_issue(self.hass, home_id)
+        async_dismiss_auth_issue(self.hass, repair_home_id(home_id))
 
         new_data = {**reauth_entry.data, "refresh_token": self._refresh_token}
         self.hass.config_entries.async_update_entry(reauth_entry, data=new_data)
@@ -527,7 +527,7 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             result = await self._check_authorization()
 
             if result == "success":
-                _LOGGER.info("Config Flow: reconfigure authorisation succeeded")
+                _LOGGER.debug("Config Flow: reconfigure authorisation succeeded")
                 return await self.async_step_reconfigure_confirm()
             if result == "pending":
                 errors["base"] = "auth_pending"
@@ -564,13 +564,15 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             mask_home_id(home_id),
         )
 
-        from .repair_helpers import async_dismiss_auth_issue
+        from .repair_helpers import async_dismiss_auth_issue, repair_home_id
 
-        async_dismiss_auth_issue(self.hass, home_id)
+        async_dismiss_auth_issue(self.hass, repair_home_id(home_id))
 
         new_data = {**reconfigure_entry.data, "refresh_token": self._refresh_token}
         self.hass.config_entries.async_update_entry(reconfigure_entry, data=new_data)
 
+        # The update listener skips a reload when options are unchanged, so reload here to clear a latched auth failure.
+        await self.hass.config_entries.async_reload(reconfigure_entry.entry_id)
         return self.async_abort(reason="reconfigure_successful")
 
     async def async_step_reconfigure_select_home(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -588,9 +590,14 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
 
             reconfigure_entry = self._get_reconfigure_entry()
+            from .repair_helpers import async_dismiss_home_issues
+
+            # The old home's repairs would otherwise stay once the entry points at the new home.
+            async_dismiss_home_issues(self.hass, reconfigure_entry.data.get("home_id"))
             new_data = {**reconfigure_entry.data, "home_id": str(home_id), "refresh_token": self._refresh_token}
             self.hass.config_entries.async_update_entry(reconfigure_entry, data=new_data)
 
+            await self.hass.config_entries.async_reload(reconfigure_entry.entry_id)
             return self.async_abort(reason="reconfigure_successful")
 
         home_options = {str(home["id"]): home.get("name", f"Home {home['id']}") for home in self._homes}

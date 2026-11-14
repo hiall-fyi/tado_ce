@@ -40,13 +40,13 @@ async def async_setup_entry(
     zone_types = {str(z.get("id")): z.get("type") or "" for z in zones_info}
 
     # Build zone capabilities (AC zones need detailed caps)
-    ac_caps = coordinator.data.get("ac_capabilities") or {}
+    all_zone_caps = coordinator.data.get("zone_capabilities") or {}
     zone_caps: dict[str, dict[str, Any]] = {}
     for z in zones_info:
         zid = str(z.get("id"))
         ztype = z.get("type")
-        if ztype == "AIR_CONDITIONING" and zid in ac_caps:
-            zone_caps[zid] = {"type": ztype, "ac_capabilities": ac_caps[zid]}
+        if ztype == "AIR_CONDITIONING" and zid in all_zone_caps:
+            zone_caps[zid] = {"type": ztype, "zone_capabilities": all_zone_caps[zid]}
         else:
             zone_caps[zid] = {"type": ztype, "capabilities": z.get("capabilities") or {}}
 

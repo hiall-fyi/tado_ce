@@ -5,10 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import IntEnum
 
-from .models import InsightTemperatureReading
-
-__all__ = ["InsightTemperatureReading"]
-
 
 class InsightPriority(IntEnum):
     """Priority levels for insights (higher = more urgent)."""
@@ -26,93 +22,13 @@ class Insight:
 
     priority: InsightPriority
     recommendation: str
-    insight_type: str  # e.g., "mold_risk", "comfort", "battery", "window_predicted"
+    insight_type: str  # e.g., "mold_risk", "comfort", "battery"
     zone_name: str | None = None
-
-
-@dataclass
-class WindowPredictedResult:
-    """Result of window predicted detection."""
-
-    detected: bool
-    confidence: str  # "none", "low", "medium", "high"
-    temp_drop: float
-    time_window_minutes: int
-    recommendation: str
-    anomaly_readings: int = 0
-    cooldown_active: bool = False
-    detection_mode: str = "active"
 
 
 # =============================================================================
 # Insight Threshold Constants
 # =============================================================================
-
-# Window detection
-WINDOW_MIN_READINGS = 2
-
-# Window predicted sensitivity presets: threshold mappings per sensitivity level
-WINDOW_SENSITIVITY_PRESETS: dict[str, dict[str, int | float]] = {
-    "low": {
-        "consecutive_drops": 3,
-        "high_confidence_count": 4,
-        "high_confidence_change": 2.0,
-        "medium_change_threshold": 1.5,
-    },
-    "medium": {
-        "consecutive_drops": 2,
-        "high_confidence_count": 3,
-        "high_confidence_change": 1.5,
-        "medium_change_threshold": 1.0,
-    },
-    "high": {
-        "consecutive_drops": 1,
-        "high_confidence_count": 2,
-        "high_confidence_change": 1.0,
-        "medium_change_threshold": 0.5,
-    },
-}
-
-# Passive mode signal weights
-PASSIVE_WEIGHT_TEMP = 0.60
-PASSIVE_WEIGHT_HUMIDITY = 0.25
-PASSIVE_WEIGHT_OUTDOOR = 0.15
-
-# Passive mode sensitivity presets: stricter than active
-WINDOW_PASSIVE_SENSITIVITY_PRESETS: dict[str, dict[str, float]] = {
-    "low": {
-        "temp_rate_threshold": 0.4,
-        "high_confidence_score": 0.85,
-        "medium_confidence_score": 0.60,
-        "humidity_boost_threshold": 8.0,
-        "min_readings": 4,
-    },
-    "medium": {
-        "temp_rate_threshold": 0.25,
-        "high_confidence_score": 0.75,
-        "medium_confidence_score": 0.50,
-        "humidity_boost_threshold": 5.0,
-        "min_readings": 3,
-    },
-    "high": {
-        "temp_rate_threshold": 0.15,
-        "high_confidence_score": 0.65,
-        "medium_confidence_score": 0.40,
-        "humidity_boost_threshold": 3.0,
-        "min_readings": 2,
-    },
-}
-
-# Cooldown readings required per sensitivity
-COOLDOWN_READINGS: dict[str, int] = {"low": 3, "medium": 2, "high": 1}
-
-# Outdoor differential thresholds (°C)
-OUTDOOR_DIFF_HIGH = 10.0
-OUTDOOR_DIFF_LOW = 5.0
-
-# Seasonal baseline defaults
-SEASONAL_BASELINE_MIN_SAMPLES = 168  # 7 days of hourly readings
-SEASONAL_COLD_THRESHOLD = 5.0  # °C outdoor: winter mode
 
 # Mold risk: humidity thresholds (%)
 MOLD_HUMIDITY_CRITICAL = 70
@@ -157,7 +73,6 @@ SUMMARY_MAX_LENGTH = 300
 
 # Cross-zone thresholds
 CROSS_ZONE_MOLD_MIN_ZONES = 3
-CROSS_ZONE_WINDOW_MIN_ZONES = 2
 CROSS_ZONE_CONDENSATION_MIN_ZONES = 3
 CROSS_ZONE_EFFICIENCY_MIN_ZONES = 2
 

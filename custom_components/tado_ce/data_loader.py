@@ -2,37 +2,25 @@
 
 Manages two categories of persistent data via HA Store:
 
-- **API data** (immediate save): ten stores written on every API
-  response: `zones`, `config`, `home_state`, `ratelimit`, `zones_info`,
-  `weather`, `mobile_devices`, `offsets`, `schedules`,
-  `ac_capabilities`. Uses `Store.async_save()`.
-- **Auxiliary data** (debounced save): per-feature state, including window
-  detection, WC state, bridge health, outdoor temp history, zone
-  config, smart-comfort cache, overlay mode, timer duration, HomeKit
-  savings, insight runtime state. Uses `Store.async_delay_save()`;
+- **API data** (immediate save): written on every API response. Uses `Store.async_save()`.
+- **Auxiliary data** (debounced save): per-feature state. Uses `Store.async_delay_save()`;
   HA flushes pending writes on `EVENT_HOMEASSISTANT_FINAL_WRITE`.
 
-`HeatingCycleStorage`, `InsightHistoryTracker`,
-`StateRestoreManager`, and `APICallTracker` keep their own Store
-instances: they need data-format migration, dirty-flag tracking, or
-domain-specific load/save logic that doesn't fit this loader.
-
-A few legacy JSON files stay outside the loader: config-flow
-bootstrap writes (DataLoader not yet created at that point),
-`homekit_pairing`, and `homekit_device_map` (independent lifecycle).
+`HeatingCycleStorage`, `InsightHistoryTracker`, `StateRestoreManager`, and `APICallTracker`
+keep their own Store instances for data-format migration, dirty-flag tracking, or
+domain-specific load/save logic.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 import logging
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.storage import Store
 
 from .const import (
-    DATA_DIR,
     OUTDOOR_TEMP_HISTORY_MAX,
     OVERLAY_MODE_DEFAULT,
     TIMER_DURATION_DEFAULT,
@@ -40,7 +28,6 @@ from .const import (
     TIMER_DURATION_MIN,
 )
 from .helpers import normalise_timer_minutes
-from .storage import async_migrate_json_to_store
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -68,12 +55,11 @@ _ALL_STORES: dict[str, int] = {
     "home_devices": 0,
     "offsets": 0,
     "schedules": 0,
-    "ac_capabilities": 0,
-    "ac_capabilities_fp": 0,
+    "zone_capabilities": 0,
+    "zone_capabilities_fp": 0,
     "heating_circuits": 0,
     "heating_circuit_control": 0,
     # Auxiliary Data: debounced save
-    "window_detection": 10,
     "wc_state": 10,
     "bridge_health": 10,
     "outdoor_temp_history": 10,
@@ -82,6 +68,7 @@ _ALL_STORES: dict[str, int] = {
     "overlay_mode": 5,
     "timer_duration": 5,
     "homekit_savings": 10,
+    "write_ledger": 10,
     "insight_runtime_state": 30,
     "zone_identity": 10,
     "zone_type_baseline": 10,
@@ -89,6 +76,7 @@ _ALL_STORES: dict[str, int] = {
 }
 
 STORE_VERSION = 1
+
 
 
 class DataLoader:
@@ -105,7 +93,6 @@ class DataLoader:
     def __init__(self, home_id: str, hass: HomeAssistant | None = None) -> None:
         """Initialise the loader bound to one Tado home."""
         self._home_id = home_id
-        self._hass = hass
         self._cache: dict[str, Any] = {}
         self._stores: dict[str, Store[dict[str, Any] | list[Any]]] = {}
         if hass:
@@ -114,11 +101,11 @@ class DataLoader:
     def _init_stores(self, hass: HomeAssistant) -> None:
         """Create one HA Store instance per managed key."""
         for name in _ALL_STORES:
-            self._stores[name] = Store(
-                hass,
-                STORE_VERSION,
-                f"tado_ce/{name}_{self._home_id}",
-            )
+            key = f"tado_ce/{name}_{self._home_id}"
+            if name == "write_timing":
+                self._stores[name] = _RedactedKeyStore(hass, STORE_VERSION, key, f"tado_ce/{name}_REDACTED")
+            else:
+                self._stores[name] = Store(hass, STORE_VERSION, key)
 
     @property
     def home_id(self) -> str:
@@ -157,6 +144,38 @@ class DataLoader:
         await store.async_save(data)
         self._cache[name] = data
 
+    async def async_merge_store(
+        self,
+        name: str,
+        updates: Mapping[str, Any] | None = None,
+        removed: Iterable[str] = (),
+    ) -> dict[str, Any]:
+        """Apply removals and updates to the live cached dict in place, save that same object, and return it."""
+        store = self._stores.get(name)
+        if store is None:
+            _LOGGER.warning(
+                "Data Loader: cannot merge into unknown store %r, "
+                "this is a programming error, the data will not persist",
+                name,
+            )
+            return {}
+        live = self._cache.get(name)
+        if not isinstance(live, dict):
+            # The Store copy is the base, or a partial update would be saved over the zones it holds.
+            loaded = await store.async_load()
+            live = self._cache.get(name)
+            if not isinstance(live, dict):
+                live = dict(loaded) if isinstance(loaded, dict) else {}
+                self._cache[name] = live
+        # No await between the read and these mutations, so no other writer can interleave.
+        for key in removed:
+            live.pop(key, None)
+        if updates:
+            live.update(updates)
+        # HA's Store logs a failed disk write instead of raising it, leaving the cache ahead of disk; the next save writes the whole dict.
+        await store.async_save(live)
+        return live
+
     async def async_flush_pending_saves(self) -> None:
         """Drain debounced writes before teardown.
 
@@ -180,10 +199,9 @@ class DataLoader:
     async def async_load_all_to_cache(self) -> None:
         """Populate the cache with every API-data store on cold start.
 
-        For each store: tries `Store.async_load()` first, falls back
-        to migrating the v3.5.3 JSON file alongside it, and caches a
-        negative sentinel when both are empty so subsequent reads
-        don't re-trigger the migration path.
+        Reads each store once and caches a negative sentinel when it
+        comes back empty, so later reads know the difference between
+        "not loaded yet" and "nothing stored".
         """
         api_store_names = [name for name, delay in _ALL_STORES.items() if delay == 0]
         for name in api_store_names:
@@ -203,23 +221,9 @@ class DataLoader:
                 self._cache[name] = _CACHE_MISSING
                 continue
 
-            if data is None and self._hass is not None:
-                old_path = self._old_api_data_path(name)
-                _LOGGER.debug(
-                    "Data Loader: store %r empty, trying legacy JSON "
-                    "migration from %s",
-                    name, old_path,
-                )
-                data = await async_migrate_json_to_store(
-                    self._hass, old_path, store, label=name,
-                )
             if data is not None:
                 _LOGGER.debug("Data Loader: loaded %r (type=%s)", name, type(data).__name__)
             self._cache[name] = data if data is not None else _CACHE_MISSING
-
-    def _old_api_data_path(self, name: str) -> Path:
-        """Return the v3.5.3 JSON path that one-time migration should look at."""
-        return DATA_DIR / f"{name}_{self._home_id}.json"
 
     # --- Backward-compatible sync cache reads ---
     # Thin wrappers preserved for callers written before
@@ -267,20 +271,8 @@ class DataLoader:
 
     # === Auxiliary Data: Store-backed with debounced writes ===
 
-    def _old_auxiliary_path(self, name: str) -> Path:
-        """Return the legacy JSON path for one-time migration, accounting for shared keys.
-
-        v3.5.3 stored `overlay_mode` and `timer_duration` shared
-        across homes (no home_id suffix); every other auxiliary file
-        was already home-scoped. Today's Store keys are home-scoped
-        uniformly, so this asymmetry only matters for migration.
-        """
-        if name in ("overlay_mode", "timer_duration"):
-            return DATA_DIR / f"{name}.json"
-        return DATA_DIR / f"{name}_{self._home_id}.json"
-
     async def async_load_auxiliary(self, name: str) -> dict[str, Any] | list[Any] | None:
-        """Load one auxiliary value from Store, falling back to a legacy JSON file."""
+        """Load one auxiliary value from Store."""
         store = self._stores.get(name)
         if not store:
             _LOGGER.warning(
@@ -293,13 +285,7 @@ class DataLoader:
         data = await store.async_load()
         if data is not None:
             return data
-
-        if self._hass is None:
-            return None
-        old_path = self._old_auxiliary_path(name)
-        return await async_migrate_json_to_store(
-            self._hass, old_path, store, label=name,
-        )
+        return None
 
     def save_auxiliary(self, name: str, data: dict[str, Any] | list[Any]) -> None:
         """Queue a debounced save for one auxiliary value (delay per store config)."""
@@ -497,16 +483,17 @@ class DataLoader:
         self.save_auxiliary("homekit_savings", data)
         return True
 
-    # === Window Detection State (Store-backed) ===
+    # === Write ledger owed entries (Store-backed) ===
 
-    async def async_load_window_detection(self) -> dict[str, Any] | None:
-        """Return the persisted window-detection state, or None when missing."""
+    async def async_load_write_ledger(self) -> dict[str, Any] | None:
+        """Return the persisted owed entries, or None when missing, unreadable or written by a newer version."""
         try:
-            data = await self.async_load_auxiliary("window_detection")
-        except (HomeAssistantError, OSError) as e:
+            data = await self.async_load_auxiliary("write_ledger")
+        except (HomeAssistantError, OSError, NotImplementedError) as e:
+            # NotImplementedError is what Store raises for a newer stored version; the file is then ignored.
             _LOGGER.warning(
-                "Data Loader: could not load window-detection state "
-                "(%s), starting fresh, per-zone detection state will rebuild",
+                "Data Loader: could not load the held-change store (%s), "
+                "starting with none kept",
                 e,
             )
             return None
@@ -514,8 +501,21 @@ class DataLoader:
             return data
         return None
 
-    def save_window_detection(self, data: dict[str, Any]) -> bool:
-        """Persist the window-detection state."""
-        self.save_auxiliary("window_detection", data)
+    def save_write_ledger(self, data: dict[str, Any]) -> bool:
+        """Persist the owed entries of the write ledger."""
+        self.save_auxiliary("write_ledger", data)
         return True
+
+
+class _RedactedKeyStore(Store[dict[str, Any] | list[Any]]):
+    """Store whose file name keeps the real key but whose written JSON carries a fixed key."""
+
+    def __init__(self, hass: HomeAssistant, version: int, key: str, posted_key: str) -> None:
+        """Remember the key to write into the file."""
+        self._posted_key = posted_key
+        super().__init__(hass, version, key)
+
+    # The posted file must not carry the Tado home id; the file name still comes from self.key.
+    async def _async_write_data(self, data: dict[str, Any]) -> None:
+        await super()._async_write_data({**data, "key": self._posted_key})
 

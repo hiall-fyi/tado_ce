@@ -47,7 +47,7 @@ def build_serial_mapping(
     }
 
     if not accessories:
-        _LOGGER.warning(
+        _LOGGER.debug(
             "HomeKit: no accessories returned by the bridge, cannot "
             "build the serial-to-zone mapping, local control will stay "
             "off until the next pairing fetch",
@@ -55,7 +55,7 @@ def build_serial_mapping(
         return empty_result
 
     if not cloud_zones_info:
-        _LOGGER.warning(
+        _LOGGER.debug(
             "HomeKit: no cloud zone data available, cannot build the "
             "serial-to-zone mapping, will retry after the next cloud sync",
         )
@@ -141,20 +141,33 @@ def build_serial_mapping(
     return {
         "serial_to_zone": serial_to_zone,
         "zone_to_aids": zone_to_aids,
+        "cloud_serials": cloud_serials_by_zone(cloud_zones_info),
         "last_updated": dt_util.utcnow().isoformat(),
     }
+
+
+def cloud_serials_by_zone(zones_info: list[dict[str, Any]]) -> dict[str, list[str]]:
+    """Return {zone_id: sorted device serials} for every mappable climate zone."""
+    from .const import get_climate_zone_ids
+
+    climate_ids = get_climate_zone_ids(zones_info)
+    result: dict[str, list[str]] = {}
+    for zone in zones_info:
+        zone_id = str(zone.get("id"))
+        if zone_id not in climate_ids:
+            continue
+        serials = sorted(set().union(*(device_serials(d) for d in (zone.get("devices") or []))))
+        if serials:
+            result[zone_id] = serials
+    return result
 
 
 def validate_mapping(
     mapping: dict[str, Any],
     valid_zone_ids: set[str] | None = None,
+    zones_info: list[dict[str, Any]] | None = None,
 ) -> bool:
-    """Return True when the cached mapping looks healthy, False to force a rebuild.
-
-    Drops mappings containing zone "0" (a known corruption shape from
-    earlier builds) and any zone IDs not present in the current cloud
-    zone set.
-    """
+    """Return True when the cached mapping is healthy and, given zones_info, matches the cloud device serials."""
     serial_to_zone = mapping.get("serial_to_zone", {})
     zone_to_aids = mapping.get("zone_to_aids", {})
 
@@ -177,17 +190,29 @@ def validate_mapping(
             )
             return False
 
+    if zones_info is not None and mapping.get("cloud_serials") != cloud_serials_by_zone(zones_info):
+        _LOGGER.info(
+            "HomeKit: cached mapping was built for different cloud device "
+            "serials (or predates the record), rebuilding from current data",
+        )
+        return False
+
     return True
 
 
 def mapping_covers_all_zones(
     zone_aid_map: dict[str, list[int]],
     zones_info: list[dict[str, Any]],
+    mapped_cloud_serials: dict[str, list[str]] | None = None,
+    *,
+    require_fingerprint: bool = False,
 ) -> bool:
-    """Return True when every climate zone that owns a device serial is mapped.
+    """Return True when every serial-bearing climate zone is mapped for the current device serials; require_fingerprint makes a mapping without one stale."""
+    if require_fingerprint and mapped_cloud_serials is None and zone_aid_map:
+        return False
+    if mapped_cloud_serials is not None and mapped_cloud_serials != cloud_serials_by_zone(zones_info):
+        return False
 
-    A home with no serial-bearing climate zones is trivially complete.
-    """
     from .const import get_climate_zone_ids
 
     climate_ids = get_climate_zone_ids(zones_info)
@@ -200,23 +225,26 @@ def mapping_covers_all_zones(
     return mappable.issubset(set(zone_aid_map))
 
 
+def cloud_only_climate_zones(zones_info: list[dict[str, Any]], zone_aid_map: dict[str, list[int]]) -> dict[str, str]:
+    """Return climate zone id -> name for zones with no mapped HomeKit accessory."""
+    from .const import CLIMATE_ZONE_TYPES
+
+    return {
+        str(z.get("id")): str(z.get("name") or z.get("id"))
+        for z in zones_info
+        if z.get("type") in CLIMATE_ZONE_TYPES and str(z.get("id")) not in zone_aid_map
+    }
+
+
 async def load_device_mapping(
     hass: HomeAssistant,
     home_id: str,
 ) -> dict[str, Any] | None:
-    """Load the cached mapping from HA Store, falling back to legacy JSON migration."""
+    """Load the cached mapping from HA Store."""
     store: Store[dict[str, Any]] = Store(hass, _STORE_VERSION, f"tado_ce/homekit_device_map_{home_id}")
     data = await store.async_load()
     if data and isinstance(data, dict):
         return data
-
-    from .const import get_data_file
-    from .storage import async_migrate_json_to_store
-
-    old_path = get_data_file("homekit_device_map", home_id)
-    migrated = await async_migrate_json_to_store(hass, old_path, store, label="homekit_device_map")
-    if migrated and isinstance(migrated, dict):
-        return migrated
     return None
 
 
@@ -238,6 +266,8 @@ async def async_rebuild_and_save_mapping(
     homekit_client: HomeKitClient,
     home_id: str,
     zones_info: list[dict[str, Any]],
+    *,
+    warn_on_empty_list: bool = True,
 ) -> dict[str, Any]:
     """Rebuild the HomeKit serial-to-zone mapping from the live bridge + cloud zones.
 
@@ -245,12 +275,22 @@ async def async_rebuild_and_save_mapping(
     zones_info, and on a non-empty result saves the mapping to the Store and
     installs it on the client. Returns the mapping; serial_to_zone is empty when
     the bridge returned no accessories, zones_info was empty, or nothing matched;
-    the caller decides whether to retry.
+    a failed accessory list also carries accessories_listed=False.
     """
     empty: dict[str, Any] = {"serial_to_zone": {}, "zone_to_aids": {}}
     accessories = await homekit_client.async_list_accessories()
-    if not accessories or not zones_info:
+    if not zones_info:
         return empty
+    if not accessories:
+        if warn_on_empty_list:
+            _LOGGER.warning(
+                "HomeKit: the bridge did not list any accessories, so the zone mapping could not be built. "
+                "It will try again on the next poll; if this keeps happening, "
+                "check the bridge is powered on and on your network.",
+            )
+        else:
+            _LOGGER.debug("HomeKit: the bridge accessory list is still empty, mapping retry continues")
+        return {**empty, "accessories_listed": False}
 
     mapping = build_serial_mapping(accessories, zones_info)
     if mapping.get("serial_to_zone"):
@@ -258,6 +298,7 @@ async def async_rebuild_and_save_mapping(
         homekit_client.set_zone_mapping(
             mapping.get("serial_to_zone", {}),
             mapping.get("zone_to_aids", {}),
+            mapping.get("cloud_serials"),
         )
     return mapping
 

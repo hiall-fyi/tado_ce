@@ -52,32 +52,6 @@
           }
         }
       },
-      "window_predicted": {
-        "name": "Voorspeld open raam",
-        "state_attributes": {
-          "confidence": {
-            "name": "Betrouwbaarheid"
-          },
-          "temp_drop": {
-            "name": "Temperatuurdaling"
-          },
-          "time_window_minutes": {
-            "name": "Tijdvenster (minuten)"
-          },
-          "recommendation": {
-            "name": "Aanbeveling"
-          },
-          "zone_type": {
-            "name": "Zonetype"
-          },
-          "readings_count": {
-            "name": "Aantal metingen"
-          },
-          "anomaly_readings": {
-            "name": "Afwijkende metingen"
-          }
-        }
-      },
       "bridge_connected": {
         "name": "Verbinding"
       },
@@ -155,9 +129,6 @@
       "resume_all": {
         "name": "Alle schema’s hervatten"
       },
-      "refresh_ac": {
-        "name": "Airco-mogelijkheden vernieuwen"
-      },
       "refresh_schedule": {
         "name": "Schema vernieuwen"
       },
@@ -166,6 +137,9 @@
       },
       "smart_boost": {
         "name": "Slimme boost"
+      },
+      "refresh_zone_capabilities": {
+        "name": "Zonemogelijkheden vernieuwen"
       }
     },
     "calendar": {
@@ -635,7 +609,7 @@
             "name": "Duur (minuten)"
           },
           "heating_rate": {
-            "name": "Opwarmsnelheid"
+            "name": "Verwarmingssnelheid"
           },
           "confidence": {
             "name": "Betrouwbaarheid"
@@ -858,7 +832,7 @@
             "name": "Marge"
           },
           "window_type": {
-            "name": "Type raam"
+            "name": "Raamtype"
           },
           "u_value": {
             "name": "U-waarde"
@@ -890,7 +864,7 @@
             "name": "Buitentemperatuur"
           },
           "window_type": {
-            "name": "Type raam"
+            "name": "Raamtype"
           },
           "u_value": {
             "name": "U-waarde"
@@ -958,44 +932,38 @@
           }
         }
       },
-      "bridge_wiring_state": {
-        "name": "Bedradingsstatus van de ketel"
+      "boiler_wiring_state": {
+        "name": "Status van de bedrading van de ketel"
       },
-      "bridge_boiler_output_temp": {
+      "boiler_output_temperature": {
         "name": "Uitgangstemperatuur van de ketel"
       },
-      "bridge_boiler_output_temp_time": {
-        "name": "Tijdstip uitgangstemperatuur van de ketel"
+      "boiler_output_temperature_time": {
+        "name": "Tijdstip van de uitgangstemperatuur van de ketel"
       },
-      "bridge_boiler_flow_temp": {
+      "boiler_flow_temperature": {
         "name": "Aanvoertemperatuur van de ketel"
       },
-      "bridge_boiler_flow_temp_time": {
-        "name": "Tijdstip aanvoertemperatuur van de ketel"
+      "boiler_flow_temperature_time": {
+        "name": "Tijdstip van de aanvoertemperatuur van de ketel"
       },
-      "bridge_boiler_max_output_temp": {
+      "boiler_max_output_temperature": {
         "name": "Maximale uitgangstemperatuur van de ketel"
       },
-      "bridge_hot_water_present": {
+      "boiler_hot_water_present": {
         "name": "Warm water aanwezig"
       },
-      "bridge_device_type": {
-        "name": "Type ketelapparaat"
+      "boiler_device_type": {
+        "name": "Type ketel"
       },
-      "bridge_device_serial": {
-        "name": "Serienummer ketelapparaat"
+      "boiler_device_serial": {
+        "name": "Serienummer van de ketel"
       },
-      "bridge_therm_interface_type": {
+      "boiler_interface_type": {
         "name": "Type ketelinterface"
       },
-      "bridge_device_connected": {
-        "name": "Ketelapparaat verbonden"
-      },
-      "bridge_capabilities": {
-        "name": "Mogelijkheden"
-      },
-      "bridge_schema_version": {
-        "name": "Schemaversie"
+      "boiler_device_connected": {
+        "name": "Ketel aangesloten"
       },
       "wc_target_flow_temp": {
         "name": "Weerscompensatie doel"
@@ -1025,6 +993,38 @@
             "name": "Type zone"
           }
         }
+      },
+      "data_age": {
+        "state_attributes": {
+          "zone_states_fetched_at": {
+            "name": "De status van de zones is voor het laatst bijgewerkt op"
+          },
+          "full_sync_fetched_at": {
+            "name": "Laatste volledige synchronisatie uitgevoerd op"
+          },
+          "full_sync_age_minutes": {
+            "name": "Tijd sinds de laatste volledige synchronisatie (minuten)"
+          },
+          "last_poll_skips": {
+            "name": "Redenen om de laatste update over te slaan"
+          },
+          "last_poll_skips_at": {
+            "name": "Laatste update overgeslagen op"
+          },
+          "calls_today": {
+            "name": "API-verzoeken vandaag"
+          },
+          "breakdown_today": {
+            "name": "API-verzoeken die op het quotum in mindering worden gebracht, per type (vandaag)"
+          }
+        },
+        "name": "Actualiteit van gegevens in de cloud"
+      },
+      "bridge_capabilities": {
+        "name": "Mogelijkheden"
+      },
+      "bridge_schema_version": {
+        "name": "Schemaversie"
       }
     },
     "select": {
@@ -1076,7 +1076,7 @@
         }
       },
       "timer_duration": {
-        "name": "Overlay-timer",
+        "name": "Overschrijf-timer",
         "state_attributes": {
           "description": {
             "name": "Beschrijving"
@@ -1304,11 +1304,11 @@
     },
     "refresh": {
       "name": "Vernieuwen",
-      "description": "Haal onmiddellijk aanwezigheidsgegevens op, zonder rekening te houden met het minimale vernieuwingsinterval. Voor gebruikers die hun eigen vernieuwingsfrequentie bepalen via een automatisering: de automatische polling-ondergrens beschermt uw API-quotum de rest van de tijd nog steeds.",
+      "description": "Haal nu één type gegevens op uit Tado, zonder rekening te houden met het minimale vernieuwingsinterval. Kies het type in het veld ‘Te vernieuwen gegevens’. Voor gebruikers die hun eigen vernieuwingsfrequentie bepalen via een automatisering: de automatische polling-ondergrens beschermt uw API-quotum de rest van de tijd nog steeds.",
       "fields": {
         "data": {
           "name": "Te vernieuwen gegevens",
-          "description": "Welke gegevens nu moeten worden opgehaald: aanwezigheid van mobiele apparaten of aanwezigheid thuis (thuis/afwezig). Wordt genegeerd als die functie is uitgeschakeld."
+          "description": "Welke gegevens moeten nu worden opgehaald: aanwezigheid van mobiele apparaten, aanwezigheid thuis (thuis/afwezig) of zonestatus (temperatuur, streefwaarde, modus). De aanwezigheid van mobiele apparaten en de aanwezigheid thuis worden genegeerd als die functie is uitgeschakeld."
         }
       }
     },
@@ -1318,27 +1318,12 @@
     }
   },
   "selector": {
-    "smart_comfort_mode": {
-      "options": {
-        "none": "Geen (uitgeschakeld)",
-        "light": "Licht",
-        "moderate": "Matig",
-        "aggressive": "Agressief"
-      }
-    },
     "mold_risk_window_type": {
       "options": {
         "single_pane": "Enkel glas (U=5,0 W/m²K)",
         "double_pane": "Dubbele beglazing (U=2,7 W/m²K)",
         "triple_pane": "Driedubbele beglazing (U=1,0 W/m²K)",
         "passive_house": "Passiefhuis (U=0,8 W/m²K)"
-      }
-    },
-    "window_predicted_mode": {
-      "options": {
-        "active": "Actief (afhankelijk van HVAC)",
-        "passive": "Passief (onafhankelijk van HVAC)",
-        "auto": "Auto (aanbevolen)"
       }
     },
     "adaptive_preheat_mode": {
@@ -1407,6 +1392,12 @@
       "options": {
         "auto": "Automatisch (HomeKit voor 'Totdat u het schema hervat')",
         "cloud": "Tado-cloud"
+      }
+    },
+    "wc_curve_shape": {
+      "options": {
+        "linear": "Rechte lijn",
+        "exponential": "Gebogen"
       }
     }
   },
@@ -1496,13 +1487,16 @@
       "message": "Kinderslot {zone_name}: wachtrij voor apparaatsynchronisatie vol"
     },
     "water_heater_set_mode_failed": {
-      "message": "Warm water voor {zone_name}: het instellen van {operation_mode} is mislukt na {attempts} pogingen"
+      "message": "Warm water voor {zone_name}: het instellen van {operation_mode} is mislukt"
     },
     "bridge_client_not_available": {
       "message": "Bridge-API-client niet beschikbaar"
     },
     "boiler_max_output_temp_failed": {
       "message": "Het is niet gelukt om de maximale uitgangstemperatuur van de ketel in te stellen"
+    },
+    "cloud_blocked": {
+      "message": "Tado blokkeert momenteel verzoeken vanaf deze verbinding. Wacht een paar minuten en probeer het opnieuw; u hoeft niet opnieuw in te loggen."
     }
   },
   "issues": {
@@ -1522,9 +1516,21 @@
       "title": "HomeKit-koppeling verbroken",
       "description": "De HomeKit-koppeling van uw Tado-bridge is niet langer geldig; mogelijk is het apparaat teruggezet naar de fabrieksinstellingen. Tado CE werkt in de ‘alleen-cloud’-modus totdat u het apparaat opnieuw koppelt.\n\nOm opnieuw te koppelen: Instellingen → Tado CE → Configureren → Geavanceerde instellingen → HomeKit. Vink vervolgens ‘Opnieuw koppelen’ aan en voer de 8-cijferige installatiecode van uw bridge in."
     },
+    "unsupported_upgrade_path": {
+      "title": "Tado CE: installeer eerst versie 4.1.0 of hoger",
+      "description": "Woning **{home_id}** kan niet rechtstreeks naar deze versie worden geüpgraded, omdat uw instellingen zijn opgeslagen in een ouder formaat dat versie 5.0.0 niet ondersteunt.\n\nOm uw instellingen te behouden: installeer een willekeurige Tado CE-release **v4.1.0 of hoger**, start Home Assistant één keer opnieuw op zodat de opgeslagen gegevens worden bijgewerkt, en upgrade daarna naar deze versie.\n\nEr is niets gewijzigd of verwijderd, dus terugkeren naar die release is veilig."
+    },
     "zone_reassigned": {
       "title": "De instellingen van een zone zijn teruggezet",
       "description": "Tado heeft een zone-ID hergebruikt voor een andere kamer. De Smart Valve Control-instellingen, de koppeling van de externe sensor en de temperatuurlimieten die voor de vorige kamer waren geconfigureerd, zijn gewist voor zone {zone_id}, omdat ze niet meer gelden voor de nieuwe kamer. Voer ze opnieuw in onder **Zoneconfiguratie** als de nieuwe kamer ze nodig heeft."
+    },
+    "cloud_blocked": {
+      "title": "Tado CE: Tado blokkeert verzoeken",
+      "description": "Tado blijft verzoeken voor woning **{home_id}** weigeren. Dit is geen inlogprobleem, dus u hoeft niet opnieuw in te loggen. Tado CE blijft het opnieuw proberen en deze melding verdwijnt vanzelf zodra Tado reageert. U kunt ook de service `tado_ce.refresh` aanroepen om het nu opnieuw te proberen."
+    },
+    "battery_low": {
+      "title": "Tado CE: batterij bijna leeg in {zone_name}",
+      "description": "Lage batterijspanning gemeld door: {devices}.\n\n{advice}\n\nTotdat de batterijen zijn vervangen, wordt de kamer mogelijk niet naar behoren verwarmd. De batterijsensor van elk apparaat in Home Assistant geeft dezelfde waarde weer. Deze melding verdwijnt vanzelf zodra geen enkel apparaat in de kamer een lage batterijspanning meldt."
     }
   },
   "config": {
@@ -1589,13 +1595,9 @@
         }
       }
     },
-    "progress": {
-      "poll": "Wachten op autorisatie... Voltooi het inloggen in uw browser."
-    },
     "abort": {
       "already_configured": "Deze Tado-woning is al ingesteld in Tado CE.",
       "timeout": "Autorisatie verlopen. Probeer het opnieuw.",
-      "authorization_failed": "Autorisatie mislukt. Probeer het opnieuw.",
       "no_homes": "Geen Tado-woningen gevonden voor dit account.",
       "reauth_successful": "Herauthenticatie succesvol! Uw gegevens zijn vernieuwd.",
       "reconfigure_successful": "Klaar. Uw nieuwe Tado-login is opgeslagen."
@@ -1617,8 +1619,7 @@
           "zone_config": "Zoneconfiguratie",
           "general_settings": "Algemene instellingen",
           "advanced_settings": "Geavanceerde instellingen",
-          "reset_to_defaults": "Standaardinstellingen herstellen",
-          "homekit_unpair": "HomeKit ontkoppelen"
+          "reset_to_defaults": "Standaardinstellingen herstellen"
         }
       },
       "zone_config": {
@@ -1641,23 +1642,17 @@
             },
             "data_description": {
               "heating_type": "Radiator of vloerverwarming",
-              "ufh_buffer_minutes": "Extra minuten die bij de voorverwarmschattingen voor vloerverwarming worden opgeteld (0-60, standaard 30). Alleen gebruikt wanneer het Type warmteafgifte UFH is.",
+              "ufh_buffer_minutes": "Extra minuten die bij de voorverwarmschattingen voor vloerverwarming worden opgeteld (0–60, standaard 30). Alleen gebruikt wanneer het Type warmteafgifte Vloerverwarming is.",
               "adaptive_preheat": "Uit: niet gebruikt. Actief: zet de verwarming eerder aan en zet de zone daarna terug naar de vorige status. Passief: zet de verwarming alleen eerder aan als er geen handmatige overschrijving loopt. Alleen verwarmingszones. Vereist dat Adaptieve voorverwarming en Smart Comfort zijn ingeschakeld in Algemene instellingen."
             }
           },
           "comfort_section": {
             "name": "Comfort",
             "data": {
-              "smart_comfort_mode": "Smart Comfort-modus",
-              "window_type": "Raamtype",
-              "window_predicted_mode": "Modus open-raamdetectie",
-              "window_predicted_sensitivity": "Gevoeligheid open-raamdetectie"
+              "window_type": "Raamtype"
             },
             "data_description": {
-              "smart_comfort_mode": "Nog niet in gebruik. De Smart Comfort-modus voor de hele woning onder Geavanceerde instellingen geldt voor elke zone.",
-              "window_type": "Raamtype voor de berekening van het schimmelrisico",
-              "window_predicted_mode": "Actief: controleert alleen terwijl de verwarming of koeling aan staat. Passief: controleert voortdurend. Auto: Actief terwijl de verwarming of koeling aan staat, anders Passief.",
-              "window_predicted_sensitivity": "Hoe snel de open-raamdetectie reageert. Een hogere gevoeligheid geeft meer valse meldingen, maar detecteert ook kleinere tochtstromen."
+              "window_type": "Raamtype voor de berekening van het schimmelrisico"
             }
           },
           "sensor_section": {
@@ -1688,7 +1683,7 @@
             },
             "data_description": {
               "overlay_mode": "Hoe lang een temperatuurwijziging vanuit Home Assistant (inclusief service-aanroepen) van kracht blijft voordat het schema van Tado wordt hervat. Wijzigingen in de Tado-app worden hierdoor niet beïnvloed. Wis dit veld om de instelling Duur van de overschrijving van de Tado CE-hub te gebruiken.",
-              "timer_duration": "Duur van de timer wanneer Overschrijfgedrag op Timer staat (15 minuten tot 12 uur). Wis dit veld om de instelling Overlay-timer van de hub te gebruiken.",
+              "timer_duration": "Duur van de timer wanneer Overschrijfgedrag op Timer staat (15 minuten tot 12 uur). Wis dit veld om de instelling Overschrijf-timer van de hub te gebruiken.",
               "write_route": "Automatisch gebruikt HomeKit wanneer het overschrijfgedrag hierboven 'Totdat u het schema hervat' is, en de Tado-cloud voor Timer en 'Tot de volgende automatische wijziging'. Kies Tado-cloud als het display van een wandthermostaat de wijzigingen vanuit Home Assistant niet toont. Wijzigingen via de cloud kosten API-aanroepen; temperatuurmetingen komen nog steeds uit HomeKit."
             }
           },
@@ -1710,7 +1705,7 @@
         }
       },
       "general_settings": {
-        "description": "Schakel functies in of uit. De meeste functies staan standaard uit. Voor het inschakelen van de Internet Bridge of Lokale bediening (HomeKit) zijn extra gegevens nodig. Gebruik Geavanceerde instellingen voor fijnafstelling.",
+        "description": "Schakel functies in of uit. De meeste functies staan standaard uit. Voor het inschakelen van de Internet Bridge of Lokale bediening (HomeKit) zijn extra gegevens nodig, en Weerscompensatie vereist de Internet Bridge. Gebruik Geavanceerde instellingen voor fijnafstelling.",
         "title": "Algemene instellingen",
         "sections": {
           "tado_features": {
@@ -1729,7 +1724,7 @@
               "weather_enabled": "Buitentemperatuur en zonnestralingsintensiteit van Tado. Ongeveer 1 API-aanroep per vernieuwing. Het vernieuwingsinterval kan worden ingesteld onder Geavanceerde instellingen → Polling, vertragingen en standaardwaarden.",
               "mobile_devices_enabled": "Volg de locatie van elke telefoon voor aanwezigheid per apparaat. Locaties worden ongeveer eens per uur vernieuwd (elke 4 uur met het gratis Tado-quotum). Voor snellere updates schakelt u dit in, slaat u op en schakelt u daarna Frequente mobiele synchronisatie in onder Geavanceerde instellingen → Polling, vertragingen en standaardwaarden.",
               "schedule_calendar_enabled": "Bekijk uw Tado-verwarmingsschema’s als agenda-items in HA",
-              "offset_enabled": "Toon de temperatuurkalibratie-offset uit de Tado-app bij klimaatentiteiten. Kost 1 API-aanroep per thermostaat bij elke volledige synchronisatie (ongeveer elk uur).",
+              "offset_enabled": "Toon de temperatuurkalibratie-offset uit de Tado-app bij klimaatentiteiten. Kost 1 API-aanroep per verwarmings- of airco-zone bij elke volledige synchronisatie (ongeveer elk uur), plus maximaal elke 30 minuten één nieuwe uitlezing van een zone.",
               "heating_circuit_enabled": "Wijs elke verwarmingszone toe aan een ketelcircuit, of aan geen enkel circuit, zodat de kleppen ervan open blijven staan voor restwarmte zonder dat de ketel wordt gestookt. Hiervoor is een bridge met ketelcircuits nodig. Wordt vernieuwd volgens de normale synchronisatiefrequentie, niet onmiddellijk."
             }
           },
@@ -1770,7 +1765,7 @@
             },
             "data_description": {
               "zone_configuration_enabled": "Voegt een menu Zoneconfiguratie toe met temperatuurlimieten, sensoren, overschrijfgedrag, type warmteafgifte, comfort- en weergave-instellingen per zone.",
-              "write_timing_enabled": "Telt hoe lang het duurt voordat Tado een door u aangebrachte wijziging weergeeft, uitgesplitst in tijdsblokken. De tellingen bevatten geen namen, ID’s of temperaturen, en het bestand legt alleen vast wanneer het tellen is begonnen. Ze worden opgeslagen in een klein bestand in de opslag van Home Assistant. Er wordt niets naar buiten verzonden: u plaatst het bestand zelf. Als u dit uitschakelt, worden de tellingen verwijderd."
+              "write_timing_enabled": "Houdt bij hoe lang het duurt voordat Tado een door u aangebrachte wijziging weergeeft, uitgesplitst in tijdsblokken, per HomeKit of cloud en per verwarming, airconditioning of warm water. Het bestand bevat geen namen, ID’s, temperaturen of tijdstippen van afzonderlijke wijzigingen, alleen de dag waarop de telling is begonnen. Het wordt opgeslagen in de opslag van Home Assistant en er wordt niets naar buiten verzonden: u plaatst het bestand zelf als daarom wordt gevraagd. Als u deze functie uitschakelt, worden de tellingen verwijderd."
             }
           }
         }
@@ -1782,13 +1777,11 @@
           "smart_comfort": {
             "name": "Smart Comfort",
             "data": {
-              "smart_comfort_mode": "Smart Comfort-modus",
               "use_feels_like": "Gebruik gevoelstemperatuur",
               "mold_risk_window_type": "Raamtype",
               "smart_comfort_history_days": "Temperatuurgeschiedenis (dagen)"
             },
             "data_description": {
-              "smart_comfort_mode": "Hoeveel rekening Tado CE houdt met de buitentemperatuur bij het inschatten hoe lang een kamer nodig heeft om op te warmen. Licht verandert de schatting een beetje, Agressief veel. Er wordt geen enkele streeftemperatuur gewijzigd. Vereist een buitentemperatuurentiteit (Externe gegevensbronnen hieronder). Begin met Licht.",
               "use_feels_like": "Gebruik de gevoelstemperatuur van de weerentiteit voor de buitentemperatuur, wanneer die er een levert. Geen effect bij een gewone temperatuursensor. Geldt ook voor Weerscompensatie.",
               "mold_risk_window_type": "Uw raamtype. Dit beïnvloedt hoe de oppervlaktetemperatuur wordt geschat voor schimmelrisico",
               "smart_comfort_history_days": "Hoeveel dagen temperatuurgegevens worden gebruikt voor schattingen van de opwarmsnelheid (1–30, standaard 7)"
@@ -1881,21 +1874,25 @@
               "wc_room_compensation_enabled": "Kamercompensatie inschakelen",
               "wc_room_compensation_factor": "Compensatiefactor kamer",
               "wc_step_size": "Stapgrootte aanvoertemperatuur",
-              "wc_hysteresis": "Wijzigingshysterese"
+              "wc_hysteresis": "Wijzigingshysterese",
+              "wc_curve_shape": "Vorm van de verwarmingscurve",
+              "wc_curve_k": "Buiging van de curve"
             },
             "data_description": {
-              "wc_slope": "Hoe steil de aanvoertemperatuur verandert met de buitentemperatuur (0,3–3,0). Bij kouder weer dan uw ontwerpbuitentemperatuur geeft een hogere helling een hogere aanvoertemperatuur, tot de maximale aanvoertemperatuur. Bij warmer weer geeft een hogere helling een lagere aanvoertemperatuur. Wordt alleen gebruikt wanneer de voorinstelling voor het verwarmingssysteem hierboven op Aangepast staat; anders wordt de helling berekend uit uw waarden voor maximale/minimale aanvoertemperatuur, uitschakeltemperatuur en ontwerpbuitentemperatuur.",
+              "wc_slope": "Hoe sterk de aanvoertemperatuur verandert met de buitentemperatuur (0,3–3,0). Bij temperaturen onder uw ontwerpbuitentemperatuur is de aanvoer altijd gelijk aan de maximale aanvoer, ongeacht de helling. Als het warmer is dan die temperatuur, zorgt een steilere helling voor een lagere aanvoertemperatuur. Dit wordt alleen gebruikt wanneer de hierboven ingestelde verwarmingssysteeminstelling ‘Aangepast’ is en de vorm van de verwarmingscurve ‘Rechte lijn’ is; anders wordt het berekend op basis van uw waarden voor maximale/minimale aanvoertemperatuur, uitschakeltemperatuur verwarming en ontwerpbuitentemperatuur, of genegeerd wanneer ‘Gebogen’ is gekozen.",
               "wc_design_outdoor_temp": "De koudste temperatuur die u in uw gebied verwacht (-30 tot 10°C)",
-              "wc_max_flow_temp": "Hoogste aanvoertemperatuur die uw ketel bij de laagste buitentemperatuur mag bereiken (25–80 °C). Wordt gebruikt voor de automatische hellingsberekening, tenzij de voorinstelling hierboven op Aangepast staat.",
-              "wc_min_flow_temp": "Laagste aanvoertemperatuur, die ook wordt gebruikt wanneer de verwarming wordt uitgeschakeld (25–60 °C). Wordt gebruikt voor de automatische hellingsberekening, tenzij de voorinstelling hierboven op Aangepast staat.",
+              "wc_max_flow_temp": "De hoogste aanvoertemperatuur die uw ketel bij de laagste buitentemperatuur mag bereiken (30–80 °C). Deze waarde wordt gebruikt voor de automatische hellingsberekening, tenzij de hierboven ingestelde waarde „Aangepast” is.",
+              "wc_min_flow_temp": "Laagste aanvoertemperatuur, wordt ook gebruikt wanneer de verwarming wordt uitgeschakeld (30–60 °C). Wordt gebruikt voor de automatische hellingsberekening, tenzij de hierboven ingestelde waarde ‘Aangepast’ is.",
               "wc_shutoff_temp": "Bij en boven deze buitentemperatuur stuurt Tado CE de minimale aanvoertemperatuur in plaats van de verwarmingscurve te volgen (5–30 °C)",
               "wc_smoothing_method": "Hoe buitentemperatuurmetingen worden gemiddeld om plotselinge veranderingen te voorkomen",
               "wc_smoothing_window": "Over hoe lang de buitentemperatuur wordt gemiddeld (15–1440 min)",
               "wc_room_compensation_factor": "Aantal graden aanvoertemperatuur dat erbij komt per graad dat de verwarmingszones onder de streeftemperatuur zitten, of eraf gaat per graad erboven. 3,0 betekent dat 1 °C tekort 3 °C extra aanvoertemperatuur geeft (1,0–5,0)",
               "wc_step_size": "Rond de aanvoertemperatuur af op deze stapgrootte. Grotere stappen betekenen minder aanpassingen aan de ketel (0,5–2,0 °C)",
               "wc_hysteresis": "Stuur alleen een nieuwe aanvoertemperatuur door als deze meer dan dit verschil (0,5–3,0 °C) vertoont ten opzichte van de vorige waarde.",
-              "wc_heating_system_preset": "Voorlopig verandert alleen Aangepast iets: daarmee stelt u zelf de helling in. De drie verwarmingstypen gedragen zich hetzelfde en berekenen de helling uit de velden Maximale en Minimale aanvoertemperatuur, Uitschakeltemperatuur en Ontwerpbuitentemperatuur hieronder.",
-              "wc_room_compensation_enabled": "Verhoog of verlaag de aanvoertemperatuur met het gemiddelde verschil tussen streef- en kamertemperatuur van de zones die nu verwarmen, bovenop de weercurve. Wordt genegeerd zodra de buitentemperatuur de uitschakeltemperatuur bereikt."
+              "wc_heating_system_preset": "Alleen ‘Aangepast’ brengt op dit moment verandering: hiermee kunt u uw eigen helling instellen, die echter wordt genegeerd wanneer de vorm van de verwarmingscurve is ingesteld op ‘Gebogen’. De drie verwarmingstypen gedragen zich op dezelfde manier en berekenen de helling op basis van de velden Maximale aanvoertemperatuur, Minimale aanvoertemperatuur, Uitschakeltemperatuur verwarming en Ontwerpbuitentemperatuur hieronder.",
+              "wc_room_compensation_enabled": "Verhoog of verlaag de aanvoertemperatuur met het gemiddelde verschil tussen streef- en kamertemperatuur van de zones die nu verwarmen, bovenop de weercurve. Wordt genegeerd zodra de buitentemperatuur de uitschakeltemperatuur bereikt.",
+              "wc_curve_shape": "Een rechte lijn is de standaardinstelling en wordt door alle voorinstellingen gebruikt. De gebogen lijn werkt alleen met het aangepaste verwarmingssysteem en zorgt bij mild weer voor een iets hogere aanvoertemperatuur, terwijl de maximale aanvoertemperatuur nog steeds wordt bereikt bij de ontwerpbuitentemperatuur en de minimale bij de uitschakeltemperatuur.",
+              "wc_curve_k": "Hoe sterk de curve buigt wanneer ‘Gebogen’ is geselecteerd (0,005 tot 0,10). De standaardwaarde 0,02 is geschikt voor radiatoren en convectoren; vloerverwarming buigt nauwelijks, dus ‘Rechte lijn’ is daar net zo goed. Een hogere waarde geeft bij mild weer een hogere aanvoertemperatuur, en boven ongeveer 0,03 gaat de buiging verder dan waar het onderliggende model voor geldt; vergelijk daarom met ‘Rechte lijn’ voordat u deze waarde behoudt."
             }
           },
           "comfort_safety": {
@@ -1915,7 +1912,7 @@
               "boiler_flow_temp_entity": "Entiteit voor aanvoertemperatuur van de ketel"
             },
             "data_description": {
-              "use_outdoor_temp_entity": "Schakel uit om uw eigen buitensensor niet meer te gebruiken. Opslaan wist de gekozen entiteit. Schimmelrisico valt dan terug op de kamertemperatuur, de Smart Comfort-modus past niets meer aan, en Weerscompensatie gebruikt de weergegevens van Tado als Weergegevens aan staat.",
+              "use_outdoor_temp_entity": "Schakel uit om uw eigen buitensensor niet meer te gebruiken. Opslaan wist de gekozen entiteit. Het schimmelrisico valt dan terug op de kamertemperatuur en Weerscompensatie gebruikt de weergegevens van Tado als Weergegevens is ingeschakeld.",
               "outdoor_temp_entity": "Sensor die de buitentemperatuur weergeeft (bijvoorbeeld weather.home of een lokale sensor)",
               "boiler_flow_temp_entity": "Uw eigen sensor voor de aanvoertemperatuur van de ketel (bijvoorbeeld ebusd, OpenTherm Gateway of myVaillant), gebruikt wanneer Tado geen aanvoertemperatuur meldt. Voedt de sensor Aanvoertemperatuur van de ketel en de waarschuwing voor de ketelaanvoer. Stuurt Weerscompensatie niet aan; die heeft de Internet Bridge nodig."
             }
@@ -1935,24 +1932,24 @@
         }
       },
       "wc_bridge_prompt": {
-        "description": "Weerscompensatie heeft de Internet Bridge nodig om de aanvoertemperatuur van de ketel uit te lezen en in te stellen. Zonder bridge werkt Weerscompensatie niet.",
+        "description": "Weerscompensatie heeft de Internet Bridge nodig om de aanvoertemperatuur van de ketel uit te lezen en in te stellen. Zonder bridge kan het niet worden ingeschakeld.",
         "title": "Weerscompensatie",
         "data": {
           "also_enable_bridge": "Schakel ook de Internet Bridge in"
         },
         "data_description": {
-          "also_enable_bridge": "Vink aan om in de volgende stap het serienummer en de auth-code van uw bridge in te voeren. Laat u dit uit, dan blijft Weerscompensatie inactief totdat er een bridge is toegevoegd."
+          "also_enable_bridge": "Vink aan om in de volgende stap het serienummer en de auth-code van uw bridge in te voeren. Laat u dit uit, dan gaat u terug naar Algemene instellingen, waar u Weerscompensatie kunt uitschakelen."
         }
       },
       "reset_to_defaults": {
-        "description": "Kies wat u wilt resetten. Bij één categorie worden de afstemwaarden teruggezet naar de standaardwaarden en blijft de functie aan. Twee uitzonderingen: Externe gegevensbronnen wist de sensoren die u hebt gekozen, en Internet Bridge wist het serienummer en de auth-code van de bridge en schakelt de bridge uit. Alles resetten schakelt elke functie uit.",
+        "description": "Kies wat u wilt resetten. Bij één categorie worden de afstemwaarden teruggezet naar de standaardwaarden en blijft de functie aan. Twee uitzonderingen: Externe gegevensbronnen wist de sensoren die u hebt gekozen, en Internet Bridge wist het serienummer en de auth-code van de bridge, schakelt de bridge uit en schakelt Weerscompensatie uit. Alles resetten schakelt elke functie uit, behalve de Internet Bridge, die aan blijft terwijl het serienummer en de auth-code behouden blijven.",
         "title": "Standaardinstellingen herstellen",
         "data": {
           "reset_scope": "Resetbereik"
         }
       },
       "reset_confirm": {
-        "description": "Hiermee worden de gekozen instellingen teruggezet naar de standaardwaarden. Alles resetten schakelt ook elke functie uit, waardoor de entiteiten die deze hebben aangemaakt worden verwijderd. Uw Tado-login en de instellingen per zone blijven behouden, evenals het serienummer en de auth-code van de bridge, tenzij u Internet Bridge hebt gekozen.",
+        "description": "Hiermee worden de gekozen instellingen teruggezet naar de standaardwaarden. Alles resetten schakelt ook elke functie uit, behalve de Internet Bridge, die aan blijft terwijl het serienummer en de auth-code behouden blijven. Een functie uitschakelen verwijdert de entiteiten die de functie heeft aangemaakt. Uw Tado-login en de instellingen per zone blijven behouden, evenals het serienummer en de auth-code van de bridge, tenzij u Internet Bridge hebt gekozen.",
         "title": "Reset bevestigen"
       },
       "homekit_pairing": {
@@ -1976,7 +1973,6 @@
     },
     "error": {
       "interval_out_of_range": "Polling-interval moet tussen 1 en 1440 minuten liggen",
-      "invalid_number": "Voer een geldig getal in",
       "bridge_auth_failed": "Ongeldig serienummer of ongeldige auth-code van de bridge. Controleer dit en probeer het opnieuw.",
       "wc_min_exceeds_max": "De minimale aanvoertemperatuur kan niet hoger zijn dan de maximale aanvoertemperatuur",
       "bridge_serial_invalid": "Alleen Internet Bridges van versie 3 en later (serienummer begint met IB) hebben de lokale API. Dit serienummer begint niet met IB, dus het kan een oudere bridge zijn (prefix GW) of een typefout. Weerscompensatie heeft een bridge met de lokale API nodig.",
@@ -1991,7 +1987,8 @@
       "homekit_no_zeroconf": "Voor het koppelen van HomeKit is de zeroconf-service van Home Assistant nodig, die op deze host niet actief is. Voeg `default_config:` (of `zeroconf:`) toe aan uw configuration.yaml, start opnieuw op en probeer het dan nog eens.",
       "homekit_pin_format": "Dat lijkt niet op een HomeKit-installatiecode. Voer de 8-cijferige code in de indeling 123-45-678 in (niet de 4-cijferige auth-code), zoals weergegeven op uw bridge of in de Tado-app.",
       "homekit_no_bridge_detected": "In deze woning is geen Tado Internet Bridge (versie 3 of later) gevonden. Oudere bridges (GW-serienummer) ondersteunen HomeKit niet, en Smart AC Control-units koppelen apart met hun eigen code. Verzend om terug te gaan zonder te koppelen.",
-      "bridge_credentials_required": "Voer zowel het serienummer als de auth-code in."
+      "bridge_credentials_required": "Voer zowel het serienummer als de auth-code in.",
+      "wc_requires_bridge": "Weerscompensatie heeft de Internet Bridge nodig. Schakel Weerscompensatie uit, of schakel de Internet Bridge in onder Hardware-aansluitingen."
     }
   }
 }

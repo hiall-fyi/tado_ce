@@ -1,174 +1,77 @@
 """Tado CE config-entry version migration + duplicate cleanup + entity-platform moves.
 
-v4.0.0's minimum supported upgrade path is config-entry
-version 11 (i.e. v3.0.0 onwards): older entries fail
-migration and tell the user to step through v3.x first.
+v5.0.0's minimum supported upgrade path is config-entry
+version 13 (v4.1.0 GA onwards): older entries refuse to load
+and tell the user to run any v4.1.0+ release once first.
+
+Minor version 2 forward-writes `thermal_analytics_enabled=True` and
+`heating_cycle_history_days=30` so existing installs keep their old
+effective values after the getters' defaults were corrected.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING, Any
 
 from .const import DOMAIN
+from .repair_helpers import (
+    UNSUPPORTED_UPGRADE_PATH_ISSUE,
+    async_create_issue,
+)
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
 
 # Migration version constants
-_MIN_SUPPORTED_VERSION = 11  # versions below this are too old to migrate
-_V11_VERSION = 11  # config entry version that needs v11→v12 migration
-_V12_VERSION = 12  # config entry version that needs v12→v13 migration
-_TARGET_VERSION = 13  # current config-entry schema version
+_MIN_SUPPORTED_VERSION = 13  # v4.1.0 GA; below this, the v3-era data format we no longer read
 
 # Module-level set to track duplicate cleanup operations (prevents re-running)
 _duplicate_cleanup_done: set[str] = set()
 
 
-async def async_migrate_config_json(
-    hass: HomeAssistant,
-    config_entry: ConfigEntry,
-) -> None:
-    """One-time move of `config_{home_id}.json` settings into `config_entry.options`.
-
-    Existing options on the entry win on conflict so the user can't
-    lose hand-edited settings to the file's stale values.
-    """
-    from .const import get_data_file
-    from .storage import async_load_json
-
-    home_id = config_entry.data.get("home_id")
-    config_path = get_data_file("config", home_id)
-    _LOGGER.debug(
-        "Migration: checking for legacy config JSON at %s",
-        config_path,
-    )
-
-    path_exists = await hass.async_add_executor_job(config_path.exists)
-    if not path_exists:
-        _LOGGER.debug(
-            "Migration: legacy config JSON not present, nothing to "
-            "migrate",
-        )
-        return
-
-    json_data = await async_load_json(hass, config_path)
-    if json_data is None or not isinstance(json_data, dict):
-        _LOGGER.warning(
-            "Migration: legacy config JSON %s could not be parsed, "
-            "skipping migration, options left untouched",
-            config_path,
-        )
-        return
-
-    # Strip secrets / identifiers: those live in entry.data,
-    # not entry.options.
-    json_data.pop("refresh_token", None)
-    json_data.pop("home_id", None)
-
-    # Existing options win over file values: a hand-edited
-    # entry option takes precedence over a stale JSON value.
-    merged: dict[str, Any] = {**json_data, **dict(config_entry.options)}
-
-    hass.config_entries.async_update_entry(config_entry, options=merged)
-    _LOGGER.info(
-        "Migration: merged %d key(s) from legacy config JSON into "
-        "config entry options",
-        len(json_data),
-    )
-
-    await hass.async_add_executor_job(config_path.unlink, True)
-    _LOGGER.info(
-        "Migration: removed legacy config JSON file at %s",
-        config_path,
-    )
-
-
-async def _consolidate_next_time_block(hass: HomeAssistant, config_entry: ConfigEntry) -> None:
-    """Rewrite a stored overlay_mode == NEXT_TIME_BLOCK to TADO_MODE.
-
-    NEXT_TIME_BLOCK is no longer a valid overlay mode (the /api/v2 endpoint
-    rejects it). Rewrites both the global overlay_mode aux store and every
-    per-zone entry in the zone_config store. Idempotent: a second run finds
-    nothing to rewrite.
-    """
-    from .data_loader import DataLoader
-
-    home_id = config_entry.data.get("home_id")
-    if not home_id:
-        _LOGGER.debug("Migration: no home_id on entry, skipping NEXT_TIME_BLOCK consolidation")
-        return
-    loader = DataLoader(str(home_id), hass)
-
-    global_data = await loader.async_load_auxiliary("overlay_mode")
-    if isinstance(global_data, dict) and global_data.get("overlay_mode") == "NEXT_TIME_BLOCK":
-        loader.save_auxiliary("overlay_mode", {"overlay_mode": "TADO_MODE"})
-        _LOGGER.info("Migration: rewrote global overlay_mode NEXT_TIME_BLOCK -> TADO_MODE")
-
-    zone_data = await loader.async_load_auxiliary("zone_config")
-    if isinstance(zone_data, dict) and isinstance(zone_data.get("zones"), dict):
-        changed = 0
-        for zcfg in zone_data["zones"].values():
-            if isinstance(zcfg, dict) and zcfg.get("overlay_mode") == "NEXT_TIME_BLOCK":
-                zcfg["overlay_mode"] = "TADO_MODE"
-                changed += 1
-        if changed:
-            loader.save_auxiliary("zone_config", zone_data)
-            _LOGGER.info("Migration: rewrote NEXT_TIME_BLOCK -> TADO_MODE in %d zone(s)", changed)
-
-
 async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Step a config entry forward to the current schema version.
 
-    Live steps: v11 → v12 (config-JSON move) and v12 → v13 (NEXT_TIME_BLOCK
-    consolidation). Older paths require an intermediate v3.x install. A `None`
-    version is treated as recovery from a previously-aborted migration: we
-    snap forward and let the entry resume.
-
-    Minor version 2 forward-writes `thermal_analytics_enabled=True` and
-    `heating_cycle_history_days=30` so existing installs keep their old
-    effective values after the getters' defaults were corrected.
+    Version 13 is both the floor and the current major schema, so the only
+    live step is the minor-version forward-write below. A `None` version
+    means a corrupted entry of unknown vintage; we refuse to load it because
+    snapping forward would wrongly assert it is current (Home Assistant
+    declares the field as `int` and never sends `None`).
     """
-    target_version = _TARGET_VERSION
     initial_version = config_entry.version
 
     if initial_version is None:
-        _LOGGER.warning(
-            "Migration: config entry version was None (likely from "
-            "a previously aborted migration), snapping forward to "
-            "version %s so the entry can resume",
-            target_version,
-        )
-        hass.config_entries.async_update_entry(config_entry, version=target_version)
-        return True
-
-    if initial_version < _MIN_SUPPORTED_VERSION:
         _LOGGER.error(
-            "Migration: config entry version %s is below the v4.0.0 "
-            "minimum (11), please install v3.x first, run it once, "
-            "then upgrade to v4.0.0",
-            initial_version,
+            "Migration: config entry has no schema version, which means it "
+            "is corrupted or was written by an unknown version. Refusing to "
+            "load it rather than assuming it is current. Remove and re-add "
+            "the integration, or restore a backup.",
         )
         return False
 
-    if initial_version == _V11_VERSION:
-        _LOGGER.info("Migration: starting v11 → v12 upgrade")
-        await async_migrate_config_json(hass, config_entry)
-        hass.config_entries.async_update_entry(config_entry, version=12)
-        _LOGGER.info("Migration: v11 → v12 complete")
-
-    # v12 → v13 chains off v11 (initial_version <= 12) so an old entry steps
-    # through both in one call. The version bump is the LAST action: the store
-    # rewrites run first, so a mid-migration crash re-runs the whole idempotent
-    # step rather than leaving it version-bumped-but-half-written.
-    if initial_version <= _V12_VERSION:
-        _LOGGER.info("Migration: starting v12 → v13 (NEXT_TIME_BLOCK consolidation)")
-        await _consolidate_next_time_block(hass, config_entry)
-        hass.config_entries.async_update_entry(config_entry, version=_TARGET_VERSION)
-        _LOGGER.info("Migration: v12 → v13 complete")
+    if initial_version < _MIN_SUPPORTED_VERSION:
+        _LOGGER.error(
+            "Migration: config entry version %s is below the v5.0.0 minimum "
+            "(%s, which is v4.1.0). Install any Tado CE v4.1.0 or later "
+            "release, start Home Assistant once so it updates the stored "
+            "data, then upgrade again. Nothing has been changed, so "
+            "returning to that release is safe.",
+            initial_version,
+            _MIN_SUPPORTED_VERSION,
+        )
+        async_create_issue(
+            hass,
+            UNSUPPORTED_UPGRADE_PATH_ISSUE,
+            home_id=config_entry.data.get("home_id"),
+        )
+        return False
 
     if config_entry.minor_version < 2:
         options = dict(config_entry.options)
@@ -186,6 +89,79 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
         config_entry.minor_version,
     )
     return True
+
+
+# Stale suffix -> converged suffix, for installs created before the bridge
+# naming settled on one shape. Keyed on the OLD value, so an entry already at
+# target is simply absent and skips. Nine of the twelve enrichment fields moved;
+# the other three were already there via the override map this replaced.
+_BRIDGE_SUFFIX_RENAMES: dict[str, str] = {
+    "bridge_boiler_outputTemperature_timestamp": "boiler_output_temperature_time",
+    "bridge_boiler_flowTemperature_celsius": "boiler_flow_temperature",
+    "bridge_boiler_flowTemperature_timestamp": "boiler_flow_temperature_time",
+    "bridge_bridgeConnected": "boiler_bridge_connected",
+    "bridge_hotWaterZonePresent": "boiler_hot_water_present",
+    "bridge_deviceWiredToBoiler_type": "boiler_device_type",
+    "bridge_deviceWiredToBoiler_serialNo": "boiler_device_serial",
+    "bridge_deviceWiredToBoiler_thermInterfaceType": "boiler_interface_type",
+    "bridge_deviceWiredToBoiler_connected": "boiler_device_connected",
+}
+
+
+# Renames that are not part of the bridge naming convergence but share the same
+# one-shot registry walk. The refresh button was renamed when the capability
+# cache stopped being AC-only.
+_OTHER_SUFFIX_RENAMES: dict[str, str] = {
+    "refresh_ac": "refresh_zone_capabilities",
+}
+
+
+def build_bridge_rekey_callback(
+    hass: HomeAssistant,
+    home_id: str,
+) -> Callable[[Any], dict[str, str] | None]:
+    """Build the entity-registry callback for this integration's unique_id renames.
+
+    Returns None for anything needing no write, which covers a fresh install, a
+    second run, another home's entities, a suffix runtime inference minted
+    rather than the enrichment table, and a target id already in use.
+    """
+    from homeassistant.helpers import entity_registry as er
+
+    prefix = f"tado_ce_{home_id}_"
+    renames = {**_BRIDGE_SUFFIX_RENAMES, **_OTHER_SUFFIX_RENAMES}
+
+    def _rekey(entry: Any) -> dict[str, str] | None:
+        if not entry.unique_id.startswith(prefix):
+            return None
+        new_suffix = renames.get(entry.unique_id[len(prefix):])
+        if new_suffix is None:
+            return None
+
+        new_unique_id = f"{prefix}{new_suffix}"
+        registry = er.async_get(hass)
+        if registry.async_get_entity_id(entry.domain, entry.platform, new_unique_id):
+            # Home Assistant raises ValueError on a duplicate unique_id, and the
+            # migration walks entries with no transaction, so raising here would
+            # leave the registry half-renamed and abort setup again on every
+            # later load. Skip instead and let the user remove the stale entity.
+            _LOGGER.warning(
+                "Migration: cannot re-key %s to %s, an entity already uses the "
+                "new id, leaving it in place",
+                entry.unique_id,
+                new_unique_id,
+            )
+            return None
+
+        _LOGGER.info(
+            "Migration: re-keying %s from %s to %s",
+            entry.entity_id,
+            entry.unique_id,
+            new_unique_id,
+        )
+        return {"new_unique_id": new_unique_id}
+
+    return _rekey
 
 
 async def async_deduplicate_entries(
@@ -250,7 +226,7 @@ async def async_deduplicate_entries(
 
         cleanup_key = f"duplicate_cleanup_{keeper_entry_id}"
         if cleanup_key not in _duplicate_cleanup_done:
-            _duplicate_cleanup_done.add(cleanup_key)
+            all_removed = True
 
             _LOGGER.info(
                 "Migration: keeper entry %s removing %d duplicate "
@@ -275,6 +251,8 @@ async def async_deduplicate_entries(
                         old_entry.entry_id,
                     )
                 except Exception:
+                    # Broad on purpose: any removal failure must leave the key out so the next setup retries.
+                    all_removed = False
                     _LOGGER.warning(
                         "Migration: could not remove duplicate "
                         "entry %s, leaving it in place, will retry "
@@ -283,12 +261,14 @@ async def async_deduplicate_entries(
                         exc_info=True,
                     )
 
-            _LOGGER.info(
-                "Migration: duplicate cleanup complete for "
-                "unique_id %r, keeper is %s",
-                entry.unique_id,
-                keeper_entry_id,
-            )
+            if all_removed:
+                _duplicate_cleanup_done.add(cleanup_key)
+                _LOGGER.info(
+                    "Migration: duplicate cleanup complete for "
+                    "unique_id %r, keeper is %s",
+                    entry.unique_id,
+                    keeper_entry_id,
+                )
     elif len(all_entries) > 1:
         _LOGGER.debug(
             "Migration: %d Tado CE entries with %d distinct "
@@ -300,61 +280,94 @@ async def async_deduplicate_entries(
     return True
 
 
-async def async_migrate_entity_platforms(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-) -> None:
-    """Drop legacy `sensor.*` connection / hot-water power entities so the binary platform recreates them.
+def _is_legacy_platform_entry(entry: Any) -> bool:
+    """Return True for a pre-v4.1 `sensor.*` row that is a binary_sensor now.
 
-    HA can't change an entity's platform in place; removing the
-    old `sensor.*` registry entries lets the binary_sensor
-    platform create them fresh with the right device class
-    (CONNECTIVITY / POWER).
+    Home Assistant cannot move an entity between platforms, so the old row has
+    to go and let the binary_sensor platform create it fresh with the right
+    device class (CONNECTIVITY / POWER).
+    """
+    if entry.platform != DOMAIN or entry.domain != "sensor":
+        return False
+
+    uid = entry.unique_id
+    # Connection sensor: tado_ce_{home_id}_device_{serial}_connection
+    if "_connection" in uid and "device_" in uid:
+        return True
+    # Hot water power sensor: tado_ce_{home_id}_zone_{zone_id}_power.
+    # Heating and AC power stay as sensors, they report a percentage.
+    return (
+        "_power" in uid
+        and "zone_" in uid
+        and "heating" not in uid
+        and "ac" not in uid
+    )
+
+
+def _is_retired_window_predicted_entry(entry: Any, home_id: str) -> bool:
+    """Return True for this home's Predicted Window row, which v5.0.0 no longer creates."""
+    if entry.platform != DOMAIN or entry.domain != "binary_sensor":
+        return False
+    pattern = rf"{DOMAIN}_{re.escape(home_id)}_zone_\d+_window_predicted"
+    return re.fullmatch(pattern, entry.unique_id) is not None
+
+
+async def async_migrate_registry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Run every entity-registry migration this integration owns, in one walk.
+
+    Home Assistant's own `async_migrate_entries` iterates the config entry's
+    registry entries and applies whatever dict the callback returns, skipping
+    any entry it returns None for. Both migrations compose into that one walk,
+    and returning None for an entry already in its final shape is what makes
+    the whole thing idempotent on every load with no version gate.
+
+    Runs from `async_setup_entry`, not `async_migrate_entry`: HA short-circuits
+    the latter without importing it whenever an entry already sits at the
+    current version/minor tuple, which every healthy install does. See
+    `exception_topology.md` for the full rationale.
     """
     from homeassistant.helpers import entity_registry as er
 
+    home_id = str(entry.data.get("home_id"))
+    rekey = build_bridge_rekey_callback(hass, home_id)
     registry = er.async_get(hass)
     removed = 0
+    retired = 0
 
-    for entity_entry in list(registry.entities.values()):
-        if entity_entry.config_entry_id != entry.entry_id:
-            continue
-        if entity_entry.platform != DOMAIN:
-            continue
-        if entity_entry.domain != "sensor":
-            continue
-
-        uid = entity_entry.unique_id
-        old_eid = entity_entry.entity_id
-
-        # Connection sensor → binary_sensor; unique_id pattern:
-        # tado_ce_{home_id}_device_{serial}_connection
-        should_remove = False
-        if "_connection" in uid and "device_" in uid:
-            should_remove = True
-
-        # Hot water power sensor → binary_sensor; unique_id pattern:
-        # tado_ce_{home_id}_zone_{zone_id}_power
-        elif (
-            "_power" in uid
-            and "zone_" in uid
-            and "heating" not in uid
-            and "ac" not in uid
-        ):
-            should_remove = True
-
-        if should_remove:
+    def _migrate(registry_entry: Any) -> dict[str, str] | None:
+        nonlocal removed, retired
+        if _is_retired_window_predicted_entry(registry_entry, home_id):
             _LOGGER.debug(
-                "Migration: removing legacy sensor %s, binary_sensor "
-                "platform will recreate it",
-                old_eid,
+                "Migration: removing retired Predicted Window row %s",
+                registry_entry.entity_id,
             )
-            registry.async_remove(old_eid)
+            registry.async_remove(registry_entry.entity_id)
+            retired += 1
+            return None
+        if _is_legacy_platform_entry(registry_entry):
+            # A removal is not expressible as an update dict, so do it here and
+            # report nothing to change. Upstream integrations use the same idiom.
+            _LOGGER.debug(
+                "Migration: removing legacy sensor %s, binary_sensor platform "
+                "will recreate it",
+                registry_entry.entity_id,
+            )
+            registry.async_remove(registry_entry.entity_id)
             removed += 1
+            return None
+        return rekey(registry_entry)
+
+    await er.async_migrate_entries(hass, entry.entry_id, _migrate)
 
     if removed:
         _LOGGER.info(
             "Migration: removed %d legacy sensor entit(ies) so they "
             "can be recreated as binary_sensors",
             removed,
+        )
+    if retired:
+        _LOGGER.info(
+            "Migration: removed %d Predicted Window entit(ies), the sensor is "
+            "retired in v5.0.0",
+            retired,
         )

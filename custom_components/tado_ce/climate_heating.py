@@ -13,7 +13,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.components.climate import ATTR_HVAC_MODE, ClimateEntity  # type: ignore[attr-defined]
+from homeassistant.components.climate import ATTR_HVAC_MODE
 from homeassistant.components.climate.const import (
     PRESET_AWAY,
     PRESET_HOME,
@@ -21,82 +21,83 @@ from homeassistant.components.climate.const import (
     HVACAction,
     HVACMode,
 )
-from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
-from homeassistant.core import CALLBACK_TYPE, callback
+from homeassistant.const import ATTR_TEMPERATURE
+from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
-from homeassistant.helpers.restore_state import RestoreEntity
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .climate_base import TadoClimateBase
 from .climate_helpers import (
+    CLIMATE_STATE_NAMES,
     api_call_with_rollback,
+    apply_homekit_target,
+    cloud_write_failed,
+    homekit_target_attribute,
     inject_presence_state,
-    read_external_sensor,
-    setup_climate_external_sensor_subscription,
-    unsubscribe_external_sensors,
+    source_update_attrs,
     update_offset,
     update_offset_clamp,
     update_preset_mode,
 )
-from .const import (
-    CLOUD_VERIFICATION_BUFFER_SECONDS,
-    OPEN_WINDOW_DEFAULT_TEMP,
-    SIGNAL_HOMEKIT_UPDATE,
-)
-from .device_manager import get_zone_device_info
-from .entity_registry import ENTITY_REGISTRY
-from .error_dispatch import is_typed_cloud_rejection
+from .const import OPEN_WINDOW_DEFAULT_TEMP
+from .error_dispatch import dispatch_to_service_call
+from .exceptions import TadoAuthError, TadoBlockedError, TadoRateLimitError
 from .format_helpers import (
     format_overlay_type as _format_overlay_type,
 )
 from .helpers import (
-    PerEntityAvailabilityMixin,
+    Route,
+    RouteDecision,
     async_trigger_immediate_refresh,
     build_timer_termination,
+    decide_route,
     get_zone_overlay_termination,
     get_zone_state,
-    should_use_homekit_for_overlay,
-    zone_confirmed_on,
+    payload_to_time,
 )
+from .homekit_provider import PutOutcome
 from .optimistic_helpers import (
     OptimisticUpdateResult,
+    clear_homekit_write,
+    hold_locally,
+    is_held_locally,
+    mark_homekit_put,
+    put_time,
+    resend_entry,
     resolve_optimistic_update,
     set_optimistic_fields,
+    stash_resend,
+    supersede_owed,
+    take_resend_payload,
+    zone_owes_change,
 )
 from .ratelimit import async_check_bootstrap_reserve_or_raise as _check_bootstrap_reserve_or_raise
 from .schedule_helpers import get_current_schedule_target
-from .write_optimizer import ActionGuard
+from .write_optimizer import ActionGuard, held_data_unconfirmed
+from .zone_signals import ZoneView, owed_held_target, zone_power_is_on, zone_view, zone_view_target
+from .zone_write_ledger import IntentKind, IntentState, WriteIntent, ordered_zone_write
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Awaitable, Callable
 
     from .api_client import TadoApiClient
     from .coordinator import TadoDataUpdateCoordinator
+    from .zone_write_ledger import ResendEntry
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity, RestoreEntity):
+class TadoClimate(TadoClimateBase):
     """Tado CE Heating Climate Entity."""
 
-    _attr_has_entity_name = True
+    _LOG_LABEL = "Climate Heating"
+    _ZONE_TYPE = "HEATING"
     _write_timing_zone_kind = "heating"
+    _DEFAULT_TARGET = 20.0
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, home_id: str) -> None:
-        super().__init__(coordinator)
-        self._zone_id = zone_id
-        self._zone_name = zone_name
-        self._home_id = home_id
-        self._entry_id = coordinator.config_entry.entry_id
-        self._entity_type = "climate_heating"
-
-        _meta = ENTITY_REGISTRY["climate_heating"]
-        self._attr_name = None
-        self._attr_translation_key = _meta.translation_key
-        # Use zone_id for unique_id to maintain entity_id stability across zone name changes
-        self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
-        self._attr_temperature_unit = UnitOfTemperature.CELSIUS
-        self._attr_device_info = get_zone_device_info(zone_id, zone_name, "HEATING", home_id)
+        super().__init__(
+            coordinator, zone_id, zone_name, home_id, registry_key="climate_heating", device_zone_type="HEATING",
+        )
         self._attr_supported_features = (
             ClimateEntityFeature.TARGET_TEMPERATURE
             | ClimateEntityFeature.TURN_OFF
@@ -112,71 +113,27 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
         self._attr_min_temp = 5
         self._attr_max_temp = 25
 
-        self._attr_current_temperature = None
-        self._attr_target_temperature = None
+        self._attr_native_current_temperature = None
+        self._attr_native_target_temperature = None
         self._attr_hvac_mode = None
         self._attr_hvac_action = None
-        self._data_present = False
         self._attr_current_humidity = None
 
         # Extra attributes
-        self._overlay_type = None
+        self._prev_off_state: tuple[Any, Any, str] | None = None
         self._heating_power = None
         self._offset_celsius = None  # Temperature offset (optional, enabled in config)
         self._attr_preset_mode = PRESET_HOME
+        # Preset taps whose PUT is running, and the preset Tado held when the first of them started or the last one accepted.
+        self._presets_in_flight = 0
+        self._preset_baseline: str | None = PRESET_HOME
 
-        # External sensor override tracking
-        self._temperature_source = "cloud"
-        self._humidity_source = "cloud"
-        self._external_temp_sensor = ""
-        self._external_humidity_sensor = ""
-        self._last_write_source = ""
-
-        # Optimistic state tracking with sequence numbers
-        self._optimistic_set_at: float | None = None
-        self._optimistic_sequence: int | None = None
-        self._optimistic_preserved: dict[str, Any] | None = None
-        self._expected_hvac_mode: HVACMode | None = None
-        self._expected_hvac_action: HVACAction | None = None
-        self._expected_target_temperature: float | None = None
-
-        # Unsubscribe callback for zone config changes
-        self._unsub_zone_config = None
-
-        # Unsubscribe callbacks for external sensor state change listeners
-        self._unsub_external_sensors: list[CALLBACK_TYPE] = []
-
-        # Cloud verification timer handle
-        self._cloud_verification_handle: asyncio.TimerHandle | None = None
-
-        # Unsubscribe callback for HomeKit dispatcher signal
-        self._unsub_homekit_signal: Callable[[], None] | None = None
-
-        # Last HomeKit write payload, outside _OPTIMISTIC_FIELDS for EXPIRED-retry use.
-        self._last_homekit_write_payload: dict[str, Any] | None = None
-
-    # ------------------------------------------------------------------
-    # Public API (TadoZoneEntity Protocol, see entity_types.py)
-    # ------------------------------------------------------------------
-
-    @property
-    def zone_id(self) -> str:
-        """Return the Tado zone ID as a string."""
-        return str(self._zone_id)
-
-    @property
-    def zone_type(self) -> str:
-        """Return the zone type: always HEATING for this entity."""
-        return "HEATING"
-
-    @property
-    def entity_type(self) -> str:
-        """Return the entity type tag for state-capture routing."""
-        return self._entity_type
+        self._power_source = "cloud"
+        self._target_source = "cloud"
 
     def _calculate_hvac_action(
         self, target_temp: float | None = None, hvac_mode: HVACMode | None = None,
-        *, ignore_expected: bool = False,
+        *, homekit_target_newer: bool = False, ignore_expected: bool = False,
     ) -> HVACAction:
         """Calculate hvac_action for heating zone.
 
@@ -194,17 +151,24 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
 
         # Optimistic call: judge the new target against the room, before the stale expected action
         if target_temp is not None and mode == HVACMode.HEAT:
-            current = self._attr_current_temperature
-            if current is None or target_temp > current + 0.5:
-                return HVACAction.HEATING
-            if target_temp > current and self._heating_power and self._heating_power > 0:
-                return HVACAction.HEATING
-            return HVACAction.IDLE
+            current = self._attr_native_current_temperature
+            heated = bool(self._heating_power and self._heating_power > 0)
+            if current is None:
+                return HVACAction.HEATING if heated else HVACAction.IDLE
+            return HVACAction.HEATING if target_temp > current + 0.5 or (heated and target_temp > current) else HVACAction.IDLE
 
         # If we have optimistic state with expected action, use it
         # This ensures optimistic updates work even when current temp >= target
         if self._expected_hvac_action is not None and not ignore_expected:
             return self._expected_hvac_action
+
+        # A bridge target newer than the cloud poll outdates heating_power, so judge by the band
+        if homekit_target_newer:
+            target = self._attr_native_target_temperature
+            current = self._attr_native_current_temperature
+            if target is not None and current is not None and target > current + 0.5:
+                return HVACAction.HEATING
+            return HVACAction.IDLE
 
         # API confirms heating (highest priority when available)
         if self._heating_power and self._heating_power > 0:
@@ -213,8 +177,8 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
         # Temperature-aware fallback for HEAT mode
         # This handles the case where API hasn't updated heating_power yet
         if mode == HVACMode.HEAT:
-            target = self._attr_target_temperature
-            current = self._attr_current_temperature
+            target = self._attr_native_target_temperature
+            current = self._attr_native_current_temperature
             if target is not None and current is not None:
                 # 0.5°C buffer for hysteresis to prevent flip-flopping
                 if target > current + 0.5:
@@ -222,137 +186,69 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
 
         return HVACAction.IDLE
 
-    async def async_added_to_hass(self) -> None:
-        """Register listeners when entity is added to hass."""
-        await super().async_added_to_hass()
-
-        # Restore last known target temperature across HA restarts
-        last_state = await self.async_get_last_state()
-        if last_state and last_state.attributes.get(ATTR_TEMPERATURE) is not None:
-            self._attr_target_temperature = last_state.attributes[ATTR_TEMPERATURE]
-            _LOGGER.debug(
-                "Climate Heating: %s restored target %s°C from previous "
-                "HA state",
-                self._zone_name,
-                self._attr_target_temperature,
-            )
-        elif self._attr_target_temperature is None:
-            # First install / no previous state: default to 20°C so the
-            # climate card controls are usable immediately.
-            self._attr_target_temperature = 20.0
-            _LOGGER.debug(
-                "Climate Heating: %s has no previous state, defaulting "
-                "target to %s°C",
-                self._zone_name,
-                self._attr_target_temperature,
-            )
-
-        # Listen for zone config changes
-        zone_config_manager = self.coordinator.zone_config_manager
-        if zone_config_manager:
-
-            @callback
-            def _handle_zone_config_change(zone_id: str, key: str, value: Any) -> None:
-                """Handle zone config change."""
-                if zone_id == self._zone_id and key in ("min_temp", "max_temp"):
-                    self._update_temp_limits()
-                    self.async_write_ha_state()
-                    _LOGGER.debug(
-                        "Climate Heating: %s zone config %s changed to %s",
-                        self._zone_name, key, value,
-                    )
-
-            self._unsub_zone_config = zone_config_manager.add_listener(_handle_zone_config_change)
-            # Initial update of temp limits
-            self._update_temp_limits()
-
-        # Subscribe to external sensor state changes for real-time updates
-        self._subscribe_external_sensors()
-
-        # Subscribe to HomeKit dispatcher signal for real-time sensor updates
-        self._unsub_homekit_signal = async_dispatcher_connect(
-            self.hass,
-            SIGNAL_HOMEKIT_UPDATE.format(home_id=self._home_id),
-            self._handle_homekit_update,
-        )
-
-    async def async_will_remove_from_hass(self) -> None:
-        """Unregister listeners when entity is removed."""
-        self._unsubscribe_external_sensors()
-        if self._unsub_homekit_signal:
-            self._unsub_homekit_signal()
-            self._unsub_homekit_signal = None
-        if self._unsub_zone_config:
-            self._unsub_zone_config()
-            self._unsub_zone_config = None
-        if self._cloud_verification_handle is not None:
-            self._cloud_verification_handle.cancel()
-            self._cloud_verification_handle = None
-        await super().async_will_remove_from_hass()
-
-    @callback
-    def _subscribe_external_sensors(self) -> None:
-        """Subscribe to external sensor state changes for real-time updates."""
-        self._unsub_external_sensors = setup_climate_external_sensor_subscription(
-            self, self._zone_id, self._unsub_external_sensors, label=self._zone_name,
-        )
-
-    @callback
-    def _unsubscribe_external_sensors(self) -> None:
-        """Unsubscribe from external sensor state change listeners."""
-        unsubscribe_external_sensors(self._unsub_external_sensors)
+    def _shown_power(self, view_power: str | None) -> str | None:
+        """Return the power the card shows; a displayed OFF holds an own OFF write pending against a stored setpoint."""
+        return "OFF" if self._attr_hvac_mode == HVACMode.OFF else view_power
 
     @callback
     def _handle_homekit_update(self, zone_id: str) -> None:
         """Handle HomeKit data update for this zone."""
         if zone_id != self._zone_id:
             return
-        if self.coordinator.is_entity_fresh(self.entity_id):
-            return
+        fresh = self.coordinator.is_entity_fresh(self.entity_id)
+        homekit_target_newer = False
 
         zone_data = get_zone_state(self.coordinator.data, self._zone_id) or {}
         self._update_sensor_data(zone_data)
 
-        # Merge target temperature and HVAC mode from HomeKit (if fresh)
-        reconciler = self.coordinator.state_reconciler
-        provider = self.coordinator.homekit_provider
-        if reconciler and provider and provider.is_connected:
-            reconciler.local_provider = provider
+        view = zone_view(
+            self.coordinator, self._zone_id, zone_data=zone_data, sequence_pending=self._optimistic_sequence is not None,
+        )
+        power, self._power_source = view.power, view.power_source
+        power_off = power == "OFF"
+        adopted = False
+        if power_off and self._optimistic_sequence is None and self._attr_hvac_mode != HVACMode.OFF:
+            self._attr_hvac_mode = HVACMode.OFF
+            self._off_branch_target()
+            adopted = True
+        elif power == "ON" and self._optimistic_sequence is None and self._attr_hvac_mode == HVACMode.OFF:
+            # Level-triggered return from a shown OFF: the cloud mapping and target, never derived beyond them.
+            self._attr_hvac_mode = self._cloud_on_mode(zone_data)
+            cloud_celsius = ((zone_data.get("setting") or {}).get("temperature") or {}).get("celsius")
+            if cloud_celsius is not None:
+                self._attr_native_target_temperature = cloud_celsius
+            adopted = True
 
-            # Target temperature: always consult the reconciler. When
-            # the zone is OFF, the reconciler's changed-timestamp check
-            # rejects stale bridge echoes; legitimate pushes from the
-            # Tado app still pass through.
-            zcm = self.coordinator.zone_config_manager
-            display_source = (
-                zcm.get_zone_value(self._zone_id, "display_temp_source", "auto")
-                if zcm else "auto"
+        # Skipped inside the post-write window: a stale bridge value would undo the write.
+        if self.coordinator.state_reconciler is not None and not fresh:
+            # The cloud value is not passed: only a HomeKit result is applied, anything else leaves the card as it is.
+            home_target, target_src = zone_view_target(
+                self.coordinator, view, self._shown_power(power), homekit_only=True,
             )
-            # Not necessarily cloud-derived: inside an optimistic window this
-            # is still the value the user asked for, which is why the
-            # reconciler reports it as "local-write" rather than "cloud".
-            current_target = self._attr_target_temperature
-            merged_target, target_src = reconciler.merge_zone_target_temperature(
-                self._zone_id, current_target, display_source=display_source,
-            )
-            if merged_target is not None and merged_target != self._attr_target_temperature:
-                self._attr_target_temperature = merged_target
-                _LOGGER.debug(
-                    "Climate Heating: %s target %s → %s°C (source %s)",
-                    self._zone_name, current_target, merged_target, target_src,
-                )
+            if target_src == "homekit" and home_target is not None:
+                previous_target = self._attr_native_target_temperature
+                apply_homekit_target(self, home_target)
+                adopted = True
+                if home_target != previous_target:
+                    _LOGGER.debug(
+                        "Climate Heating: %s target %s → %s°C (source %s)",
+                        self._zone_name, previous_target, home_target, target_src,
+                    )
+            homekit_target_newer = target_src == "homekit"
 
-            # HVAC mode is intentionally NOT derived from HomeKit here. A
-            # HomeKit target_heating_state can't express "following your
-            # schedule" (AUTO), so accepting it onto _attr_hvac_mode flapped
-            # schedule-following hybrid zones. Mode derives from the
-            # cloud poll only (_determine_api_hvac_mode reads the overlay type).
+        # The handler only ever moves the mode to OFF: HomeKit cannot express AUTO (schedule-following), so ON and AUTO come from the cloud poll.
 
+        self._attr_hvac_action = self._calculate_hvac_action(
+            hvac_mode=self._attr_hvac_mode, homekit_target_newer=homekit_target_newer,
+        )
+        # The device holds what the bridge showed; a hold still standing is a write of ours, whose value is not the device's yet.
+        if adopted and self._optimistic_sequence is None:
+            self._observe_accepted()
         self.async_write_ha_state()
 
         # Record temperature for heating cycle analysis with fresh target
-        if self._attr_target_temperature is not None:
-            self._schedule_heating_cycle_update(self._attr_target_temperature)
+        if self._attr_native_target_temperature is not None and not power_off:
+            self._schedule_heating_cycle_update(self._attr_native_target_temperature)
 
     @callback
     def _update_temp_limits(self) -> None:
@@ -382,10 +278,17 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
             "heating_power": self._heating_power,
             "zone_id": self._zone_id,
             "temperature_source": self._temperature_source,
+            "power_source": self._power_source,
             "humidity_source": self._humidity_source,
+            **source_update_attrs(
+                self.coordinator, self._zone_id, self._temperature_source, self._humidity_source,
+            ),
             "external_temp_sensor": self._external_temp_sensor,
             "external_humidity_sensor": self._external_humidity_sensor,
             "last_write_source": self._last_write_source,
+            "homekit_target": homekit_target_attribute(
+                self.coordinator, self._zone_id, self._attr_native_target_temperature,
+            ),
         }
         # Only include offset_celsius if enabled and available
         if self._offset_celsius is not None:
@@ -396,6 +299,13 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
             if clamp_direction is not None:
                 attrs["offset_clamped"] = clamp_direction != "none"
                 attrs["offset_clamp_direction"] = clamp_direction
+        # Present only while a change sent over HomeKit during a cloud outage is held; a test double's ledger answers with a non-intent, which counts as none.
+        ledger = self._write_ledger()
+        owed = ledger.owed(self._zone_id) if ledger is not None else None
+        if isinstance(owed, WriteIntent) and owed.state is IntentState.HELD_LOCAL:
+            attrs["write_held_locally"] = True
+            if owed.created_at is not None:
+                attrs["write_held_since"] = owed.created_at.isoformat()
         # Schedule Preview: show current schedule target temperature
         scheduled_temp = get_current_schedule_target(
             self._zone_id,
@@ -417,110 +327,64 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
 
         return attrs
 
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        """Handle coordinator data update."""
-        self.update()
-        self.async_write_ha_state()
-
-    def _update_sensor_data(self, zone_data: dict[str, Any]) -> None:
-        """Extract sensor data with priority: external > homekit > cloud."""
-        sensor_data = zone_data.get("sensorDataPoints") or {}
-        cloud_temp = (sensor_data.get("insideTemperature") or {}).get("celsius")
-        cloud_humidity = (sensor_data.get("humidity") or {}).get("percentage")
-
-        # External sensor overrides
-        zcm = self.coordinator.zone_config_manager
-        ext_temp = read_external_sensor(self.hass, zcm, self._zone_id, "external_temp_sensor")
-        ext_hum = read_external_sensor(self.hass, zcm, self._zone_id, "external_humidity_sensor")
-
-        # Priority chain via StateReconciler (external > homekit if fresh > cloud)
-        reconciler = self.coordinator.state_reconciler
-        provider = self.coordinator.homekit_provider
-        if reconciler and provider and provider.is_connected:
-            reconciler.local_provider = provider
-            display_source = (
-                zcm.get_zone_value(self._zone_id, "display_temp_source", "auto")
-                if zcm else "auto"
-            )
-            merged_temp, temp_source = reconciler.merge_zone_temperature(
-                self._zone_id, cloud_temp, external_value=ext_temp,
-                display_source=display_source, purpose="display",
-            )
-            merged_hum, hum_source = reconciler.merge_zone_humidity(
-                self._zone_id, cloud_humidity, external_value=ext_hum,
-            )
-        elif ext_temp is not None:
-            merged_temp, temp_source = ext_temp, "external"
-            merged_hum, hum_source = (ext_hum, "external") if ext_hum is not None else (cloud_humidity, "cloud")
-        elif ext_hum is not None:
-            merged_temp, temp_source = cloud_temp, "cloud"
-            merged_hum, hum_source = ext_hum, "external"
-        else:
-            merged_temp, temp_source = cloud_temp, "cloud"
-            merged_hum, hum_source = cloud_humidity, "cloud"
-
-        self._attr_current_temperature = merged_temp
+    def _update_sensor_data(self, zone_data: dict[str, Any]) -> tuple[float | None, str, float | None, str]:
+        """Merge the sensors through the base, then clear heating-cycle state on a missing temperature."""
+        merged_temp, temp_source, merged_hum, hum_source = super()._update_sensor_data(zone_data)
         hcc = self.coordinator.heating_cycle_coordinator
         if merged_temp is None and hcc is not None:
             hcc.clear_zone_state(self._zone_id)
-        self._temperature_source = temp_source
-        self._attr_current_humidity = merged_hum
-        self._humidity_source = hum_source
 
         # Log source changes for diagnostic tracing
         if temp_source != getattr(self, "_prev_temp_source", None) or hum_source != getattr(self, "_prev_hum_source", None):
+            sensor_data = zone_data.get("sensorDataPoints") or {}
             _LOGGER.debug(
                 "Climate Heating: %s merge, temp=%s (%s), humidity=%s "
                 "(%s), cloud_temp=%s, cloud_hum=%s",
                 self._zone_name, merged_temp, temp_source, merged_hum, hum_source,
-                cloud_temp, cloud_humidity,
+                (sensor_data.get("insideTemperature") or {}).get("celsius"),
+                (sensor_data.get("humidity") or {}).get("percentage"),
             )
             self._prev_temp_source = temp_source
             self._prev_hum_source = hum_source
+        return merged_temp, temp_source, merged_hum, hum_source
 
-        # Track configured entity_ids for extra_state_attributes
-        if zcm:
-            zc = zcm.get_zone_config(self._zone_id)
-            self._external_temp_sensor = zc.get("external_temp_sensor", "")
-            self._external_humidity_sensor = zc.get("external_humidity_sensor", "")
-
-    def _determine_api_hvac_mode(self, power: str | None, zone_data: dict[str, Any]) -> HVACMode:
+    def _determine_api_hvac_mode(self, view: ZoneView, zone_data: dict[str, Any]) -> HVACMode:
         """Determine HVAC mode from API power state and overlay type."""
         self._overlay_type = zone_data.get("overlayType")
 
-        if power == "ON":
-            setting = zone_data.get("setting") or {}
-            temp = (setting.get("temperature") or {}).get("celsius")
-            self._attr_target_temperature = temp
+        if view.power == "ON":
+            self._prev_off_state = None
+            temp, self._target_source = zone_view_target(self.coordinator, view, self._shown_power(view.power))
+            self._attr_native_target_temperature = temp
             self._schedule_heating_cycle_update(temp)
-            return HVACMode.HEAT if self._overlay_type == "MANUAL" else HVACMode.AUTO
+            return self._cloud_on_mode(zone_data)
 
-        # Power is OFF: update target temperature to reflect actual Tado state
+        self._target_source = "cloud"
+        self._off_branch_target()
         if self._overlay_type == "MANUAL":
-            # Manual OFF overlay = frost protection (5°C), as the Tado app shows
-            self._attr_target_temperature = OPEN_WINDOW_DEFAULT_TEMP
-        else:
-            # Schedule/Away OFF: show scheduled target for context
-            scheduled = get_current_schedule_target(
-                self._zone_id, data_loader=self.coordinator.data_loader,
+            self._prev_off_state = None
+            return HVACMode.OFF
+        off_state = (view.power, self._overlay_type, repr(zone_data.get("setting")))
+        if off_state != self._prev_off_state:
+            self._prev_off_state = off_state
+            _LOGGER.debug(
+                "Climate Heating: %s is off without a manual overlay, power=%s overlayType=%s setting=%s",
+                self._zone_name, view.power, self._overlay_type, zone_data.get("setting"),
             )
-            if scheduled is not None:
-                self._attr_target_temperature = scheduled
-            # Records what Tado reports for an off zone without a manual overlay, once per change.
-            off_state = (power, self._overlay_type, repr(zone_data.get("setting")))
-            if off_state != getattr(self, "_prev_off_state", None):
-                self._prev_off_state = off_state
-                _LOGGER.debug(
-                    "Climate Heating: %s is off without a manual overlay, power=%s overlayType=%s setting=%s scheduled=%s",
-                    self._zone_name, power, self._overlay_type, zone_data.get("setting"), scheduled,
-                )
-
         return HVACMode.OFF
+
+    @staticmethod
+    def _cloud_on_mode(zone_data: dict[str, Any]) -> HVACMode:
+        """Return the mode the cloud overlay type gives an ON zone."""
+        return HVACMode.HEAT if zone_data.get("overlayType") == "MANUAL" else HVACMode.AUTO
+
+    def _off_branch_target(self) -> None:
+        """Show the frost target for every OFF zone, so a schedule change does not move an OFF card."""
+        self._attr_native_target_temperature = OPEN_WINDOW_DEFAULT_TEMP
 
     def _schedule_heating_cycle_update(self, temp: float | None) -> None:
         """Schedule async heating cycle coordinator update if applicable."""
-        if temp is None or self._attr_current_temperature is None:
+        if temp is None or self._attr_native_current_temperature is None:
             return
         heating_cycle_coordinator = self.coordinator.heating_cycle_coordinator
         if not heating_cycle_coordinator:
@@ -528,7 +392,7 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
 
         # Current temperature is captured now so the task feeds the value this update saw.
         self.hass.async_create_task(
-            self._async_feed_heating_cycle(temp, self._attr_current_temperature),
+            self._async_feed_heating_cycle(temp, self._attr_native_current_temperature),
         )
 
     async def _async_feed_heating_cycle(self, target: float, current: float | None) -> None:
@@ -545,35 +409,14 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
                 exc_info=True,
             )
 
-    def _schedule_cloud_verification(self) -> None:
-        """Schedule a coordinator refresh to verify HomeKit write."""
-        if self._cloud_verification_handle is not None:
-            self._cloud_verification_handle.cancel()
-            self._cloud_verification_handle = None
-
-        from .helpers import get_optimistic_window
-
-        delay = get_optimistic_window(self.hass, entry_id=self._entry_id) + CLOUD_VERIFICATION_BUFFER_SECONDS
-        entity_id = self.entity_id
-
-        def _fire() -> None:
-            self._cloud_verification_handle = None
-            self.hass.async_create_task(
-                async_trigger_immediate_refresh(self.hass, entity_id, "homekit_verification"),
-            )
-
-        try:
-            loop = asyncio.get_running_loop()
-            self._cloud_verification_handle = loop.call_later(delay, _fire)
-        except RuntimeError:
-            _LOGGER.debug("climate_heating: no running loop, skipping cloud-verification schedule")
-
     def _apply_optimistic_or_api_state(
         self,
         api_hvac_mode: HVACMode,
         api_hvac_action: HVACAction,
         power: str | None,
         api_target_temperature: float | None = None,
+        *,
+        overlay_present: bool,
     ) -> None:
         """Apply optimistic or API state based on sequence comparison.
 
@@ -581,7 +424,11 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
         optimistic resolution preserves the user's target until the API
         propagates it (usually one poll cycle). hvac_action is derived, so Tado never confirms it.
         """
-        api_values: dict[str, Any] = {"hvac_mode": api_hvac_mode}
+        api_values: dict[str, Any] = (
+            {"overlay_present": overlay_present}
+            if self._expected_overlay_present is not None
+            else {"hvac_mode": api_hvac_mode}
+        )
         if api_target_temperature is not None:
             api_values["target_temperature"] = api_target_temperature
 
@@ -596,14 +443,14 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
             self._attr_hvac_action = self._expected_hvac_action
             # Also preserve target_temperature when its expected value is set
             if self._expected_target_temperature is not None:
-                self._attr_target_temperature = self._expected_target_temperature
+                self._attr_native_target_temperature = self._expected_target_temperature
             _LOGGER.debug(
                 "Climate Heating: %s holding optimistic state, "
                 "mode=%s action=%s target=%s",
                 self._zone_name,
                 self._attr_hvac_mode,
                 self._attr_hvac_action,
-                self._attr_target_temperature,
+                self._attr_native_target_temperature,
             )
         else:
             # Cloud state first, so a resend started below keeps its optimistic state
@@ -611,32 +458,51 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
             self._attr_hvac_action = api_hvac_action
             if power != "ON" and api_hvac_mode == HVACMode.OFF:
                 self._attr_hvac_action = HVACAction.OFF
+            # Before a resend starts below: its failure goes back to what Tado reports.
+            self._observe_accepted()
 
             if result == OptimisticUpdateResult.EXPIRED:
-                _LOGGER.warning(
-                    "Climate Heating: %s. Tado did not confirm the last "
-                    "change within the optimistic window, reverting the "
-                    "climate card to Tado's reported state",
-                    self._zone_name,
-                )
                 # Record failure if this was a HomeKit write, and retry it
                 # via cloud PUT: the local write may well have succeeded, the
                 # bridge→cloud sync just hasn't caught up within the window.
                 if self._last_write_source == "homekit":
-                    write_tracker = self.coordinator.write_health_tracker
-                    if write_tracker is not None:
-                        write_tracker.record_failure()
-                    self._last_write_source = ""
-                    pending_write = self._last_homekit_write_payload
-                    self._last_homekit_write_payload = None
-                    if pending_write is not None:
-                        self.hass.async_create_task(
-                            self._retry_expired_write_via_cloud(pending_write),
+                    started = self.coordinator.last_zone_fetch_ts()
+                    put_at = put_time(self)
+                    elapsed = (started - put_at).total_seconds() if started and put_at else 0.0
+                    held_locally = is_held_locally(self)
+                    if held_locally:
+                        _LOGGER.info(
+                            "%s: Tado's data %.0f s after the change made while Tado was unreachable "
+                            "does not show it yet; showing Tado's reported state, the change stays held",
+                            self._zone_name, elapsed,
                         )
+                    else:
+                        _LOGGER.warning(
+                            "%s: Tado's data %.0f s after the HomeKit change did not "
+                            "show it, resending through the cloud and showing Tado's "
+                            "reported state until then",
+                            self._zone_name, elapsed,
+                        )
+                    write_tracker = self.coordinator.write_health_for(self._zone_id)
+                    # A held write was never sent to the cloud, so Tado's old data says nothing about the bridge.
+                    if write_tracker is not None and not held_locally:
+                        write_tracker.record_failure()
+                    # Always taken so a stale payload is dropped; a held change is judged by the ledger, so nothing is resent for it.
+                    pending_write = take_resend_payload(self)
+                    if held_locally:
+                        pending_write = None
+                    entry = None
+                    if pending_write is not None:
+                        # Taken before the put record is cleared: the resend is judged against the zone as it was at the put.
+                        power, celsius = self._resend_value(pending_write)
+                        entry = resend_entry(self, power=power, celsius=celsius)
+                    clear_homekit_write(self)
+                    if pending_write is not None:
+                        self._spawn_retry_task(self._retry_expired_write_via_cloud(pending_write, entry=entry))
 
             elif result == OptimisticUpdateResult.ACCEPT_API and self._last_write_source == "homekit":
                 # API confirmed the HomeKit write
-                write_tracker = self.coordinator.write_health_tracker
+                write_tracker = self.coordinator.write_health_for(self._zone_id)
                 if write_tracker is not None:
                     write_tracker.record_success()
                 self._last_write_source = ""
@@ -644,15 +510,15 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
     def _record_smart_comfort(self) -> None:
         """Record temperature for Smart Comfort analytics."""
         _scm = self.coordinator.smart_comfort_manager
-        if not (_scm and _scm.is_enabled and self._attr_current_temperature is not None):
+        if not (_scm and _scm.is_enabled and self._attr_native_current_temperature is not None):
             return
         try:
             _scm.record_temperature(
                 zone_id=self._zone_id,
                 zone_name=self._zone_name,
-                temperature=self._attr_current_temperature,
+                temperature=self._attr_native_current_temperature,
                 is_heating=(self._heating_power is not None and self._heating_power > 0),
-                target_temperature=self._attr_target_temperature,
+                target_temperature=self._attr_native_target_temperature,
             )
         except (KeyError, TypeError, ValueError) as e:
             _LOGGER.debug(
@@ -664,21 +530,8 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
     @callback
     def update(self) -> None:
         """Update climate state from the coordinator's cached zone data."""
-        if self.coordinator.is_entity_fresh(self.entity_id):
-            # Boot-freshness safety net: never skip if the entity
-            # has no cached state yet, otherwise the freshness flag
-            # blocks the very first data load.
-            if self._attr_current_temperature is not None:
-                _LOGGER.debug(
-                    "Climate Heating: %s skipping update, entity is fresh",
-                    self._zone_name,
-                )
-                return
-            _LOGGER.debug(
-                "Climate Heating: %s marked fresh but has no cached state "
-                "yet, updating anyway",
-                self._zone_name,
-            )
+        if self._skip_update_while_fresh(has_state=self._attr_native_current_temperature is not None):
+            return
 
         try:
             coord_data = self.coordinator.data or {}
@@ -700,8 +553,12 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
 
             # Determine API state
             setting = zone_data.get("setting") or {}
-            power = setting.get("power")
-            api_hvac_mode = self._determine_api_hvac_mode(power, zone_data)
+            view = zone_view(
+                self.coordinator, self._zone_id, zone_data=zone_data,
+                sequence_pending=self._optimistic_sequence is not None,
+            )
+            power, self._power_source = view.power, view.power_source
+            api_hvac_mode = self._determine_api_hvac_mode(view, zone_data)
 
             # API-reported target temperature. None when zone is OFF /
             # frost-protection (no celsius key). The resolver then skips
@@ -709,12 +566,16 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
             api_target_temp = (setting.get("temperature") or {}).get("celsius")
 
             # Calculate hvac_action
-            api_hvac_action = self._calculate_hvac_action(hvac_mode=api_hvac_mode, ignore_expected=True)
+            api_hvac_action = self._calculate_hvac_action(
+                hvac_mode=api_hvac_mode, ignore_expected=True,
+                homekit_target_newer=self._target_source == "homekit",
+            )
 
             # Apply state
             self._apply_optimistic_or_api_state(
                 api_hvac_mode, api_hvac_action, power,
                 api_target_temperature=api_target_temp,
+                overlay_present=zone_data.get("overlayType") is not None,
             )
             self._data_present = True
 
@@ -741,6 +602,9 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
         result = update_preset_mode(self.coordinator)
         if result is not None:
             self._attr_preset_mode = result
+            # What Tado reports is what a failing tap in flight goes back to.
+            if self._presets_in_flight:
+                self._preset_baseline = result
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         """Set preset mode (Home/Away)."""
@@ -757,12 +621,16 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
         client = self.coordinator.api_client
         state = "AWAY" if preset_mode == PRESET_AWAY else "HOME"
 
-        # Preset is rebuilt from home state in update(), so it arms no optimistic window
-        old_preset = self._attr_preset_mode
+        # The value Tado holds is the card's only while no earlier tap is in flight (a preset arms no optimistic window, update() rebuilds it).
+        if not self._presets_in_flight:
+            self._preset_baseline = self._attr_preset_mode
         self._attr_preset_mode = preset_mode
         self.async_write_ha_state()
 
         api_success = False
+        typed_error: TadoAuthError | TadoRateLimitError | TadoBlockedError | None = None
+        # Right before the try so the decrement in its finally always pairs with this increment.
+        self._presets_in_flight += 1
         try:
             async with asyncio.timeout(10):
                 api_success = await client.set_presence_lock(state)
@@ -772,12 +640,22 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
                 self._zone_name,
             )
         except Exception as e:
+            # Broad on purpose: any call failure reverts the preset and logs, and a typed rejection is dispatched after the revert.
             _LOGGER.warning(
                 "Climate Heating: %s preset-mode call failed (%s)",
                 self._zone_name, e,
             )
+            if isinstance(e, (TadoAuthError, TadoRateLimitError, TadoBlockedError)):
+                typed_error = e
+        finally:
+            self._presets_in_flight -= 1
 
         if api_success:
+            self._preset_baseline = preset_mode
+            # With no newer tap in flight, an earlier tap that reverted past this accepted value is corrected.
+            if not self._presets_in_flight and self._attr_preset_mode != preset_mode:
+                self._attr_preset_mode = preset_mode
+                self.async_write_ha_state()
             _LOGGER.debug(
                 "Climate Heating: %s preset mode set to %s",
                 self._zone_name, preset_mode,
@@ -793,8 +671,12 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
                 "to previous state",
                 self._zone_name,
             )
-            self._attr_preset_mode = old_preset
-            self.async_write_ha_state()
+            # While a newer tap is in flight the card shows its value and only a card still showing this tap's goes back; the last tap out shows what Tado holds.
+            if not self._presets_in_flight or self._attr_preset_mode == preset_mode:
+                self._attr_preset_mode = self._preset_baseline
+                self.async_write_ha_state()
+            if typed_error is not None:
+                dispatch_to_service_call(typed_error, self.coordinator.config_entry, self.hass, self.coordinator)
 
     async def _write_via_cloud(
         self,
@@ -805,8 +687,10 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
         hvac_mode: HVACMode,
         hvac_action: HVACAction,
         reason: str,
-        rollback_target_temp: float | None = None,
         capture_source: str | None = "set_temperature",
+        sequence: int | None = None,
+        gate_pending: bool = False,
+        held_refused: bool = False,
     ) -> None:
         """Send a heating overlay write via the cloud API, with optimistic rollback.
 
@@ -832,26 +716,115 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
             hvac_mode=hvac_mode,
             hvac_action=hvac_action,
             target_temp=temperature,
-            rollback_target_temp=rollback_target_temp,
             reason=reason,
             capture_source=capture_source,
+            sequence=sequence,
+            gate=self._cloud_gate(gate_pending=gate_pending, held_refused=held_refused),
         )
         self._last_write_source = "cloud"
 
-    async def _retry_expired_write_via_cloud(self, payload: dict[str, Any]) -> None:
-        # Retry a HomeKit write via cloud PUT after optimistic window expired.
-        termination = get_zone_overlay_termination(self.hass, self._zone_id, entry_id=self._entry_id)
-        power_on = payload["power_on"]
-        temperature = payload["temperature"]
-        if power_on:
-            hvac_mode, hvac_action = HVACMode.HEAT, self._calculate_hvac_action(target_temp=temperature)
-            reason = "HomeKit write confirmation expired, retrying via cloud"
-            capture_source = "set_temperature"
+    def _cloud_gate(self, *, gate_pending: bool, held_refused: bool) -> Callable[[], Awaitable[None]] | None:
+        """The check a cloud write meets after its card was painted: a refused held put fails it, else the reserve gate the entry point skipped for a HomeKit route."""
+        if held_refused:
+            return self._refuse_held_write
+        if gate_pending:
+            return lambda: _check_bootstrap_reserve_or_raise(self.hass, self._zone_name, coordinator=self.coordinator)
+        return None
+
+    async def _refuse_held_write(self) -> None:
+        # The cloud is not trusted while a change is held, so a bridge that refused it fails the write like a cloud failure and restores the card.
+        raise cloud_write_failed(self)
+
+    def _route_decision(self, zone_was_off: bool) -> RouteDecision:
+        return decide_route(self.hass, self.coordinator, self._zone_id, entry_id=self._entry_id, zone_was_off=zone_was_off, allow_held=True)
+
+    def _timed_termination(self) -> bool:
+        """Whether the zone's overlay mode ends a change after a set time, which HomeKit cannot carry."""
+        return get_zone_overlay_termination(self.hass, self._zone_id, entry_id=self._entry_id).get("type") == "TIMER"
+
+    def _entry_route(self, zone_was_off: bool) -> Route:
+        """The route at an entry point; a held write whose overlay mode is a timer is refused before anything is painted, like a duration timer."""
+        route = self._route_decision(zone_was_off).route
+        if route is Route.HOMEKIT_HELD and self._timed_termination():
+            raise cloud_write_failed(self)
+        return route
+
+    def _held_on_send(self, zone_was_off: bool, temperature: float, *, mode_only: bool = False) -> Callable[[], Awaitable[PutOutcome]]:
+        """The put for a held ON write: power and target together for an OFF zone (a lone target leaves the power at 0), else the one characteristic."""
+        provider = self.coordinator.homekit_provider
+        if zone_was_off:
+            return lambda: provider.set_power_and_target(self._zone_id, temperature)
+        if mode_only:
+            return lambda: provider.set_hvac_mode(self._zone_id, 1)
+        return lambda: provider.set_temperature(self._zone_id, temperature)
+
+    async def _hold_via_homekit(
+        self,
+        send: Callable[[], Awaitable[PutOutcome]],
+        *,
+        kind: IntentKind,
+        power_on: bool,
+        temperature: float | None,
+        termination: dict[str, Any],
+        sequence: int | None,
+        label: str,
+    ) -> bool:
+        """Send one HomeKit put while the cloud is down and hold the change; False means the bridge did not take it and the caller fails the write."""
+        # Backstop for a mode that changed after the entry check: nothing is sent for a write that would run for the whole outage.
+        if termination.get("type") == "TIMER":
+            return False
+        write_tracker = self.coordinator.write_health_for(self._zone_id)
+        assert write_tracker is not None  # the caller's route decision was a held HomeKit write  # noqa: S101
+        outcome = await self._send_homekit_put(
+            send, raised_msg="Climate Heating: %s HomeKit write raised an exception while the cloud is down",
+        )
+        if outcome is PutOutcome.ACCEPTED:
+            self.coordinator._homekit_write_successes += 1
         else:
-            hvac_mode, hvac_action = HVACMode.OFF, HVACAction.OFF
-            reason = "HomeKit OFF write confirmation expired, retrying via cloud"
-            capture_source = "set_hvac_mode"
-        try:
+            # A timed-out put may have landed and is held; it still counts against the bridge.
+            write_tracker.record_failure()
+            if outcome is not PutOutcome.AMBIGUOUS:
+                _LOGGER.debug("Climate Heating: %s HomeKit %s write was not taken while the cloud is down", self._zone_name, label)
+                return False
+        # Cleared first: the put record keeps an earlier put's payload, and nothing is resent for a held change.
+        stash_resend(self)
+        mark_homekit_put(self)
+        if outcome is PutOutcome.ACCEPTED:
+            self._accept_homekit_put(sequence)
+        # The own-OFF mark follows the power this put asked for, as a cloud write's does: ON clears an earlier OFF, OFF sets it.
+        self.coordinator.record_own_power_write(self._zone_id, powered_off=not power_on)
+        target: dict[str, Any] = {"power": "ON" if power_on else "OFF"}
+        if power_on:
+            target["temperature"] = temperature
+        hold_locally(self, kind=kind, target=target, termination=termination, ambiguous=outcome is PutOutcome.AMBIGUOUS)
+        _LOGGER.info(
+            "Climate Heating: %s %s sent over HomeKit and held while the Tado cloud state is %s",
+            self._zone_name, label, self.coordinator.cloud_health.state.value,
+        )
+        return True
+
+    @staticmethod
+    def _resend_value(payload: dict[str, Any]) -> tuple[str, float | None]:
+        """The power and target a heating resend payload asks for."""
+        return ("ON", payload["temperature"]) if payload["power_on"] else ("OFF", None)
+
+    async def _retry_expired_write_via_cloud(
+        self, payload: dict[str, Any], *, quota_rearmed: bool = False, entry: ResendEntry | None = None,
+    ) -> None:
+        # Retry a HomeKit write via cloud PUT after optimistic window expired.
+        async def send_resend() -> None:
+            termination = get_zone_overlay_termination(self.hass, self._zone_id, entry_id=self._entry_id)
+            power_on = payload["power_on"]
+            temperature = payload["temperature"]
+            if power_on:
+                hvac_mode = HVACMode.HEAT
+                hvac_action = self._calculate_hvac_action(target_temp=temperature, hvac_mode=HVACMode.HEAT)
+                reason = "HomeKit write confirmation expired, retrying via cloud"
+                capture_source = "set_temperature"
+            else:
+                hvac_mode, hvac_action = HVACMode.OFF, HVACAction.OFF
+                reason = "HomeKit OFF write confirmation expired, retrying via cloud"
+                capture_source = "set_hvac_mode"
             await self._write_via_cloud(
                 power_on=power_on,
                 temperature=temperature,
@@ -861,12 +834,20 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
                 reason=reason,
                 capture_source=capture_source,
             )
-        except HomeAssistantError:
-            _LOGGER.debug(
-                "Climate Heating: %s EXPIRED-retry cloud write failed, "
-                "staying on Tado's reported state",
-                self._zone_name,
-            )
+
+        await self._run_expired_resend(
+            self._LOG_LABEL,
+            lambda rearmed, held: self._retry_expired_write_via_cloud(payload, quota_rearmed=rearmed, entry=held),
+            quota_rearmed=quota_rearmed,
+            send=send_resend,
+            value=self._resend_value(payload),
+            entry=entry,
+        )
+
+    async def _execute_set_temp_ordered(self, *args: Any, **kwargs: Any) -> None:
+        """Send the target write as one ordered step: the HomeKit attempt and its cloud fallback hold the zone's slot together."""
+        async with ordered_zone_write(self.coordinator, self._zone_id):
+            await self._execute_set_temp_api(*args, **kwargs)
 
     async def _execute_set_temp_api(
         self,
@@ -874,68 +855,43 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
         setting: dict[str, Any],
         termination: dict[str, Any],
         temperature: float,
-        old_temp: float | None,
         *,
         zone_was_off: bool = False,
         raise_on_failure: bool = False,
+        sequence: int | None = None,
+        gate_pending: bool = False,
     ) -> None:
         """Execute set_zone_overlay API call with rollback on failure."""
-        # Local-first: try HomeKit write before cloud API
-        # Only when overlay mode is Tado Default: HomeKit writes don't carry
-        # termination info, so non-default overlay modes must use cloud
+        # Local-first: a HomeKit route tries the bridge before the cloud API
         local_success = False
-        use_homekit = should_use_homekit_for_overlay(self.hass, self._zone_id, entry_id=self._entry_id)
-        write_tracker = self.coordinator.write_health_tracker
-        if (
-            not zone_was_off
-            and use_homekit
-            and self.coordinator.homekit_provider
-            and self.coordinator.homekit_provider.is_connected
-            and write_tracker is not None
-            and write_tracker.should_try_homekit()
-        ):
-            import time as _time
-
-            self.coordinator._homekit_write_attempts += 1
-            t0 = _time.monotonic()
-            try:
-                local_success = await self.coordinator.homekit_provider.set_temperature(
-                    self._zone_id, temperature,
-                )
-            except Exception:
-                _LOGGER.debug(
-                    "Climate Heating: %s HomeKit write raised an "
-                    "exception, falling back to cloud API",
-                    self._zone_name,
-                    exc_info=True,
-                )
-            elapsed_ms = (_time.monotonic() - t0) * 1000
-            self.coordinator._homekit_write_latency_sum += elapsed_ms
-            self.coordinator._homekit_write_latency_count += 1
-            if local_success:
-                # Don't record_success yet, deferred to cloud verification
-                self.coordinator._homekit_write_successes += 1
-            else:
-                write_tracker.record_failure()
-                self.coordinator._homekit_write_fallbacks += 1
-                _LOGGER.debug(
-                    "Climate Heating: %s HomeKit write failed, "
-                    "falling back to cloud API",
-                    self._zone_name,
-                )
+        held_refused = False
+        route = self._route_decision(zone_was_off).route
+        if route is Route.HOMEKIT:
+            local_success = await self._try_homekit_write(
+                lambda: self.coordinator.homekit_provider.set_temperature(self._zone_id, temperature),
+                raised_msg="Climate Heating: %s HomeKit write raised an exception, falling back to cloud API",
+                failed_msg="Climate Heating: %s HomeKit write failed, falling back to cloud API",
+            )
+        elif route is Route.HOMEKIT_HELD:
+            if await self._hold_via_homekit(
+                self._held_on_send(zone_was_off, temperature), kind=IntentKind.TEMPERATURE, power_on=True, temperature=temperature, termination=termination,
+                sequence=sequence, label="target",
+            ):
+                await self._async_feed_heating_cycle(temperature, self._attr_native_current_temperature)
+                return
+            held_refused = True
 
         if local_success:
-            self.coordinator.record_homekit_write_saved(self._zone_id)
-            self._last_write_source = "homekit"
-            self._last_homekit_write_payload = {"power_on": True, "temperature": temperature}
+            payload = {"power_on": True, "temperature": temperature}
+            self.coordinator.record_homekit_write_saved(self._zone_id, payload_to_time(self.coordinator, self._zone_id, payload))
+            stash_resend(self, payload=payload)
             _LOGGER.debug(
                 "Climate Heating: %s target set to %s°C via HomeKit",
                 self._zone_name, temperature,
             )
-            # Unstamped, a replayed bridge target overwrites this write.
-            if self.coordinator.state_reconciler:
-                self.coordinator.state_reconciler.record_local_write(self._zone_id)
-            await self._async_feed_heating_cycle(temperature, self._attr_current_temperature)
+            mark_homekit_put(self)
+            self._accept_homekit_put(sequence)
+            await self._async_feed_heating_cycle(temperature, self._attr_native_current_temperature)
             # Schedule cloud verification to confirm write reached Tado server
             self._schedule_cloud_verification()
             return
@@ -947,17 +903,19 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
                 temperature=temperature,
                 termination=termination,
                 hvac_mode=HVACMode.HEAT,
-                hvac_action=self._calculate_hvac_action(target_temp=temperature),
+                hvac_action=self._calculate_hvac_action(target_temp=temperature, hvac_mode=HVACMode.HEAT),
                 reason=f"Set temperature to {temperature}°C",
-                rollback_target_temp=old_temp,
                 capture_source="set_temperature",
+                sequence=sequence,
+                gate_pending=gate_pending,
+                held_refused=held_refused,
             )
         except HomeAssistantError:
             if raise_on_failure:
                 raise
             return
 
-        await self._async_feed_heating_cycle(temperature, self._attr_current_temperature)
+        await self._async_feed_heating_cycle(temperature, self._attr_native_current_temperature)
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""
@@ -979,9 +937,9 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
 
         # Action Guard: skip if temp + mode already match current state
         if ActionGuard.should_skip_temperature(
-            temperature, self._attr_target_temperature,
+            temperature, self._attr_native_target_temperature,
             HVACMode.HEAT, self._attr_hvac_mode,
-            optimistic_active=self._optimistic_sequence is not None,
+            optimistic_active=self._optimistic_sequence is not None or held_data_unconfirmed(self.coordinator, self._zone_id) or zone_owes_change(self),
         ):
             _LOGGER.debug(
                 "Climate Heating: %s already at %s°C, skipping API call",
@@ -989,17 +947,22 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
             )
             return
 
-        await _check_bootstrap_reserve_or_raise(self.hass, self._zone_name, coordinator=self.coordinator)
+        # Read before the gate: the route decides whether the gate runs now or only if the bridge fails.
+        zone_was_off = not zone_power_is_on(self.coordinator, self._zone_id)
+        gate_pending = self._entry_route(zone_was_off) is not Route.CLOUD
+        if not gate_pending:
+            await _check_bootstrap_reserve_or_raise(self.hass, self._zone_name, coordinator=self.coordinator)
 
-        old_temp = self._attr_target_temperature
-        zone_was_off = not zone_confirmed_on(self.coordinator, self._zone_id)
-        self._attr_target_temperature = temperature
+        # Before anything is assigned: a first write with no poll yet has to go back to the card as it is now.
+        self._seed_accepted()
+        self._attr_native_target_temperature = temperature
         self._attr_hvac_mode = HVACMode.HEAT
-        self._overlay_type = "MANUAL"  # type: ignore[assignment]
+        self._overlay_type = "MANUAL"
         new_hvac_action = self._calculate_hvac_action(target_temp=temperature)
         self._attr_hvac_action = new_hvac_action
         await set_optimistic_fields(
             self, self.coordinator,
+            source="cloud",
             expected={
                 "hvac_mode": HVACMode.HEAT,
                 "hvac_action": new_hvac_action,
@@ -1012,6 +975,8 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
             self._zone_name, temperature, self._attr_hvac_action,
         )
         self.async_write_ha_state()
+        # Taken at the stamp: the HomeKit await below can let a newer write stamp first.
+        stamped_sequence = self._optimistic_sequence
 
         # Build API call parameters
         client = self.coordinator.api_client
@@ -1027,185 +992,273 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
         if debounce_window > 0:
             async def _execute_api_call() -> None:
                 """Execute the debounced API call."""
-                await self._execute_set_temp_api(
-                    client, setting, termination, temperature, old_temp,
-                    zone_was_off=zone_was_off,
+                await self._run_queued_write(
+                    lambda: self._execute_set_temp_ordered(
+                        client, setting, termination, temperature,
+                        zone_was_off=zone_was_off, sequence=stamped_sequence, gate_pending=gate_pending,
+                    ),
                 )
 
+            self._announce_queued_write(CLIMATE_STATE_NAMES, stamped_sequence)
             await self.coordinator.action_debouncer.debounce(
                 self._zone_id, _execute_api_call, window=float(debounce_window),
             )
         else:
-            await self._execute_set_temp_api(
-                client, setting, termination, temperature, old_temp,
+            await self._execute_set_temp_ordered(
+                client, setting, termination, temperature,
                 zone_was_off=zone_was_off, raise_on_failure=True,
+                sequence=stamped_sequence, gate_pending=gate_pending,
             )
 
     async def _try_homekit_hvac_mode_write(
         self, mode_value: int, mode_label: str, *, zone_was_off: bool = False,
     ) -> bool:
-        """Write the target-heating-state characteristic; False means fall back to cloud.
-
-        Skipped unless the overlay mode is Manual, since a HomeKit write
-        carries no termination, and unless the write circuit is closed.
-        """
-        use_homekit = should_use_homekit_for_overlay(self.hass, self._zone_id, entry_id=self._entry_id)
-        write_tracker = self.coordinator.write_health_tracker
-        if not (
-            not zone_was_off
-            and use_homekit
-            and self.coordinator.homekit_provider
-            and self.coordinator.homekit_provider.is_connected
-            and write_tracker is not None
-            and write_tracker.should_try_homekit()
-        ):
+        """Write the target-heating-state characteristic when the route is HomeKit; False means fall back to cloud."""
+        if self._route_decision(zone_was_off).route is not Route.HOMEKIT:
             return False
 
-        import time as _time
-
-        self.coordinator._homekit_write_attempts += 1
-        t0 = _time.monotonic()
-        local_success = False
-        try:
-            local_success = await self.coordinator.homekit_provider.set_hvac_mode(
-                self._zone_id, mode_value,
-            )
-        except Exception:
-            _LOGGER.debug(
-                "Climate Heating: %s HomeKit %s write raised an exception, "
-                "falling back to cloud",
-                self._zone_name, mode_label, exc_info=True,
-            )
-        elapsed_ms = (_time.monotonic() - t0) * 1000
-        self.coordinator._homekit_write_latency_sum += elapsed_ms
-        self.coordinator._homekit_write_latency_count += 1
-        if local_success:
-            self.coordinator._homekit_write_successes += 1
-        else:
-            write_tracker.record_failure()
-            self.coordinator._homekit_write_fallbacks += 1
-            _LOGGER.debug(
-                "Climate Heating: %s HomeKit %s write failed, falling "
-                "back to cloud API",
-                self._zone_name, mode_label,
-            )
-        return local_success
+        return await self._try_homekit_write(
+            lambda: self.coordinator.homekit_provider.set_hvac_mode(self._zone_id, mode_value),
+            raised_msg=f"Climate Heating: %s HomeKit {mode_label} write raised an exception, falling back to cloud",
+            failed_msg=f"Climate Heating: %s HomeKit {mode_label} write failed, falling back to cloud API",
+        )
 
     def _resolve_heat_target(self) -> float:
-        """Pick the HEAT target; a Manual-OFF frost target resolves to the cached schedule, else 20."""
-        if self._attr_hvac_mode == HVACMode.OFF and self._overlay_type == "MANUAL":
+        """Pick the HEAT target; an OFF zone shows the frost target, so HEAT resolves to the cached schedule, else 20."""
+        if self._attr_hvac_mode == HVACMode.OFF:
             scheduled = get_current_schedule_target(
                 self._zone_id, data_loader=self.coordinator.data_loader,
             )
             if scheduled is None:
                 _LOGGER.debug(
-                    "Climate Heating: %s has no usable schedule target, HEAT from manual off uses 20°C",
+                    "Climate Heating: %s has no usable schedule target, HEAT from an off zone uses 20°C",
                     self._zone_name,
                 )
                 return 20.0
             return scheduled
-        return self._attr_target_temperature or 20.0
+        return self._attr_native_target_temperature or 20.0
+
+    def _heat_target_to_record(self, card_target: float, *, zone_was_off: bool) -> float:
+        """A HEAT on a running room keeps the room's newest own target: the card's while a write is pending, else the owed one, else the thermostat's reading on a held route."""
+        if zone_was_off or (self._optimistic_sequence is not None and self._attr_hvac_mode != HVACMode.OFF):
+            return card_target
+        if (owed_target := owed_held_target(self.coordinator, self._zone_id, ambiguous_ok=True)) is not None:
+            return owed_target
+        if self._route_decision(zone_was_off).route is not Route.HOMEKIT_HELD:
+            return card_target
+        provider = self.coordinator.homekit_provider
+        reading = provider.get_target_temperature(self._zone_id)[0] if provider is not None and provider.is_connected else None
+        return float(reading) if isinstance(reading, int | float) and not isinstance(reading, bool) else card_target
+
+    async def _paint_hvac_mode_before_put(
+        self, hvac_mode: HVACMode, hvac_action: HVACAction, target_temp: float, *, zone_was_off: bool,
+    ) -> int | None:
+        """Arm and paint a HEAT or OFF card at the tap when the bridge looks usable now (re-checked inside the slot), like the temperature path; returns the hold, else None."""
+        if self._route_decision(zone_was_off).route is Route.CLOUD:
+            return None
+        # Before anything is assigned: a failure has to go back to the card as it is now.
+        self._seed_accepted()
+        self._attr_hvac_mode = hvac_mode
+        self._attr_hvac_action = hvac_action
+        self._overlay_type = "MANUAL"
+        self._attr_native_target_temperature = target_temp
+        await set_optimistic_fields(
+            self, self.coordinator,
+            source="cloud",
+            expected={"hvac_mode": hvac_mode, "hvac_action": hvac_action, "target_temperature": target_temp},
+        )
+        self.async_write_ha_state()
+        sequence: int | None = self._optimistic_sequence
+        return sequence
 
     async def _apply_optimistic_hvac_mode_write(
         self, hvac_mode: HVACMode, hvac_action: HVACAction,
-        *, target_temp: float | None = None,
+        *, payload: dict[str, Any], target_temp: float | None = None, sequence: int | None = None,
     ) -> None:
-        """Apply the optimistic mode the cloud path already applies, so the card updates now."""
+        """Apply the optimistic mode the cloud path already applies, so the card updates now; with a painted `sequence` only the put is recorded."""
+        if sequence is not None:
+            mark_homekit_put(self, payload=payload)
+            self._accept_homekit_put(sequence)
+            self._schedule_cloud_verification()
+            return
         self._attr_hvac_mode = hvac_mode
         self._attr_hvac_action = hvac_action
-        self._overlay_type = "MANUAL"  # type: ignore[assignment]
+        self._overlay_type = "MANUAL"
         expected: dict[str, Any] = {"hvac_mode": hvac_mode, "hvac_action": hvac_action}
         if target_temp is not None:
-            self._attr_target_temperature = target_temp
+            self._attr_native_target_temperature = target_temp
             expected["target_temperature"] = target_temp
         await set_optimistic_fields(
             self, self.coordinator,
+            source="homekit",
             expected=expected,
         )
         self.async_write_ha_state()
-        if self.coordinator.state_reconciler:
-            self.coordinator.state_reconciler.record_local_write(self._zone_id)
+        mark_homekit_put(self, payload=payload)
+        self._accept_homekit_put(self._optimistic_sequence)
         self._schedule_cloud_verification()
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new HVAC mode."""
-        # The API reports overlayType MANUAL for any overlay whatever its termination.
-        skip_for_auto = hvac_mode == HVACMode.AUTO and self._overlay_type is not None
-        # Action Guard: skip if mode already matches current state
-        if not skip_for_auto and ActionGuard.should_skip_hvac_mode(
-            hvac_mode, self._attr_hvac_mode,
-            optimistic_active=self._optimistic_sequence is not None,
-        ):
-            _LOGGER.debug(
-                "Climate Heating: %s already in %s mode, skipping API call",
-                self._zone_name, hvac_mode,
-            )
-            return
+        cancelled: dict[str, Any] | None = None
+        tap_stamp = self._queued_tap_stamp()
+        # Read before the AUTO below ends the entry: a change still owed is not in the card's data, so no guard may skip on it.
+        owed_before = zone_owes_change(self)
+        # Before the ActionGuard: a card still showing OFF must not skip the OFF and let a pending HEAT fire.
+        if hvac_mode in (HVACMode.OFF, HVACMode.AUTO):
+            cancelled = self._cancel_pending_write()
+        if hvac_mode == HVACMode.AUTO:
+            # Before the ActionGuard and the reserve check: an AUTO the reserve check refuses must still end the debt of a held change.
+            supersede_owed(self)
+        try:
+            # The API reports overlayType MANUAL for any overlay whatever its termination.
+            skip_for_auto = hvac_mode == HVACMode.AUTO and self._overlay_type is not None
+            # Action Guard: skip if mode already matches current state
+            if not skip_for_auto and ActionGuard.should_skip_hvac_mode(
+                hvac_mode, self._attr_hvac_mode,
+                optimistic_active=self._optimistic_sequence is not None or held_data_unconfirmed(self.coordinator, self._zone_id) or owed_before,
+            ):
+                _LOGGER.debug(
+                    "Climate Heating: %s already in %s mode, skipping API call",
+                    self._zone_name, hvac_mode,
+                )
+                return
 
-        await _check_bootstrap_reserve_or_raise(self.hass, self._zone_name, coordinator=self.coordinator)
+            # Read before the gate: the route decides whether the gate runs now or only if the bridge fails (AUTO is always cloud).
+            zone_was_off = hvac_mode == HVACMode.HEAT and not zone_power_is_on(self.coordinator, self._zone_id)
+            gate_pending = hvac_mode in (HVACMode.HEAT, HVACMode.OFF) and self._entry_route(zone_was_off) is not Route.CLOUD
+            if not gate_pending:
+                await _check_bootstrap_reserve_or_raise(self.hass, self._zone_name, coordinator=self.coordinator)
+        except HomeAssistantError:
+            # The cancelled tap will never be sent, so the card goes back to what Tado holds.
+            self._restore_after_refusal(cancelled, tap_stamp)
+            raise
 
         client = self.coordinator.api_client
 
+        # When the bridge is tried, HEAT and OFF hold the slot across the put and its cloud fallback as one ordered step; otherwise run_cloud_write takes it.
         if hvac_mode == HVACMode.HEAT:
-            zone_was_off = not zone_confirmed_on(self.coordinator, self._zone_id)
             temp = self._resolve_heat_target()
-            local_success = await self._try_homekit_hvac_mode_write(1, "HEAT", zone_was_off=zone_was_off)
-            if local_success:
-                self.coordinator.record_homekit_write_saved(self._zone_id)
-                self._last_write_source = "homekit"
-                self._last_homekit_write_payload = {"power_on": True, "temperature": temp}
-                _LOGGER.debug(
-                    "Climate Heating: %s set to HEAT via HomeKit",
-                    self._zone_name,
-                )
-
-                self._attr_hvac_mode = HVACMode.HEAT
-                new_hvac_action = self._calculate_hvac_action(target_temp=temp)
-                await self._apply_optimistic_hvac_mode_write(
-                    HVACMode.HEAT, new_hvac_action, target_temp=temp,
-                )
-                return
-
-            # Cloud fallback
-            termination = get_zone_overlay_termination(self.hass, self._zone_id, entry_id=self._entry_id)
-            new_hvac_action = self._calculate_hvac_action(target_temp=temp, hvac_mode=HVACMode.HEAT)
-            await self._write_via_cloud(
-                power_on=True,
-                temperature=temp,
-                termination=termination,
-                hvac_mode=HVACMode.HEAT,
-                hvac_action=new_hvac_action,
-                reason=f"Set HEAT mode at {temp}°C",
-                capture_source="set_hvac_mode",
+            temp = self._heat_target_to_record(temp, zone_was_off=zone_was_off)
+            # Painted at the tap when the bridge is tried; a cloud-only HEAT arms inside run_cloud_write as before.
+            painted = await self._paint_hvac_mode_before_put(
+                HVACMode.HEAT, self._calculate_hvac_action(target_temp=temp, hvac_mode=HVACMode.HEAT), temp, zone_was_off=zone_was_off,
             )
+            async with ordered_zone_write(self.coordinator, self._zone_id if painted is not None else ""):
+                held_refused = False
+                local_success = False
+                if self._route_decision(zone_was_off).route is Route.HOMEKIT_HELD:
+                    sent = await self._hold_via_homekit(
+                        self._held_on_send(zone_was_off, temp, mode_only=True), kind=IntentKind.POWER_ON, power_on=True,
+                        temperature=temp, termination=get_zone_overlay_termination(self.hass, self._zone_id, entry_id=self._entry_id),
+                        sequence=painted, label="HEAT",
+                    )
+                    if sent:
+                        return
+                    held_refused = True
+                else:
+                    local_success = await self._try_homekit_hvac_mode_write(1, "HEAT", zone_was_off=zone_was_off)
+                if local_success:
+                    payload = {"power_on": True, "temperature": temp}
+                    self.coordinator.record_homekit_write_saved(self._zone_id, payload_to_time(self.coordinator, self._zone_id, payload))
+                    self.coordinator.record_own_power_write(self._zone_id, powered_off=False)
+                    _LOGGER.debug(
+                        "Climate Heating: %s set to HEAT via HomeKit",
+                        self._zone_name,
+                    )
+
+                    self._attr_hvac_mode = HVACMode.HEAT
+                    new_hvac_action = self._calculate_hvac_action(target_temp=temp)
+                    await self._apply_optimistic_hvac_mode_write(
+                        HVACMode.HEAT, new_hvac_action, payload=payload, target_temp=temp, sequence=painted,
+                    )
+                    return
+
+                # Cloud fallback
+                termination = get_zone_overlay_termination(self.hass, self._zone_id, entry_id=self._entry_id)
+                new_hvac_action = self._calculate_hvac_action(target_temp=temp, hvac_mode=HVACMode.HEAT)
+
+                async def _send_heat() -> None:
+                    await self._write_via_cloud(
+                        power_on=True,
+                        temperature=temp,
+                        termination=termination,
+                        hvac_mode=HVACMode.HEAT,
+                        hvac_action=new_hvac_action,
+                        reason=f"Set HEAT mode at {temp}°C",
+                        capture_source="set_hvac_mode",
+                        sequence=painted,
+                        gate_pending=gate_pending,
+                        held_refused=held_refused,
+                    )
+
+                debounce_window = self.coordinator.config_manager.get_smart_actions_debounce_seconds()
+                # A refused held put fails the tap now; there is nothing to queue.
+                if zone_was_off and debounce_window > 0 and not held_refused:
+                    async def _send_heat_debounced() -> None:
+                        try:
+                            await self._run_queued_write(lambda: _send_heat())
+                        except HomeAssistantError:
+                            # Same as a debounced set_temperature: the rollback already ran, the caller is gone.
+                            return
+
+                    # The newest intent supersedes an older unconfirmed HomeKit write, so its resend cannot undo the pending HEAT.
+                    clear_homekit_write(self)
+                    # The pending HEAT stamps no hold, so a refused action has nothing of its own to restore.
+                    self._seed_accepted()
+                    self._announce_queued_write(CLIMATE_STATE_NAMES, None)
+                    await self.coordinator.action_debouncer.debounce(
+                        self._zone_id, _send_heat_debounced, window=float(debounce_window),
+                    )
+                else:
+                    await _send_heat()
 
         elif hvac_mode == HVACMode.OFF:
-            local_success = await self._try_homekit_hvac_mode_write(0, "OFF")
-            if local_success:
-                self.coordinator.record_homekit_write_saved(self._zone_id)
-                self._last_write_source = "homekit"
-                self._last_homekit_write_payload = {"power_on": False, "temperature": OPEN_WINDOW_DEFAULT_TEMP}
-                _LOGGER.debug(
-                    "Climate Heating: %s set to OFF via HomeKit",
-                    self._zone_name,
-                )
-
-                await self._apply_optimistic_hvac_mode_write(
-                    HVACMode.OFF, HVACAction.OFF, target_temp=OPEN_WINDOW_DEFAULT_TEMP,
-                )
-                return
-
-            # Cloud fallback
-            termination = get_zone_overlay_termination(self.hass, self._zone_id, entry_id=self._entry_id)
-            await self._write_via_cloud(
-                power_on=False,
-                temperature=OPEN_WINDOW_DEFAULT_TEMP,
-                termination=termination,
-                hvac_mode=HVACMode.OFF,
-                hvac_action=HVACAction.OFF,
-                reason="Set OFF mode",
-                capture_source="set_hvac_mode",
+            off_painted = await self._paint_hvac_mode_before_put(
+                HVACMode.OFF, HVACAction.OFF, OPEN_WINDOW_DEFAULT_TEMP, zone_was_off=False,
             )
+            async with ordered_zone_write(self.coordinator, self._zone_id if off_painted is not None else ""):
+                held_refused = False
+                local_success = False
+                if self._route_decision(False).route is Route.HOMEKIT_HELD:
+                    provider = self.coordinator.homekit_provider
+                    if await self._hold_via_homekit(
+                        lambda: provider.set_hvac_mode(self._zone_id, 0), kind=IntentKind.POWER_OFF, power_on=False,
+                        temperature=None, termination=get_zone_overlay_termination(self.hass, self._zone_id, entry_id=self._entry_id),
+                        sequence=off_painted, label="OFF",
+                    ):
+                        return
+                    held_refused = True
+                else:
+                    local_success = await self._try_homekit_hvac_mode_write(0, "OFF")
+                if local_success:
+                    payload = {"power_on": False, "temperature": OPEN_WINDOW_DEFAULT_TEMP}
+                    self.coordinator.record_homekit_write_saved(self._zone_id, payload)
+                    self.coordinator.record_own_power_write(self._zone_id, powered_off=True)
+                    _LOGGER.debug(
+                        "Climate Heating: %s set to OFF via HomeKit",
+                        self._zone_name,
+                    )
+
+                    await self._apply_optimistic_hvac_mode_write(
+                        HVACMode.OFF, HVACAction.OFF, payload=payload, target_temp=OPEN_WINDOW_DEFAULT_TEMP, sequence=off_painted,
+                    )
+                    return
+
+                # Cloud fallback
+                termination = get_zone_overlay_termination(self.hass, self._zone_id, entry_id=self._entry_id)
+                await self._write_via_cloud(
+                    power_on=False,
+                    temperature=OPEN_WINDOW_DEFAULT_TEMP,
+                    termination=termination,
+                    hvac_mode=HVACMode.OFF,
+                    hvac_action=HVACAction.OFF,
+                    reason="Set OFF mode",
+                    capture_source="set_hvac_mode",
+                    sequence=off_painted,
+                    gate_pending=gate_pending,
+                    held_refused=held_refused,
+                )
 
         elif hvac_mode == HVACMode.AUTO:
             await api_call_with_rollback(
@@ -1219,10 +1272,21 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
             self._last_write_source = "cloud"
 
     async def async_set_timer(
-        self, temperature: float, duration_minutes: int | None = None, overlay: str | None = None,
+        self, *, temperature: float, duration_minutes: int | None = None, overlay: str | None = None,
     ) -> bool:
         """Set temperature with timer or overlay type."""
-        await _check_bootstrap_reserve_or_raise(self.hass, self._zone_name, coordinator=self.coordinator)
+        tap_stamp = self._queued_tap_stamp()
+        cancelled = self._cancel_pending_write()
+        # A timer never goes over HomeKit while the cloud is healthy; only a held write meets the reserve gate later, if its put fails.
+        zone_was_off = not zone_power_is_on(self.coordinator, self._zone_id)
+        held = self._route_decision(zone_was_off).route is Route.HOMEKIT_HELD
+        if not held:
+            try:
+                await _check_bootstrap_reserve_or_raise(self.hass, self._zone_name, coordinator=self.coordinator)
+            except HomeAssistantError:
+                # The cancelled tap will never be sent, so the card goes back to what Tado holds.
+                self._restore_after_refusal(cancelled, tap_stamp)
+                raise
 
         # Capture current state before overlay (state restoration)
         client = self.coordinator.api_client
@@ -1247,19 +1311,38 @@ class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateC
         else:
             term_desc = "manually"
 
-        try:
-            await api_call_with_rollback(
-                self,
-                client.set_zone_overlay(self._zone_id, setting, termination),
-                hvac_mode=HVACMode.HEAT,
-                hvac_action=self._calculate_hvac_action(target_temp=temperature, hvac_mode=HVACMode.HEAT),
-                target_temp=temperature,
-                reason=f"set timer at {temperature}°C {term_desc}",
-                capture_source="set_timer",
-            )
-        except HomeAssistantError as err:
-            # A typed 429 or auth error keeps its translated message; a plain failure reports False.
-            if is_typed_cloud_rejection(err):
-                raise
+        hvac_action = self._calculate_hvac_action(target_temp=temperature, hvac_mode=HVACMode.HEAT)
+        painted = None
+        if held and termination.get("type") == "TIMER":
+            # HomeKit carries no end time, so a timed overlay would run for the whole outage: it is refused before the card moves, as a failed cloud timer is today.
+            self._restore_after_refusal(cancelled, tap_stamp)
             return False
+        if held:
+            painted = await self._paint_hvac_mode_before_put(HVACMode.HEAT, hvac_action, temperature, zone_was_off=zone_was_off)
+        async with ordered_zone_write(self.coordinator, self._zone_id if painted is not None else ""):
+            gate = None
+            if held:
+                held_now = self._route_decision(zone_was_off).route is Route.HOMEKIT_HELD
+                sent = held_now and await self._hold_via_homekit(
+                    self._held_on_send(zone_was_off, temperature), kind=IntentKind.TIMER, power_on=True, temperature=temperature,
+                    termination=termination, sequence=painted, label="timer",
+                )
+                if sent:
+                    return True
+                gate = self._cloud_gate(gate_pending=True, held_refused=held_now)
+            if not await self._async_timer_result(
+                api_call_with_rollback(
+                    self,
+                    client.set_zone_overlay(self._zone_id, setting, termination),
+                    hvac_mode=HVACMode.HEAT,
+                    hvac_action=hvac_action,
+                    target_temp=temperature,
+                    reason=f"set timer at {temperature}°C {term_desc}",
+                    capture_source="set_timer",
+                    sequence=painted,
+                    gate=gate,
+                ),
+            ):
+                return False
+        self._last_write_source = "cloud"
         return True

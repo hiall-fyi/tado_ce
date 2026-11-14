@@ -27,8 +27,10 @@ if TYPE_CHECKING:
     from .coordinator import TadoDataUpdateCoordinator
 
 from .climate_helpers import SensorProxy, subscribe_external_sensors
-from .exceptions import TadoAuthError, TadoRateLimitError
+from .exceptions import TadoAuthError, TadoBlockedError, TadoRateLimitError
+from .fetch_plan import KIND_OFFSETS_FIRST_LOAD
 from .polling import is_daytime
+from .zone_signals import fresher_than
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -101,10 +103,17 @@ class OffsetSyncController:
         self._awaiting_fetch_logged: bool = False
         # The cloud offset read is held back until the first real zone update after a restart.
         self._offset_load_pending: bool = False
+        # Logged once while the first offset read waits for the quota gate.
+        self._first_load_wait_logged: bool = False
 
     # ------------------------------------------------------------------
     # Properties
     # ------------------------------------------------------------------
+
+    @property
+    def is_first_load_pending(self) -> bool:
+        """True while the first offset read after a restart is still owed."""
+        return self._offset_load_pending
 
     @property
     def zone_id(self) -> str:
@@ -220,7 +229,7 @@ class OffsetSyncController:
         current = self._coordinator.last_zone_fetch_ts()
         if current is None:
             return False  # no fetch recorded yet, don't block
-        return current <= at_write  # not advanced → still settling
+        return not fresher_than(current, at_write)  # not advanced → still settling
 
     def is_quiet_hours(self) -> bool:
         """Return True outside the configured day window, reusing Smart Polling's hours rather than a dedicated setting."""
@@ -287,6 +296,14 @@ class OffsetSyncController:
         self._awaiting_fetch_logged = False
 
         if self._offset_load_pending:
+            if not self._coordinator.post_sync_allows(KIND_OFFSETS_FIRST_LOAD):
+                # WHY: belt and braces; the write hold already stops writes at this quota, this keeps a guessed 0.0 offset out of the physics.
+                if not self._first_load_wait_logged:
+                    self._first_load_wait_logged = True
+                    _LOGGER.debug("Offset Sync: zone %s first offset read waits for the quota", self._zone_id)
+                self._log_decision(trigger, outcome="skip_first_load_pending")
+                return
+            self._first_load_wait_logged = False
             self._offset_load_pending = False
             await self._async_load_offset_from_api()
 
@@ -439,7 +456,7 @@ class OffsetSyncController:
             await self._async_write_offset(
                 desired_offset, inside_temperature, calc.clamp_direction,
             )
-        except (TadoAuthError, TadoRateLimitError) as e:
+        except (TadoAuthError, TadoRateLimitError, TadoBlockedError) as e:
             from .error_dispatch import handle_background_write_error
 
             handle_background_write_error(
@@ -480,6 +497,7 @@ class OffsetSyncController:
 
         device_sync_queue = self._coordinator.device_sync_queue
         dones: list[asyncio.Future[bool]] = []
+        operations: list[DeviceOperation] = []
         any_accepted = False
 
         for serial in serials:
@@ -496,6 +514,7 @@ class OffsetSyncController:
             if accepted:
                 any_accepted = True
                 dones.append(done)
+                operations.append(operation)
             else:
                 from .helpers import mask_serial
 
@@ -519,6 +538,16 @@ class OffsetSyncController:
         # cache with a value only some devices accepted.
         results = await asyncio.gather(*dones, return_exceptions=False)
         if not all(results):
+            # One recovery per batch: an N-TRV zone would otherwise fire it N times.
+            typed_error = next((op.error for op in operations if op.error is not None), None)
+            if typed_error is not None:
+                from .error_dispatch import handle_background_write_error
+
+                handle_background_write_error(
+                    typed_error, self._coordinator.config_entry, self._hass, self._coordinator,
+                    f"Offset Sync: zone {self._zone_id} write refused, "
+                    "starting recovery; will retry on next sensor change",
+                )
             _LOGGER.warning(
                 "Offset Sync: zone %s one or more device writes failed, "
                 "leaving offset unchanged, will retry on next sensor change",
@@ -650,7 +679,7 @@ class OffsetSyncController:
         """Stop without saving, for a controller that failed to start or whose zone id changed hands."""
         self._stop()
         self._runtime.discarded = True
-        _LOGGER.info(
+        _LOGGER.debug(
             "Offset Sync: zone %s controller discarded without saving",
             self._zone_id,
         )
@@ -732,6 +761,10 @@ class OffsetSyncController:
         if self._coordinator.last_zone_fetch_ts() is None:
             self._offset_load_pending = True
             return
+        if not self._coordinator.post_sync_allows(KIND_OFFSETS_FIRST_LOAD):
+            # The next evaluation asks the same gate again and reads once the quota is back.
+            self._offset_load_pending = True
+            return
         await self._async_load_offset_from_api()
 
     async def _async_load_offset_from_api(self) -> None:
@@ -748,7 +781,7 @@ class OffsetSyncController:
                     "Offset Sync: zone %s loaded current offset %.1f°C from Tado",
                     self._zone_id, offset,
                 )
-        except (TadoAuthError, TadoRateLimitError) as e:
+        except (TadoAuthError, TadoRateLimitError, TadoBlockedError) as e:
             from .error_dispatch import handle_background_write_error
 
             handle_background_write_error(

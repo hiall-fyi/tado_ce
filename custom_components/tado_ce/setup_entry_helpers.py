@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 import logging
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.core import callback
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.util import slugify
 
-from .helpers import mask_serial
+from .const import SIGNAL_HOMEKIT_UPDATE
+from .helpers import mask_serial, parse_iso_datetime, zone_entity_id
+from .zone_signals import is_homekit_off_held
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from homeassistant.core import HomeAssistant
 
     from .adaptive_preheat import AdaptivePreheatManager
@@ -18,6 +25,7 @@ if TYPE_CHECKING:
     from .coordinator import TadoDataUpdateCoordinator
     from .data_loader import DataLoader
     from .heating_coordinator import HeatingCycleCoordinator
+    from .homekit_client import HomeKitClient
     from .smart_comfort import SmartComfortManager
     from .state_restore_manager import StateRestoreManager
     from .zone_config_manager import ZoneConfigManager
@@ -25,32 +33,18 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
-async def async_log_file_system_state(hass: HomeAssistant) -> None:
-    """Log which Tado CE data files exist on disk during setup."""
-    from .const import CONFIG_FILE, DATA_DIR, ZONES_FILE, ZONES_INFO_FILE
-
-    def _check() -> dict[str, Any]:
-        return {
-            "data_dir_exists": DATA_DIR.exists(),
-            "config_file_exists": CONFIG_FILE.exists(),
-            "zones_file_exists": ZONES_FILE.exists(),
-            "zones_info_file_exists": ZONES_INFO_FILE.exists(),
-        }
-
-    fs_state = await hass.async_add_executor_job(_check)
-    _LOGGER.debug(
-        "Setup: data file presence. DATA_DIR=%s (%s), "
-        "CONFIG_FILE=%s (%s), ZONES_FILE=%s (%s), "
-        "ZONES_INFO_FILE=%s (%s)",
-        DATA_DIR,
-        fs_state["data_dir_exists"],
-        CONFIG_FILE,
-        fs_state["config_file_exists"],
-        ZONES_FILE,
-        fs_state["zones_file_exists"],
-        ZONES_INFO_FILE,
-        fs_state["zones_info_file_exists"],
-    )
+def _zone_created_dates(zones: list[dict[str, Any]]) -> dict[str, datetime]:
+    """Map zone id to its current dateCreated; a missing or unreadable date leaves the zone uncut."""
+    dates: dict[str, datetime] = {}
+    for zone in zones:
+        raw = zone.get("dateCreated")
+        if not raw:
+            continue
+        try:
+            dates[str(zone["id"])] = parse_iso_datetime(raw)
+        except (ValueError, TypeError):
+            _LOGGER.debug("Setup: unreadable dateCreated %r for zone %s, loading its history uncut", raw, zone.get("id"))
+    return dates
 
 
 async def async_init_smart_comfort(
@@ -78,30 +72,28 @@ async def async_init_smart_comfort(
     )
     smart_comfort_manager.enable()
 
-    outdoor_temp_entity = config_manager.get_outdoor_temp_entity()
-    weather_compensation = config_manager.get_smart_comfort_mode()
-    use_feels_like = config_manager.get_use_feels_like()
-
-    if outdoor_temp_entity:
-        smart_comfort_manager.configure_weather(
-            outdoor_temp_entity=outdoor_temp_entity,
-            weather_compensation=weather_compensation,
-            use_feels_like=use_feels_like,
-        )
-
     # Tier 1: 2h cache (fastest)
     cache_readings = await smart_comfort_manager.async_load()
 
     zones_info = await hass.async_add_executor_job(data_loader.load_zones_info_file)
 
     if zones_info:
-        entity_to_zone_id = {
-            slugify(zone.get("name", "")): str(zone.get("id"))
-            for zone in zones_info
-            if zone.get("name") and zone.get("id")
+        # Entities register under "default" when the entry has no home id.
+        entity_home_id = home_id or "default"
+        named_zones = [zone for zone in zones_info if zone.get("name") and zone.get("id")]
+        climate_ids = {
+            zone_entity_id(
+                hass, "climate",
+                "climate_ac" if zone.get("type") == "AIR_CONDITIONING" else "climate_heating",
+                entity_home_id, str(zone.get("id")), slugify(zone["name"]),
+            ): str(zone.get("id"))
+            for zone in named_zones
         }
+        # The recorder load looks zones up by the id without its domain prefix.
+        entity_to_zone_id = {entity_id.removeprefix("climate."): zone_id for entity_id, zone_id in climate_ids.items()}
 
-        climate_entity_ids = [f"climate.{entity_name}" for entity_name in entity_to_zone_id]
+        climate_entity_ids = list(climate_ids)
+        zone_since = _zone_created_dates(named_zones)
 
         # Tier 2: 24h recorder (layered on top of cache)
         recorder_readings = 0
@@ -111,18 +103,22 @@ async def async_init_smart_comfort(
                 smart_comfort_manager,
                 climate_entity_ids,
                 entity_to_zone_id,
+                zone_since=zone_since,
             )
 
         # Tier 3: 7d hourly baselines (fallback when zones have no cache/recorder data)
         zone_sensor_mapping = {
-            str(zone.get("id")): f"sensor.{slugify(zone.get('name', ''))}_temperature"
-            for zone in zones_info
-            if zone.get("name") and zone.get("id")
+            str(zone.get("id")): zone_entity_id(
+                hass, "sensor", "sensor_temperature", entity_home_id, str(zone.get("id")),
+                f"{slugify(zone['name'])}_temperature",
+            )
+            for zone in named_zones
         }
         baseline_stats = await async_load_baseline_from_statistics(
             hass,
             smart_comfort_manager,
             zone_sensor_mapping,
+            zone_since=zone_since,
         )
 
         _LOGGER.debug(
@@ -191,11 +187,13 @@ async def async_init_adaptive_preheat(
     api_client: TadoApiClient | None,
     data_loader: DataLoader | None,
     zone_config_manager: ZoneConfigManager | None = None,
+    home_id: str | None = None,
 ) -> AdaptivePreheatManager | None:
     """Build the Adaptive Preheat manager when the feature is enabled."""
     if not config_manager.get_adaptive_preheat_enabled():
         return None
 
+    apm = None
     try:
         from .adaptive_preheat import AdaptivePreheatManager
 
@@ -205,6 +203,7 @@ async def async_init_adaptive_preheat(
             api_client=api_client,
             data_loader=data_loader,
             zone_config_manager=zone_config_manager,
+            home_id=home_id,
         )
         await apm.async_setup()
         _LOGGER.info("Setup: Adaptive Preheat ready")
@@ -216,6 +215,9 @@ async def async_init_adaptive_preheat(
             "integration reload",
             exc_info=True,
         )
+        # A setup that failed midway may already hold state listeners, and nothing else knows this manager.
+        if apm is not None:
+            await apm.async_unload()
         return None
 
 
@@ -311,6 +313,64 @@ async def async_activate_homekit(
     # Not connected at startup: let the background loop retry so recovery
     # needs no manual reload.
     await homekit_client.async_reconnect()
+
+
+def register_homekit_drop_fetch(
+    coordinator: TadoDataUpdateCoordinator,
+    homekit_client: HomeKitClient,
+) -> None:
+    """Fetch the zones from the cloud once on a HomeKit drop and once on its reconnect."""
+
+    # Only the first reconnect the read loop starts fetches; repeats on a dead accessory change nothing in the cloud, so they ask for none.
+    def _on_drop() -> None:
+        if not homekit_client.catch_up_fetch:
+            return
+        coordinator.hass.async_create_task(
+            coordinator.async_request_zone_fetch("homekit_disconnect"),
+        )
+
+    async def _on_reconnect() -> None:
+        if not homekit_client.catch_up_fetch:
+            return
+        await coordinator.async_request_zone_fetch("homekit_reconnect")
+
+    homekit_client.add_disconnect_callback(_on_drop)
+    homekit_client.add_reconnect_callback(_on_reconnect)
+
+
+def register_homekit_off_latch_listener(coordinator: TadoDataUpdateCoordinator) -> None:
+    """Hold a room switched off in the Tado app from the moment the bridge reports it, until the entry unloads."""
+
+    @callback
+    def _on_homekit_update(zone_id: str) -> None:
+        is_homekit_off_held(coordinator, zone_id)
+
+    # The entry unload list runs on unload and on a failed setup, so a reload never leaves a second handler behind.
+    coordinator.config_entry.async_on_unload(
+        async_dispatcher_connect(
+            coordinator.hass, SIGNAL_HOMEKIT_UPDATE.format(home_id=coordinator.home_id), _on_homekit_update,
+        ),
+    )
+
+
+async def async_start_homekit(
+    coordinator: TadoDataUpdateCoordinator,
+    provider: Any,
+    homekit_client: HomeKitClient,
+    on_reconnect: Callable[[], Awaitable[None]],
+) -> None:
+    """Register the re-subscribe callback, then activate, then register the drop fetch and the app-off listener."""
+    homekit_client.add_reconnect_callback(on_reconnect)
+
+    # Activation must degrade to cloud-only, never abort the entry.
+    try:
+        await async_activate_homekit(coordinator, provider, homekit_client)
+    except Exception as e:
+        _LOGGER.warning("HomeKit activation failed, degrading to cloud-only: %s", e)
+
+    # After activation so a setup-time reconnect loop does not fetch; after the re-subscribe callback.
+    register_homekit_drop_fetch(coordinator, homekit_client)
+    register_homekit_off_latch_listener(coordinator)
 
 
 def register_bridge_devices(

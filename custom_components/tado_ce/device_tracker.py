@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.components.device_tracker import (  # type: ignore[attr-defined]
+from homeassistant.components.device_tracker import (
     SourceType,
     TrackerEntity,
 )

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.util import dt as dt_util
 
+from .api_call_tracker import is_quota_call
 from .calculations import (
     calculate_absolute_humidity,
     calculate_heat_index,
@@ -16,7 +17,7 @@ from .calculations import (
     classify_heat_risk_level,
     classify_mold_risk_level,
 )
-from .const import ENTITY_DATA_CONDENSATION_RISK, ENTITY_DATA_WINDOW_PREDICTED
+from .const import ENTITY_DATA_CONDENSATION_RISK
 from .helpers import (
     connection_value_to_bool,
     get_zone_states,
@@ -33,7 +34,6 @@ from .insights_api import (
 from .insights_cross_zone import (
     aggregate_cross_zone_condensation,
     aggregate_cross_zone_mold_risk,
-    aggregate_cross_zone_window_predicted,
     calculate_cross_zone_efficiency_insight,
     calculate_humidity_imbalance_insight,
     calculate_temperature_imbalance_insight,
@@ -312,7 +312,7 @@ def collect_single_zone_insights(
             humidity, ctx.comfort_heat_vulnerable_group,
         )
 
-    # --- Coordinator-based insights (condensation, window, preheat, anomaly) ---
+    # --- Coordinator-based insights (condensation, preheat, anomaly) ---
     _collect_ha_entity_insights(
         coordinator,
         zone_id,
@@ -496,27 +496,6 @@ def _collect_condensation_insight(
     )
 
 
-def _collect_window_predicted_insight(
-    coordinator: TadoDataUpdateCoordinator,
-    zone_id: str,
-    zone_name: str,
-    insights: list[Any],
-) -> None:
-    """Collect window predicted insight for a zone."""
-    wp_data = coordinator.get_entity_data(zone_id, ENTITY_DATA_WINDOW_PREDICTED)
-    if not wp_data or wp_data.get("state") != "on":
-        return
-    wp_rec = wp_data.get("recommendation", "") or f"{zone_name}: Possible open window detected"
-    insights.append(
-        Insight(
-            priority=get_insight_priority("window_predicted", "high"),
-            recommendation=wp_rec,
-            insight_type="window_predicted",
-            zone_name=zone_name,
-        ),
-    )
-
-
 def _collect_preheat_insight(
     coordinator: TadoDataUpdateCoordinator,
     zone_id: str,
@@ -611,7 +590,6 @@ def _collect_ha_entity_insights(
     """Collect insights using coordinator data instead of hass.states.get()."""
     if ctx.environment_enabled:
         _collect_condensation_insight(coordinator, zone_id, zone_name, insights)
-        _collect_window_predicted_insight(coordinator, zone_id, zone_name, insights)
 
     if ctx.preheat_enabled:
         _collect_preheat_insight(coordinator, zone_id, zone_name, zone_data, insights)
@@ -762,20 +740,6 @@ def _collect_cross_zone_mold(
     return aggregate_cross_zone_mold_risk(zone_mold_risks)
 
 
-def _collect_cross_zone_windows(
-    coordinator: TadoDataUpdateCoordinator, zones_info: list[Any],
-) -> Any | None:
-    """Collect cross-zone window predicted insight."""
-    zone_window_states: dict[str, bool] = {}
-    for z in zones_info:
-        z_name = z.get("name", f"Zone {z.get('id')}")
-        z_id = str(z.get("id"))
-        wp_data = coordinator.get_entity_data(z_id, ENTITY_DATA_WINDOW_PREDICTED)
-        if wp_data:
-            zone_window_states[z_name] = wp_data.get("state") == "on"
-    return aggregate_cross_zone_window_predicted(zone_window_states)
-
-
 def _collect_cross_zone_condensation(
     coordinator: TadoDataUpdateCoordinator, zones_info: list[Any],
 ) -> Any | None:
@@ -855,7 +819,6 @@ def _collect_all_cross_zone(
         candidates.append(_collect_cross_zone_mold(zone_states, zone_name_map))
 
     if ctx.environment_enabled and zones_info:
-        candidates.append(_collect_cross_zone_windows(coordinator, zones_info))
         candidates.append(_collect_cross_zone_condensation(coordinator, zones_info))
 
     if ctx.thermal_enabled and zones_info:
@@ -876,7 +839,7 @@ def get_cross_zone_insights(
     zone_insights: dict[str, list[Any]],
     ctx: InsightContext | None = None,
 ) -> list[Any]:
-    """Get cross-zone aggregation insights (mold, windows, condensation, efficiency, imbalance)."""
+    """Get cross-zone aggregation insights (mold, condensation, efficiency, imbalance)."""
     if ctx is None:
         ctx = InsightContext.from_coordinator(coordinator)
 
@@ -927,6 +890,7 @@ def _collect_api_quota_insight(
         history = [call for calls in history_raw.values() for call in calls]
     else:
         history = history_raw or []
+    history = [call for call in history if isinstance(call, dict) and is_quota_call(call)]
     calls_per_hour = calculate_calls_per_hour(history) if history else None
 
     if remaining is not None and calls_per_hour is not None:
@@ -1206,12 +1170,12 @@ def _collect_api_spike_insight(coord_data: dict[str, Any], hub_insights: list[An
     if not history_raw or not isinstance(history_raw, dict):
         return
 
-    all_calls = [call for calls in history_raw.values() for call in calls]
+    all_calls = [call for calls in history_raw.values() for call in calls if is_quota_call(call)]
     cph = calculate_calls_per_hour(all_calls) if all_calls else None
 
     now = dt_util.utcnow()
     today_key = now.strftime("%Y-%m-%d")
-    today_calls = history_raw.get(today_key, [])
+    today_calls = [c for c in history_raw.get(today_key, []) if is_quota_call(c)]
     current_hour_calls = 0
     for call in today_calls:
         ts = call.get("timestamp") or call.get("time", "")

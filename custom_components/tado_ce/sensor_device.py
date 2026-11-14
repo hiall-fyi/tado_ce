@@ -58,7 +58,6 @@ class TadoBatterySensor(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataU
             f"tado_ce_{coordinator.home_id}"
             f"_{_meta.unique_id_suffix.format(serial=self._device_serial)}"
         )
-        self._attr_icon = _meta.icon
         self._attr_entity_category = get_entity_category(_meta)
         self._data_present = True
         self._attr_native_value = _format_battery_state(device.get("batteryState", "unknown"))

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from inspect import signature
 import json
 import logging
 from pathlib import Path
@@ -62,28 +61,12 @@ def _get_cached_hub_device_id(home_id: str) -> str | None:
     return _hub_device_ids.get(home_id)
 
 
-@lru_cache(maxsize=1)
-def _hub_parenting_kwarg() -> str:
-    """Return 'via_device_id' on HA 2026.8+, else the legacy 'via_device' (still accepted below it)."""
-    from homeassistant.helpers import device_registry as dr
-
-    params = signature(dr.DeviceRegistry.async_get_or_create).parameters
-    return "via_device_id" if "via_device_id" in params else "via_device"
-
-
 def hub_parent_kwargs(home_id: str) -> DeviceInfo:
-    """Return the DeviceInfo parenting kwarg(s) for the hub, on whichever HA the install supports."""
-    kwarg = _hub_parenting_kwarg()
-    parent: DeviceInfo = {}
-    if kwarg == "via_device_id":
-        hub_device_id = _get_cached_hub_device_id(home_id)
-        if hub_device_id:
-            parent = {"via_device_id": hub_device_id}
-    else:
-        # via_device is dropped from DeviceInfo on HA 2026.9+'s stub, but this
-        # branch only runs on the older floor that still needs it.
-        parent = {"via_device": (DOMAIN, _hub_identifier(home_id))}  # type: ignore[typeddict-unknown-key]
-    return parent
+    """Return the DeviceInfo parenting kwarg for the hub, empty until the hub device id is cached."""
+    hub_device_id = _get_cached_hub_device_id(home_id)
+    if hub_device_id:
+        return DeviceInfo(via_device_id=hub_device_id)
+    return DeviceInfo()
 
 
 def get_hub_device_info(home_id: str) -> DeviceInfo:

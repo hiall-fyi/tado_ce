@@ -2,8 +2,8 @@
 
 Standard three-state circuit-breaker pattern. CLOSED lets writes
 through, OPEN skips them after `WRITE_FAILURE_THRESHOLD` consecutive
-failures, HALF_OPEN lets one probe through after the cooldown to
-test recovery before fully closing.
+failures, HALF_OPEN lets writes through after the cooldown or a bridge
+reconnect until a verdict: a success closes it, a failure re-opens it.
 """
 
 from __future__ import annotations
@@ -28,8 +28,9 @@ class CircuitState(enum.Enum):
 class WriteHealthTracker:
     """Track consecutive HomeKit write failures and gate further attempts."""
 
-    def __init__(self) -> None:
+    def __init__(self, zone_id: str | None = None) -> None:
         """Start with a closed circuit and zero recorded failures."""
+        self._zone_id = zone_id
         self._consecutive_failures: int = 0
         self._circuit_opened_at: float | None = None
         self._state: CircuitState = CircuitState.CLOSED
@@ -54,6 +55,9 @@ class WriteHealthTracker:
 
     def record_success(self) -> None:
         """Record a successful write; closes the circuit and clears the failure count."""
+        if self.state == CircuitState.OPEN:
+            # A late success inside the cooldown must not close the circuit.
+            return
         self._consecutive_failures = 0
         self._circuit_opened_at = None
         self._state = CircuitState.CLOSED
@@ -61,23 +65,32 @@ class WriteHealthTracker:
     def record_failure(self) -> None:
         """Record a failed write; opens the circuit at the threshold."""
         self._consecutive_failures += 1
-        if self._state == CircuitState.HALF_OPEN:
+        if self.state == CircuitState.HALF_OPEN:
             self._circuit_opened_at = time.monotonic()
             self._state = CircuitState.OPEN
             _LOGGER.debug(
-                "Write Health: probe write failed, re-opening circuit "
-                "(consecutive failures=%d)",
+                "Write Health: zone %s: the test HomeKit write failed, HomeKit writes "
+                "stay paused (consecutive failures: %d)",
+                self._zone_id,
                 self._consecutive_failures,
             )
         elif self._consecutive_failures >= WRITE_FAILURE_THRESHOLD:
             self._circuit_opened_at = time.monotonic()
             self._state = CircuitState.OPEN
             _LOGGER.warning(
-                "Write Health: HomeKit writes paused after %d consecutive "
-                "failures, falling back to cloud writes until the bridge "
-                "recovers",
+                "Write Health: zone %s: HomeKit writes paused after %d consecutive "
+                "failures, using the cloud instead and trying HomeKit again in "
+                "%d minutes",
+                self._zone_id,
                 self._consecutive_failures,
+                WRITE_CIRCUIT_OPEN_SECONDS // 60,
             )
+
+    def half_open(self) -> None:
+        """Let writes through again after a bridge reconnect while keeping the failure count, so a flapping bridge still reaches the threshold."""
+        if self.state == CircuitState.OPEN:
+            self._state = CircuitState.HALF_OPEN
+            _LOGGER.info("Write Health: zone %s: the bridge reconnected, HomeKit writes are tried again", self._zone_id)
 
     def reset(self) -> None:
         """Reset to a clean closed state (e.g. on bridge reconnect)."""

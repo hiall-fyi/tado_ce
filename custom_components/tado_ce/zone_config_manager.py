@@ -15,6 +15,7 @@ from .const import (
     WRITE_ROUTE_AUTO,
     WRITE_ROUTE_CLOUD,
 )
+from .helpers import normalise_timer_minutes
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -71,6 +72,10 @@ class ZoneConfigManager:
             if "temp_offset" in zone_cfg:
                 del zone_cfg["temp_offset"]
                 migrated = True
+            # `smart_comfort_mode` had no per-zone reader: strip on sight.
+            if "smart_comfort_mode" in zone_cfg:
+                del zone_cfg["smart_comfort_mode"]
+                migrated = True
             # `smart_valve_control` (bool) → `svc_mode` (str):
             # the new shape supports `valve_target` / `cycle` /
             # `off`, the old bool only covered on/off.
@@ -108,13 +113,6 @@ class ZoneConfigManager:
         if isinstance(ap, bool):
             merged["adaptive_preheat"] = "active" if ap else "off"
         return merged
-
-    def has_any_svc_active(self) -> bool:
-        """True when at least one zone has Smart Valve Control or Offset Sync enabled."""
-        return any(
-            cfg.get("svc_mode", "off") != "off"
-            for cfg in self._config.values()
-        )
 
     def has_zone_override(self, zone_id: str, key: str) -> bool:
         """True when the user has explicitly set this key (not merely inherited the default)."""
@@ -254,8 +252,8 @@ class ZoneConfigManager:
     def get_effective_timer_duration(self, zone_id: str, global_minutes: int | None) -> int:
         """Resolve the zone's timer minutes: explicit per-zone value, else the live hub setting."""
         if self.has_zone_override(zone_id, "timer_duration"):
-            return int(self.get_zone_value(zone_id, "timer_duration", TIMER_DURATION_DEFAULT))
-        return int(global_minutes or TIMER_DURATION_DEFAULT)
+            return normalise_timer_minutes(self.get_zone_value(zone_id, "timer_duration", TIMER_DURATION_DEFAULT))
+        return normalise_timer_minutes(global_minutes or TIMER_DURATION_DEFAULT)
 
     def get_window_u_value(self, zone_id: str, config_manager: ConfigurationManager) -> float:
         """Resolve the U-value (W/m²K) for the zone's effective window type."""
@@ -275,16 +273,6 @@ class ZoneConfigManager:
         if self.has_zone_override(zone_id, "max_temp"):
             return min(float(self.get_zone_value(zone_id, "max_temp", caps_max)), caps_max)
         return caps_max
-
-    def get_passive_detector_window_u_value(self, zone_id: str) -> float:
-        """Resolve the per-zone U-value for the passive open-window detector's threshold scaling.
-
-        Deliberately does NOT consult the global Window Type setting: that would let a
-        house-wide setting silently change detection sensitivity, an axis already ruled
-        orthogonal to this detector's U-value/threshold relationship.
-        """
-        window_type = self.get_zone_value(zone_id, "window_type", DEFAULT_WINDOW_TYPE)
-        return WINDOW_U_VALUES.get(window_type, WINDOW_U_VALUES[DEFAULT_WINDOW_TYPE])
 
     def get_surface_temp_offset(self, zone_id: str) -> float:
         """Return the user-set surface offset (°C) for mold-risk calibration."""

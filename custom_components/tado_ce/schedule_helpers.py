@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.util import dt as dt_util
@@ -46,13 +46,10 @@ def _get_day_blocks(blocks: dict[str, Any], schedule_type: str, weekday: int) ->
 
 
 def _resolve_current_time(current_time: datetime | None) -> datetime:
-    """Resolve current time, falling back to UTC if HA is unavailable."""
+    """Return the given time, else Home Assistant's local now."""
     if current_time is not None:
         return current_time
-    try:
-        return dt_util.now()
-    except (ValueError, TypeError):
-        return datetime.now(UTC)
+    return dt_util.now()
 
 
 def _find_current_block(
@@ -68,6 +65,31 @@ def _find_current_block(
         else:
             break
     return current_block
+
+
+def next_schedule_change(zone_id: str, data_loader: DataLoader | None, after: datetime) -> datetime | None:
+    """The first schedule block start after `after` within the next week, or None when the zone has no usable schedule."""
+    if data_loader is None:
+        return None
+    schedule = data_loader.get_zone_schedule(zone_id)
+    if not schedule:
+        return None
+    # A naive time is read as UTC rather than raising.
+    moment = dt_util.as_local(after if after.tzinfo is not None else after.replace(tzinfo=UTC))
+    blocks_dict: dict[str, Any] = schedule.get("blocks") or {}
+    schedule_type: str = schedule.get("type", "ONE_DAY")
+    for offset in range(8):
+        day = moment.date() + timedelta(days=offset)
+        for block in _get_day_blocks(blocks_dict, schedule_type, day.weekday()):
+            try:
+                hour, minute = (int(part) for part in str(block.get("start", "")).split(":")[:2])
+                start = datetime.combine(day, time(hour, minute), tzinfo=moment.tzinfo)
+            except ValueError:
+                # A block with an unreadable start cannot say when the schedule changes, so it is skipped.
+                continue
+            if start > moment:
+                return start
+    return None
 
 
 def _extract_block_celsius(block: dict[str, Any]) -> float | None:

@@ -1,8 +1,8 @@
 """Tado CE number platform: boiler max output temperature.
 
 Single optional entity, only created when bridge credentials are
-configured AND the bridge response actually carries the
-`boilerMaxOutputTemperatureInCelsius` field. OpenTherm-only:
+configured AND the bridge data carries the
+`boilerMaxOutputTemperatureInCelsius` field (wiring state or the bridge's own endpoint). OpenTherm-only:
 on/off boilers don't expose a max-output setting.
 """
 
@@ -45,7 +45,7 @@ async def async_setup_entry(
     entities = []
 
     # Bridge number entity (optional: only when bridge credentials configured
-    # AND enabled AND the bridge response actually contains the temperature field)
+    # AND enabled AND the bridge data carries the temperature field, merged by the fetch if needed)
     bridge_serial = entry.options.get("bridge_serial")
     bridge_auth_key = entry.options.get("bridge_auth_key")
     if bridge_serial and bridge_auth_key and coordinator.config_manager.get_bridge_enabled():
@@ -59,7 +59,7 @@ async def async_setup_entry(
         else:
             _LOGGER.debug(
                 "Number: bridge configured but boiler max output "
-                "temperature not in the response, boiler max temp "
+                "temperature not in the bridge data, boiler max temp "
                 "number entity not created (requires an OpenTherm "
                 "boiler)",
             )
@@ -126,7 +126,9 @@ class TadoBoilerMaxOutputTemperatureNumber(
         # Quantise to the bridge's 0.5°C step before reflecting back.
         # The bridge would round anyway, so showing the user's raw
         # request would briefly disagree with the next poll.
-        self._attr_native_value = round(value * 2) / 2
+        quantised = round(value * 2) / 2
+        self.coordinator.record_boiler_max_output(quantised)
+        self._attr_native_value = quantised
         self.async_write_ha_state()
 
     @callback

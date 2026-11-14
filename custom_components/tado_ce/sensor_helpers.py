@@ -6,6 +6,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from .calculations import calculate_surface_temperature
+from .helpers import parse_percentage, parse_temperature_celsius
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -37,13 +38,9 @@ def get_outdoor_temperature(hass: HomeAssistant, entity_id: str, use_feels_like:
                 temp = state.attributes.get("temperature")
 
             if temp is not None:
-                return float(temp)
+                return parse_temperature_celsius(temp, state.attributes.get("temperature_unit"))
         else:
-            return float(state.state)
-    except (ValueError, TypeError):
-        # State wasn't numeric (e.g. weather entity reporting a
-        # "snowy" condition string), silently fall through.
-        pass
+            return parse_temperature_celsius(state.state, state.attributes.get("unit_of_measurement"))
     except Exception as e:
         _LOGGER.debug(
             "Sensor Helpers: could not read outdoor temperature from "
@@ -67,7 +64,7 @@ def get_outdoor_humidity(hass: HomeAssistant, entity_id: str) -> float | None:
         if entity_id.startswith("weather."):
             humidity = state.attributes.get("humidity")
             if humidity is not None:
-                return float(humidity)
+                return parse_percentage(humidity)
 
         # For non-weather entities, try to find a companion humidity sensor
         # e.g., sensor.outdoor_temperature -> sensor.outdoor_humidity
@@ -75,10 +72,9 @@ def get_outdoor_humidity(hass: HomeAssistant, entity_id: str) -> float | None:
             humidity_entity = entity_id.lower().replace("temperature", "humidity")
             humidity_state = hass.states.get(humidity_entity)
             if humidity_state and humidity_state.state not in ("unknown", "unavailable"):
-                try:
-                    return float(humidity_state.state)
-                except (ValueError, TypeError):
-                    pass
+                companion = parse_percentage(humidity_state.state)
+                if companion is not None:
+                    return companion
 
     except Exception as e:
         _LOGGER.debug(

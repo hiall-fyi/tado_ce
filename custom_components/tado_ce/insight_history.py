@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 import logging
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.exceptions import HomeAssistantError
@@ -14,7 +13,6 @@ from homeassistant.util import dt as dt_util
 from .format_helpers import format_insight_type as _fmt_insight_type
 from .format_helpers import format_priority as _fmt_priority
 from .helpers import parse_iso_datetime
-from .storage import async_migrate_json_to_store
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -36,21 +34,16 @@ class InsightHistoryTracker:
     """Track insight appearance/disappearance for duration-aware messages and escalation."""
 
     def __init__(self, hass: HomeAssistant, home_id: str) -> None:
-        self._hass = hass
         self._home_id = home_id
         self._store: Store[dict[str, Any]] = Store(
             hass,
             1,
             f"tado_ce/insight_history_{home_id}",
         )
-        self._old_storage_path = Path(
-            hass.config.path(
-                f".storage/tado_ce/insight_history_{home_id}.json",
-            ),
-        )
         self._entries: dict[str, dict[str, Any]] = {}
         self._active_keys: set[str] = set()
         self._dirty = False
+        self._queued = False
 
     @property
     def needs_save(self) -> bool:
@@ -63,17 +56,9 @@ class InsightHistoryTracker:
         return self._entries
 
     async def async_load(self) -> int:
-        """Load history from Store, migrating the v3.x JSON file when present."""
+        """Load history from Store."""
         try:
             data: dict[str, Any] | list[Any] | None = await self._store.async_load()
-
-            # First-run / fresh-install path: try the legacy
-            # JSON before falling back to an empty history.
-            if data is None:
-                data = await async_migrate_json_to_store(
-                    self._hass, self._old_storage_path, self._store,
-                    label="insight_history",
-                )
 
             if data is None:
                 _LOGGER.debug(
@@ -119,6 +104,7 @@ class InsightHistoryTracker:
         try:
             self._store.async_delay_save(self._serialize, SAVE_DELAY_SECONDS)
             self._dirty = False
+            self._queued = True
             _LOGGER.debug(
                 "Insight History: queued debounced save: %d "
                 "entr(ies)",
@@ -133,6 +119,23 @@ class InsightHistoryTracker:
                 exc_info=True,
             )
             return False
+
+    async def async_flush(self) -> None:
+        """Write unsaved or queued history at once; a reload does not run HA's final write."""
+        if not (self._dirty or self._queued):
+            return
+        try:
+            await self._store.async_save(self._serialize())
+        except Exception:
+            # Broad: unload must still reach the remaining cleanup steps, and nothing can retry after it.
+            _LOGGER.warning(
+                "Insight History: could not write the history on unload, "
+                "recent changes may be lost",
+                exc_info=True,
+            )
+            return
+        self._dirty = False
+        self._queued = False
 
     def update(self, current_insights: list[Insight], now: datetime) -> None:
         """Update history with current poll cycle's insights."""

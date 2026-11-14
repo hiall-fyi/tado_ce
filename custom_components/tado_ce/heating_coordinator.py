@@ -52,6 +52,10 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
         self._zone_states: dict[str, dict[str, Any]] = {}
         self._lock = asyncio.Lock()
 
+    async def async_flush_storage(self) -> None:
+        """Write queued cycle history at once (unload / reload)."""
+        await self._storage.async_flush()
+
     async def _async_update_data(self) -> dict[str, Any]:
         """Return cached zone data: DataUpdateCoordinator hook (manual updates only)."""
         return self._zone_data
@@ -159,6 +163,19 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
         del self._zone_states[zone_id]
         _LOGGER.debug("Heating Cycle: zone %s has no room temperature, cleared its cached reading", zone_id)
         self.async_set_updated_data(self._zone_data)
+
+    async def async_forget_zone(self, zone_id: str) -> bool:
+        """Drop a zone's detector, cached readings, metrics and stored cycles; True when it held any."""
+        async with self._lock:
+            held = [
+                self._detectors.pop(zone_id, None) is not None,
+                self._zone_data.pop(zone_id, None) is not None,
+                self._zone_states.pop(zone_id, None) is not None,
+                self._storage.drop_zone(zone_id),
+            ]
+            if any(held):
+                self.async_set_updated_data(self._zone_data)
+        return any(held)
 
     async def check_timeouts(self) -> None:
         """Time out any active cycles whose completion criteria stalled."""

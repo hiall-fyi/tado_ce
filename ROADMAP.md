@@ -16,13 +16,14 @@ For completed features, see [CHANGELOG.md](CHANGELOG.md).
   - The dropdown options in Zone Configuration and the hub's Override duration follow your language
   - A new action shows the flow temperature setting Tado keeps for an OpenTherm system
   - Tado CE sets up again on Home Assistant before 2026.7, and timers shorter than 15 minutes go out as you set them
+- Beta: v5.0.0-beta.1 (2026-11-14), a pre-release you opt into. It needs Home Assistant 2026.11 or newer, and the [release notes](https://github.com/hiall-fyi/tado_ce/releases/tag/v5.0.0-beta.1) say what changed and how to install it
 - Supported versions: v4.1.0 and later
 
 ### Next Release
 
-- Next: v5.0.0, which reworks how Tado CE talks to Tado and to HomeKit and clears out the old compatibility code. It is in development with no release date, and a beta you can opt into comes first
+- Next: v5.0.0, which reworks how Tado CE talks to Tado and to HomeKit and clears out the old compatibility code. The first beta is out and there is no date for the stable release
 - After v4.6.0 there is no further v4.x release, except for a serious security problem or a problem that stops heating from working
-- Help wanted: if you have HomeKit connected, counts of how long Tado takes to show a change would help set the timings v5.0.0 depends on, see [Discussion #391](https://github.com/hiall-fyi/tado_ce/discussions/391)
+- Help wanted: if you have HomeKit connected, counts of how long Tado takes to show a change would help set the timings v5.0.0 depends on, and please post your file before you update to the beta because the counts start again at v5.0.0, see [Discussion #391](https://github.com/hiall-fyi/tado_ce/discussions/391)
 - Breaking changes: see [Breaking Changes](#breaking-changes-v500) below
 
 ### End of Life
@@ -54,11 +55,11 @@ v5.0.0 removes migration code for versions older than v4.1.0, so it will refuse 
 
 ## Breaking Changes (v5.0.0)
 
-### Requirement: Home Assistant 2026.8 or newer
+### Requirement: Home Assistant 2026.11 or newer
 
-**What breaks:** v5.0.0 asks for version 4.0.0 or later of the HomeKit library (`aiohomekit`) that it shares with Home Assistant's own HomeKit Controller. Home Assistant 2026.7 and older ship 3.2.20, so the integration will not load there.
+**What breaks:** v5.0.0 uses the new names Home Assistant 2026.11 gave the target temperature, current temperature and temperature unit of a climate entity (the old names stop working in 2027.11), and older versions don't know them. It also asks for version 4.0.0 or later of the HomeKit library (`aiohomekit`) that it shares with Home Assistant's own HomeKit Controller, and Home Assistant 2026.7 and older ship 3.2.20.
 
-**User impact:** None on Home Assistant 2026.8 or newer. HACS may still offer the download on an older Home Assistant (see v4.3.1), so don't count on it to stop you.
+**User impact:** None on Home Assistant 2026.11 or newer. HACS may still offer the download on an older Home Assistant (see v4.3.1), so don't count on it to stop you.
 
 **When:** v5.0.0 release
 
@@ -96,7 +97,7 @@ AC mode, swing, fan and timer changes all go through the cloud. A plain temperat
 
 ### Later — feature additions, no fixed release
 
-Wanted and well-specified, and the foundation it builds on (persistence, polling rework, HomeKit reliability) is already in place.
+Wanted and well-specified, and the foundation it builds on (persistence, polling rework, HomeKit reliability) is already in place. No release target yet.
 
 - **API resilience pass** — a review of every Tado endpoint the integration relies on, hardening how it degrades when any one of them is unavailable so a single Tado-side hiccup doesn't take entities down with it. Also settles a long-standing request: per-zone hysteresis / Acceptance Range and Minimum On/Off Time can't be exposed as entities because Tado serves them from a newer API the integration doesn't reach. They become a documentation note rather than a sensor.
 
@@ -107,10 +108,6 @@ Wanted and well-specified, and the foundation it builds on (persistence, polling
 - **Smart AC Control V3+ standalone HomeKit pairing** ([Discussion #271](https://github.com/hiall-fyi/tado_ce/discussions/271) - @MacrosorcH) — Smart AC Control units are autonomous WiFi devices, each with its own 8-digit HomeKit code, paired separately from the Internet Bridge. Tado CE only handles the bridge pairing today, so AC zones use the cloud path for every operation regardless of HomeKit configuration. Checked what owning that pairing would actually add: a paired unit's HomeKit characteristics cap out at temperature and on/off, the same ceiling Home Assistant's own HomeKit Device integration already gets, so native support wouldn't add fan, swing or mode control either. You can get local temperature and humidity readings today without it: pair the unit to Home Assistant's HomeKit Device integration, then bind its temperature and humidity entities under the AC zone's Options Flow, the same external-sensor binding a heating zone uses. Native per-unit pairing stays off the active roadmap, since it would save a setup step rather than add a capability, and it's still hardware I don't own to build or test against.
 - **AC cloud-path fixes still land from field reports.** The hardware gap above blocks *local* HomeKit control, but the cloud path AC uses today is maintained, and a user with the unit can drive a fix without me owning one. In v4.1.0, [#305](https://github.com/hiall-fyi/tado_ce/issues/305) (@stefanzweig1979) was exactly that: fan changes never reached older units because the integration sent the fan setting under the wrong field name (the plural `fanSpeeds` from the capability list, where the write payload wants the singular `fanSpeed`). A debug log plus a captured Tado web-app request confirmed the correct field, and the fix shipped. So a cloud-side AC issue with a clear repro is actionable; only the standalone local-control feature is hardware-blocked.
 
-
-#### Weather Compensation
-
-- **Exponential Heating Curve** ([#187](https://github.com/hiall-fyi/tado_ce/issues/187) - @driagi) — Non-linear heating curve for weather compensation, using a building thermal sensitivity coefficient (`k` factor). Better models real-world heat loss in well-insulated vs poorly-insulated buildings compared to the current linear approach. Would sit alongside the existing linear presets as an "Expert" option. A spec is starting now that heating season is approaching, so real-world validation can begin as soon as it's built.
 
 #### Infrastructure
 
@@ -135,22 +132,16 @@ v4.6.0 is the last planned v4.x release. Until v5.0.0 launches it is supported f
 
 A spring-clean release that drops backward-compat code accumulated through the v3.x and v4.x cycles. The cleanup is laser-focused on dead surface area, not behaviour change.
 
-**You will need v4.1.0 or later installed before you upgrade to v5.0.0, and if you are older than that, go through the current v4.x release first.** Two different numbers, so worth separating. v4.1.0 is the line v5.0.0 refuses to load below, because that is where the saved-settings format it reads begins. Any 4.1.0+ release updates your settings to that format, including the current one (v4.5.1), so there is no reason to pick an older one. Coming from v4.1.0 or later, there is nothing to do. v5.0.0 will not auto-migrate the v3.x option keys, entity unique_ids or storage layouts, because the code that handled those upgrades is removed in that release. The path through the current v4.x release stays open, so there is no rush to do it in one jump.
+**You need v4.1.0 or later installed before you upgrade to v5.0.0, and if you are older than that, go through any current v4.x release first.** v4.1.0 is the line v5.0.0 refuses to load below, because that is where the saved-settings format it reads begins. Any 4.1.0+ release updates your settings to that format, so there is no reason to pick an older one. Coming from v4.1.0 or later, there is nothing to do. v5.0.0 does not auto-migrate the v3.x option keys, entity unique_ids or storage layouts, because the code that handled those upgrades is removed in this release. The path through the current v4.x release stays open, so there is no need to do it in one jump.
 
-Note this is v5.0.0's rule, not this release's. v4.6.0 itself still accepts an entry from v3.0.0 onwards.
+Skipping that step now fails loudly rather than quietly. An entry too old to upgrade refuses to load and raises a repair notice telling you to install a v4.1.0+ release first, instead of loading with your settings silently reset to their defaults. Nothing is deleted or rewritten when it refuses, so going back to that release recovers the install. Note that v4.0.x counts as too old here even though it is a v4 release: its saved settings are one format behind v4.1.0's.
 
 Planned removals:
 
-- **Legacy option-key migration** — a couple of settings renamed across the v3.x / v4.x cycles are still read through a backward-compat fallback. v5.0.0 migrates them forward once at startup and drops the fallback.
 - **Entity-naming polish** — a doubled calendar slug and a couple of internal naming inconsistencies get a clean baseline. These change entity IDs, so they ride the breaking-change boundary with a migration step rather than stranding your existing entities.
-- **Hand-pinned entity IDs retired** — a couple of entities (the heating-circuit select, the Identify button) set their `entity_id` by hand to sidestep a Home Assistant 2026.6 quirk that doubles the slug when a zone device shares its area name (`select.lounge_lounge_heating_circuit`). Once Home Assistant fixes the doubling upstream, those hand-set IDs are dead weight that stops the naming following HA's own default; v5.0.0 drops them so entity naming is fully HA-native again, with a migration step since removing a pin changes the ID. Gated on the upstream fix actually landing, so it stays here until then.
-- **Boiler sensor internal IDs get tidied, entity IDs are left alone** — v4.1.4 renamed the boiler diagnostic sensors from "Bridge …" to "Boiler …" for their display names. Behind the scenes those sensors still label themselves with a mix of two older naming styles, and v5.0.0 settles that on one. This is invisible from the outside: nothing you write in an automation refers to that internal label. An earlier version of this entry said the `bridge_` **entity IDs** would be renamed to `boiler_`, and that was wrong. Home Assistant works out an entity ID once, when the entity is first created, from the name shown in your own language, and it's yours to change after that, so the integration neither sets it nor renames it. Your entity IDs stay exactly as they are, including any you renamed yourself, and if your entity ID and its display name read a little differently, that's cosmetic and stays.
-- **Hot-water tank capability reads its own store** — the v4.1.4 fix that lets temperature-controlled hot-water tanks switch to Heat reuses the same capability cache the AC zones already use, so it shipped without a new storage layer. It works fine as-is; the tidy-up is renaming that shared store and its helper so the name reflects that it now covers hot water too. Because the store is saved to disk, renaming it needs a one-time migration, which is why it rides this release rather than a patch.
+- **Hand-pinned entity IDs retired** — a couple of entities (the heating-circuit select, the Identify button) set their `entity_id` by hand to sidestep a Home Assistant 2026.6 quirk that doubles the slug when a zone device shares its area name (`select.lounge_lounge_heating_circuit`). Home Assistant made the doubling configurable in 2026.6 rather than fixing it outright, and the default still doubles, so the pins are still doing real work today. This stays on the list for whenever that changes, or for a decision to drop them anyway and accept the doubled slug on a fresh install.
 - **Climate AC + Heating share a base class** — the two climate entity files repeat nearly the same setup code; sharing a base saves a good chunk and moves the write path to async. Gated on a thorough test pass first, since the two paths are deliberately cloned today. This also unblocks a per-zone override-duration read and a tighter error guard that were parked in v4.1.0-beta.3.
-- **AC swing legacy input retired** — older automations can still call the pre-v4.1 unified `swing_mode` values via a compatibility shim (which logs a deprecation warning). It's removed at v5.0.0; update those automations to the per-axis swing services before then.
-- **Dead-code and translation-key cleanup** — v3.x migration branches that are unreachable once v5's minimum-upgrade-from-v4.x rule holds, plus a handful of inconsistently-named translation keys, get swept together at the breaking-change boundary.
-- **Download Diagnostics dropped** — the Settings → Download Diagnostics button (a config-and-state snapshot) is removed. In practice it hasn't earned its place: troubleshooting an issue always comes down to a debug log, which shows what happened over time, where the snapshot only shows one frozen moment and can't. The button also carried an ongoing privacy cost, needing a redaction list kept up to date so it never leaked a serial or token. Removing it takes that maintenance surface out. Nothing you script against changes and no automation breaks, the button simply won't be there; for any problem, a debug log is the thing to grab.
-- **Predicted Window sensor retired** — the `binary_sensor.*_window_predicted` sensor, which guesses an open window from how a room's temperature behaves, is removed together with its two events, `tado_ce_window_predicted` and `tado_ce_window_predicted_cleared`, and its per-zone sensitivity and mode settings. It only ever fed the display and insights, never a heating decision, and keeping its accuracy right took more tuning than it gave back. An automation triggered by either event stops firing without any error, so move it to Tado's own open-window detection, which stays. First announced in v4.3.0.
-- **Service-call consistency** — three older services use a plain entity field instead of the entity picker, and timer vs open-window durations read in different units. Aligned here with the old form kept working through a deprecation window, since changing them affects how you call the service from automations.
+- **Translation-key cleanup** — six error-message keys whose names never settled on one convention get renamed in step across the source and all seven languages. (The v3.x migration branches this bullet also used to name are already gone: `async_migrate_entry` has no version-stepping left, version 13 is both the floor and the current schema.) Those six keys are all still in use, so this is a rename, not a deletion. Nothing you see changes; the messages read the same.
+- **Service-call consistency** — three older services use a plain entity field instead of the entity picker. Separately, the two timer services take a `time_period` written as a clock value (`01:30:00`) while open-window mode takes a `duration` in seconds (`900`), so the same idea has two field names and two units depending on which service you call. Both are aligned here, with the old form kept working through a deprecation window, since changing them affects how you call the service from automations.
 
 No timeline yet.

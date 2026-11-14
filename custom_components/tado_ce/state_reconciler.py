@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 import logging
 from typing import TYPE_CHECKING, Any, Final
 
 from homeassistant.util import dt as dt_util
 
-from .const import HOMEKIT_STALENESS_THRESHOLD
+from .const import HOMEKIT_STALENESS_THRESHOLD, homekit_change_is_newer_than_fetch
 
 if TYPE_CHECKING:
     from .homekit_provider import HomeKitLocalProvider
@@ -28,6 +28,7 @@ class StateReconciler:
         """Initialise the reconciler with no local provider attached."""
         self._local_provider: HomeKitLocalProvider | None = None
         self._write_timestamps: dict[str, Any] = {}
+        self._write_counts: dict[str, int] = {}
         # Tracks the previous merge source per (zone, characteristic)
         # so we can log only on cloud→homekit / homekit→cloud
         # transitions instead of every poll.
@@ -46,38 +47,49 @@ class StateReconciler:
     def record_local_write(self, zone_id: str) -> None:
         """Stamp `zone_id` so cloud values are ignored until the window expires."""
         self._write_timestamps[zone_id] = dt_util.utcnow()
+        self._write_counts[zone_id] = self._write_counts.get(zone_id, 0) + 1
+
+    def write_count(self, zone_id: str) -> int:
+        """Return how many writes `record_local_write` has seen for `zone_id`, so a held resend can tell a newer write from any writer."""
+        return self._write_counts.get(zone_id, 0)
+
+    def last_write_stamp(self, zone_id: str) -> datetime | None:
+        """Return the time `record_local_write` last stamped `zone_id`, or None."""
+        return self._write_timestamps.get(zone_id)
+
+    def forget_zone(self, zone_id: str) -> bool:
+        """Drop a deleted zone's write stamp and merge-source transitions; True when it held any."""
+        held = self._write_timestamps.pop(zone_id, None) is not None
+        held = self._write_counts.pop(zone_id, None) is not None or held
+        for characteristic in ("temp", "humidity", "target_temp"):
+            held = self._prev_sources.pop(f"{zone_id}_{characteristic}", None) is not None or held
+        return held
 
     def _get_fresh_local_value(
         self,
         zone_id: str,
         getter: str,
-        freshness_mode: str = "observed",
     ) -> tuple[float | int | None, bool]:
-        """Read a value from the local provider and decide whether it is fresh.
-
-        `freshness_mode="observed"` keeps stable readings valid even
-        when the value hasn't changed (useful for room temperature).
-        `freshness_mode="changed"` rejects cache entries that haven't
-        seen a real value change within the threshold, needed for
-        event-driven signals like target temperature and mode where
-        a stale "no change" cache would mask a fresh user-set value.
-        """
+        """Read a value from the local provider and decide whether it was observed within the threshold."""
         if not self._local_provider or not self._local_provider.is_connected:
             return None, False
         method = getattr(self._local_provider, getter)
         result = method(zone_id)
         if not isinstance(result, tuple) or len(result) != 3:
             return None, False
-        value, changed_at, observed_at = result
+        value, _changed_at, observed_at = result
         if value is None:
             return None, False
-        reference = changed_at if freshness_mode == "changed" else observed_at
-        if reference is None:
+        if observed_at is None:
             return None, False
-        age = dt_util.utcnow() - reference
+        age = dt_util.utcnow() - observed_at
         if age >= HOMEKIT_STALENESS_THRESHOLD:
             return None, False
         return value, True
+
+    def last_source(self, zone_id: str, characteristic: str) -> str | None:
+        """Return the source the last merge reported for `temp`, `humidity` or `target_temp`, or None."""
+        return self._prev_sources.get(f"{zone_id}_{characteristic}")
 
     def _log_source_transition(
         self,
@@ -85,15 +97,16 @@ class StateReconciler:
         characteristic: str,
         new_source: str,
         value: float | int | None,
+        detail: str = "",
     ) -> None:
         """Log only when the merge source for a zone characteristic changes."""
         key = f"{zone_id}_{characteristic}"
         prev_source = self._prev_sources.get(key)
         if prev_source != new_source:
             _LOGGER.debug(
-                "State Reconciler: zone %s %s source %s → %s (value=%s)",
+                "State Reconciler: zone %s %s source %s → %s (value=%s)%s",
                 zone_id, characteristic,
-                prev_source or "none", new_source, value,
+                prev_source or "none", new_source, value, f" {detail}" if detail else "",
             )
             self._prev_sources[key] = new_source
 
@@ -168,50 +181,41 @@ class StateReconciler:
         self._log_source_transition(zone_id, "humidity", "cloud", None)
         return None, "cloud"
 
-    def merge_zone_target_temperature(
+    def resolve_zone_target(
         self,
         zone_id: str,
-        cloud_value: float | None,
         *,
+        cloud_celsius: float | None,
+        zone_power: str | None,
+        lag_seconds: float,
+        fetch_epoch: datetime | None,
         display_source: str = "auto",
     ) -> tuple[float | None, str]:
-        """Return the merged target temperature and its source name.
-
-        Priority: HomeKit (when fresh and outside the write-protection
-        window) > cloud. During write protection the caller's value is
-        authoritative because the HomeKit bridge can still report a
-        pre-write target value.
-
-        `cloud_value` is whatever the caller holds right now, which is only
-        cloud-derived once a poll has landed: both climate entities pass
-        their own `_attr_target_temperature`, so inside an optimistic
-        window it is the value the user just asked for and nothing has yet
-        confirmed. That is why the write-protection branch reports
-        "local-write" rather than "cloud": a source name is a diagnostic
-        claim, and calling an unconfirmed local value "cloud" reads as
-        confirmation from Tado that no code here has obtained.
-
-        display_source="cloud" forces the cloud target (after the write-
-        protection check), mirroring merge_zone_temperature's display path;
-        "homekit"/"auto" keep HomeKit-fresh first.
-        """
+        """Return the target temperature to show and its source, from explicit inputs only."""
+        # Write protection first: the bridge can still echo the pre-write target.
         if self.is_local_write_protected(zone_id):
-            self._log_source_transition(zone_id, "target_temp", "local-write", cloud_value)
-            return cloud_value, "local-write"
+            self._log_source_transition(zone_id, "target_temp", "local-write", cloud_celsius)
+            return cloud_celsius, "local-write"
 
         if display_source == "cloud":
-            self._log_source_transition(zone_id, "target_temp", "cloud", cloud_value)
-            return cloud_value, "cloud"
+            self._log_source_transition(zone_id, "target_temp", "cloud", cloud_celsius)
+            return cloud_celsius, "cloud"
 
-        local_val, is_fresh = self._get_fresh_local_value(
-            zone_id, "get_target_temperature", freshness_mode="changed",
-        )
-        if is_fresh and local_val is not None:
-            self._log_source_transition(zone_id, "target_temp", "homekit", local_val)
-            return local_val, "homekit"
+        # No is_connected clause: a cached HomeKit change newer than the fetch still beats the cloud.
+        if self._local_provider is not None and zone_power == "ON":
+            value, changed_at, observed_at = self._local_provider.get_target_temperature(zone_id)
+            if value is not None and homekit_change_is_newer_than_fetch(
+                changed_at, observed_at, fetch_epoch, lag_seconds,
+            ):
+                detail = (
+                    f"changed_at={changed_at} fetch_epoch={fetch_epoch}"
+                    if self.last_source(zone_id, "target_temp") != "homekit" else ""
+                )
+                self._log_source_transition(zone_id, "target_temp", "homekit", value, detail)
+                return value, "homekit"
 
-        self._log_source_transition(zone_id, "target_temp", "cloud", cloud_value)
-        return cloud_value, "cloud"
+        self._log_source_transition(zone_id, "target_temp", "cloud", cloud_celsius)
+        return cloud_celsius, "cloud"
 
     def is_local_write_protected(self, zone_id: str) -> bool:
         """Return True while a recent local write protects this zone's value.
@@ -226,7 +230,6 @@ class StateReconciler:
             return False
         age = dt_util.utcnow() - last_write
         if age >= WRITE_PROTECTION_WINDOW:
-            del self._write_timestamps[zone_id]
             return False
         _LOGGER.debug(
             "State Reconciler: zone %s write protection active "

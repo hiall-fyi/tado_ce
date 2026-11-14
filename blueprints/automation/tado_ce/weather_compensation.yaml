@@ -15,7 +15,7 @@ blueprint:
     `flow_temp = max_flow - slope × (outdoor_temp - design_outdoor_temp)`
 
 
-    Clamped to the min/max flow temperature range (default 25–65°C).
+    Clamped to the min/max flow temperature range (default 30–65°C).
 
 
     **Requirements:**
@@ -110,11 +110,11 @@ blueprint:
           name: Maximum Flow Temperature (°C)
           description: >
             The highest flow temperature the boiler should use (at design
-            outdoor temperature). Must be within your boiler's range (25–80°C).
+            outdoor temperature). Must be within your boiler's range (30–80°C).
           default: 65
           selector:
             number:
-              min: 25
+              min: 30
               max: 80
               step: 0.5
               unit_of_measurement: "°C"
@@ -125,10 +125,10 @@ blueprint:
           description: >
             The lowest flow temperature the boiler should use (warm weather).
             Below this, the boiler won't reduce further.
-          default: 25
+          default: 30
           selector:
             number:
-              min: 25
+              min: 30
               max: 60
               step: 0.5
               unit_of_measurement: "°C"
@@ -201,14 +201,14 @@ actions:
       # When outdoor rises above design_temp → flow decreases
       raw_flow: >
         {% if outdoor_temp >= (shutoff_temp | float(18)) %}
-          {{ min_flow | float(25) }}
+          {{ min_flow | float(30) }}
         {% else %}
           {{ (max_flow | float(65)) - (slope | float(1.5)) * (outdoor_temp - (design_temp | float(-5))) }}
         {% endif %}
       # Clamp to min/max range and snap to nearest 1.0°C
       target_flow: >
         {% set val = raw_flow | float %}
-        {% set lo = min_flow | float(25) %}
+        {% set lo = min_flow | float(30) %}
         {% set hi = max_flow | float(65) %}
         {% set clamped = [lo, [val, hi] | min] | max %}
         {{ clamped | round(0) | int }}

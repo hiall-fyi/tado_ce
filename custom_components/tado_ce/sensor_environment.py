@@ -9,7 +9,7 @@ from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorStateClass,
 )
-from homeassistant.const import UnitOfTemperature
+from homeassistant.const import UnitOfDensity, UnitOfTemperature
 from homeassistant.core import callback
 from homeassistant.util import dt as dt_util
 
@@ -64,6 +64,7 @@ from .sensor_helpers import get_effective_temperature as _get_effective_temp
 from .sensor_helpers import get_outdoor_humidity as _get_outdoor_humidity
 from .sensor_helpers import get_outdoor_temperature as _get_outdoor_temp
 from .sensor_zone import TadoZoneSensor
+from .zone_signals import owes_held_on
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -72,9 +73,6 @@ if TYPE_CHECKING:
     from .coordinator import TadoDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
-
-# Plain string: Home Assistant only gained UnitOfDensity in 2026.7 and we support older releases.
-_ABSOLUTE_HUMIDITY_UNIT = "g/m³"
 
 
 def _classify_comfort_deviation(deviation: float) -> str:
@@ -148,7 +146,6 @@ class TadoMoldRiskSensor(TadoZoneSensor):
         _meta = ENTITY_REGISTRY["sensor_mold_risk"]
         self._attr_translation_key = _meta.translation_key
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
-        self._attr_icon = _meta.icon
         self._attr_entity_category = get_entity_category(_meta)
 
         # Attributes
@@ -384,7 +381,6 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
         _meta = ENTITY_REGISTRY["sensor_condensation_risk"]
         self._attr_translation_key = _meta.translation_key
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
-        self._attr_icon = _meta.icon
         self._attr_entity_category = get_entity_category(_meta)
 
         # Common attributes
@@ -844,7 +840,7 @@ class TadoAbsoluteHumiditySensor(TadoZoneSensor):
         self._attr_icon = _meta.icon
         self._attr_entity_category = get_entity_category(_meta)
         self._attr_device_class = SensorDeviceClass.ABSOLUTE_HUMIDITY
-        self._attr_native_unit_of_measurement = _ABSOLUTE_HUMIDITY_UNIT
+        self._attr_native_unit_of_measurement = UnitOfDensity.GRAMS_PER_CUBIC_METER
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_suggested_display_precision = 1
 
@@ -916,7 +912,6 @@ class TadoComfortLevelSensor(TadoZoneSensor):
         _meta = ENTITY_REGISTRY["sensor_comfort_level"]
         self._attr_translation_key = _meta.translation_key
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
-        self._attr_icon = _meta.icon
         self._attr_entity_category = get_entity_category(_meta)
 
         # Attributes
@@ -979,7 +974,8 @@ class TadoComfortLevelSensor(TadoZoneSensor):
         setting = zone_state.get("setting") or {}
         power = setting.get("power")
         overlay_type = zone_state.get("overlayType")
-        if power == "ON":
+        # Tado still shows the room off, but our own held switch-on is newer than that data.
+        if power == "ON" or owes_held_on(self.coordinator, self._zone_id):
             return "heat" if overlay_type == "MANUAL" else "auto"
         if overlay_type == "MANUAL":
             return "off"

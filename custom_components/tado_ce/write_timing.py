@@ -11,7 +11,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .data_loader import STORE_VERSION
-from .optimistic_helpers import ROUTE_AT_STAMP_ATTR
+from .zone_signals import fresher_than
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -22,9 +22,9 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 STORE_NAME: Final = "write_timing"
-SCHEMA_VERSION: Final = 1
+# 2: 5.0.0 counts HomeKit judgings by the ledger's rules, so a 4.6.0 (schema 1) table is not mixed in.
+SCHEMA_VERSION: Final = 2
 COUNT_CAP: Final = 10000
-MAX_DAYS: Final = 365
 
 ROUTES: Final = ("homekit", "cloud")
 ZONE_KINDS: Final = ("heating", "ac", "hot_water")
@@ -42,7 +42,6 @@ _BUCKET_BOUNDS: Final = (
 )
 _LAST_BUCKET: Final = "180+"
 AGE_BUCKETS: Final = (*(label for _, label in _BUCKET_BOUNDS), _LAST_BUCKET)
-_UNSET: Final = object()
 
 Counts = dict[str, dict[str, dict[str, dict[str, int]]]]
 
@@ -55,10 +54,18 @@ def age_bucket(age_seconds: float) -> str:
     return _LAST_BUCKET
 
 
+def _day_start() -> float:
+    """Return the start of today (UTC) as a timestamp, so the file never holds the time of one change."""
+    now = time.time()
+    return now - now % 86400
+
+
 async def async_remove_saved_counts(hass: HomeAssistant, home_id: str | None) -> None:
     """Delete this home's saved write timing counters, and nothing else."""
     if home_id:
-        await Store(hass, STORE_VERSION, f"tado_ce/{STORE_NAME}_{home_id}").async_remove()
+        # Named here as a literal so the store-cleanup scan of the removal path sees it.
+        store_name = "write_timing"
+        await Store(hass, STORE_VERSION, f"tado_ce/{store_name}_{home_id}").async_remove()
 
 
 class WriteTimingRecorder:
@@ -101,7 +108,7 @@ class WriteTimingRecorder:
                 return
             self._adopt(await loader.async_load_auxiliary(STORE_NAME))
             if self._started_at is None:
-                self._started_at = time.time()
+                self._started_at = _day_start()
         except Exception:
             # Setup calls this bare: a store of an unexpected shape or any read error must never fail setup, so start empty.
             self._forget()
@@ -175,20 +182,17 @@ class WriteTimingRecorder:
         cell = self._counts.setdefault(route, {}).setdefault(kind, {}).setdefault(bucket, {})
         cell[outcome] = min(cell.get(outcome, 0) + 1, COUNT_CAP)
         if self._started_at is None:
-            self._started_at = time.time()
+            self._started_at = _day_start()
         self._save()
 
     @staticmethod
     def _route_of(entity: object) -> str | None:
-        """Return homekit or cloud, or None when this write never set its own route."""
+        """Return homekit or cloud, or None when the entity has no route."""
+        fixed = getattr(entity, "_write_timing_fixed_route", None)
+        if fixed in ROUTES:
+            return str(fixed)
         route = getattr(entity, "_last_write_source", None)
-        if route not in ROUTES:
-            return None
-        stamped = getattr(entity, ROUTE_AT_STAMP_ATTR, _UNSET)
-        # Unchanged since the write was stamped and not cloud: a homekit route left by an earlier write.
-        if stamped is not _UNSET and route == stamped and route != "cloud":
-            return None
-        return str(route)
+        return str(route) if route in ROUTES else None
 
     @staticmethod
     def _newer_fetch(entity: object) -> datetime | None:
@@ -198,7 +202,7 @@ class WriteTimingRecorder:
         if written is None or coordinator is None:
             return None
         current = coordinator.last_zone_fetch_ts()
-        if not isinstance(current, datetime) or not current > written:
+        if not isinstance(current, datetime) or not fresher_than(current, written):
             return None
         return current
 
@@ -215,21 +219,6 @@ class WriteTimingRecorder:
             # A storage failure keeps the in-memory counters running.
             self._warn_once("save", "Write Timing: could not save the counters, keeping them in memory")
             _LOGGER.debug("Write Timing: save failure detail", exc_info=True)
-
-    def diagnostics(self, integration_version: str, ha_version: str) -> dict[str, Any]:
-        """Return the diagnostics value: only `{"enabled": False}` when off, else the approved field list."""
-        if not self.is_enabled():
-            return {"enabled": False}
-        days = 0
-        if self._started_at is not None:
-            days = max(0, min(MAX_DAYS, int((time.time() - self._started_at) // 86400)))
-        return {
-            "schema": SCHEMA_VERSION,
-            "integration_version": integration_version,
-            "ha_version": ha_version,
-            "collecting_since_days": days,
-            "counts": self._snapshot(),
-        }
 
     def _snapshot(self) -> dict[str, Any]:
         """Return the full fixed table in fixed order, zeros included, so neither shape nor order says what happened first."""

@@ -57,7 +57,6 @@ class TadoScheduleDeviationSensor(TadoZoneSensor):
         self._attr_translation_key = _meta.translation_key
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         self._attr_native_unit_of_measurement = "°C"
-        self._attr_icon = _meta.icon
         self._attr_entity_category = get_entity_category(_meta)
         self._attr_state_class = SensorStateClass.MEASUREMENT
 
@@ -255,7 +254,6 @@ class TadoNextScheduleTempSensor(TadoZoneSensor):
         self._attr_translation_key = _meta.translation_key
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         # No unit_of_measurement so we can show "OFF" as state
-        self._attr_icon = _meta.icon
         self._attr_entity_category = get_entity_category(_meta)
 
         # Attributes
@@ -362,7 +360,6 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
         _meta = ENTITY_REGISTRY["sensor_preheat_advisor"]
         self._attr_translation_key = _meta.translation_key
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
-        self._attr_icon = _meta.icon
         self._attr_entity_category = get_entity_category(_meta)
 
         # Attributes
@@ -826,7 +823,6 @@ class TadoSmartComfortTargetSensor(TadoZoneSensor):
         self._attr_translation_key = _meta.translation_key
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         self._attr_native_unit_of_measurement = "°C"
-        self._attr_icon = _meta.icon
         self._attr_entity_category = get_entity_category(_meta)
         self._attr_state_class = SensorStateClass.MEASUREMENT
 

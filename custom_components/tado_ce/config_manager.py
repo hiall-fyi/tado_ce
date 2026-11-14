@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from .bridge_api import MIN_FLOW_TEMP
 from .const import MAX_CUSTOM_INTERVAL
 from .helpers import normalise_timer_minutes
 
@@ -38,10 +39,9 @@ MIN_REFRESH_DEBOUNCE_SECONDS: int = 1
 MAX_REFRESH_DEBOUNCE_SECONDS: int = 60
 DEFAULT_SCHEDULE_CALENDAR_ENABLED = False  # Schedule Calendar (opt-in)
 DEFAULT_SMART_COMFORT_ENABLED = False  # Smart Comfort analytics (opt-in)
-DEFAULT_WRITE_TIMING_ENABLED = False  # Write timing counters in Download Diagnostics (opt-in)
+DEFAULT_WRITE_TIMING_ENABLED = False  # Write timing counters (opt-in)
 DEFAULT_OUTDOOR_TEMP_ENTITY = ""  # Outdoor temperature entity for weather compensation
 DEFAULT_BOILER_FLOW_TEMP_ENTITY = ""  # External boiler flow-temp entity for bridgeless homes
-DEFAULT_WEATHER_COMPENSATION = "none"  # Weather compensation preset
 DEFAULT_USE_FEELS_LIKE = False  # Use feels-like temperature instead of actual
 DEFAULT_SMART_COMFORT_HISTORY_DAYS = 7  # Days of temperature history to keep for rate calculation
 DEFAULT_MOLD_RISK_WINDOW_TYPE = "double_pane"  # Window type for mold risk surface temperature calculation
@@ -266,14 +266,6 @@ class ConfigurationManager:
             "boiler_flow_temp_entity", DEFAULT_BOILER_FLOW_TEMP_ENTITY,
         )
 
-    def get_smart_comfort_mode(self) -> str:
-        """Get the Smart Comfort mode preset ('none' / 'light' / 'moderate' / 'aggressive')."""
-        # Check new key first, fallback to legacy weather_compensation for backward compatibility
-        return self._get_option(  # type: ignore[no-any-return]
-            "smart_comfort_mode",
-            self._get_option("weather_compensation", DEFAULT_WEATHER_COMPENSATION),
-        )
-
     def get_use_feels_like(self) -> bool:
         """Check if feels-like (apparent) temperature should be used for weather compensation."""
         return self._get_option("use_feels_like", DEFAULT_USE_FEELS_LIKE)  # type: ignore[no-any-return]
@@ -347,13 +339,31 @@ class ConfigurationManager:
         """Get the design outdoor temperature in °C (-30 to 10, default -5)."""
         return self._get_float_option("wc_design_outdoor_temp", -5.0, -30.0, 10.0)
 
+    def get_wc_curve_shape(self) -> str:
+        """Get the heating curve shape ('linear' / 'exponential', default 'linear')."""
+        shape = self._get_option("wc_curve_shape", "linear")
+        if shape in ("linear", "exponential"):
+            return shape  # type: ignore[no-any-return]
+        return "linear"
+
+    def get_wc_curve_k(self) -> float:
+        """Get the exponential curve bend (0.005-0.10, default 0.02)."""
+        return self._get_float_option("wc_curve_k", 0.02, 0.005, 0.10)
+
+    def _get_flow_limit_option(self, key: str, default: float, max_val: float) -> float:
+        """Read a flow limit option, raising a stored number below the bridge floor to the floor."""
+        value = self._get_option(key, default)
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and value < MIN_FLOW_TEMP:
+            return MIN_FLOW_TEMP
+        return self._get_float_option(key, default, MIN_FLOW_TEMP, max_val)
+
     def get_wc_max_flow_temp(self) -> float:
-        """Get the maximum flow temperature in °C (25-80, default 65)."""
-        return self._get_float_option("wc_max_flow_temp", 65.0, 25.0, 80.0)
+        """Get the maximum flow temperature in °C (30-80, default 65; below 30 reads as 30)."""
+        return self._get_flow_limit_option("wc_max_flow_temp", 65.0, 80.0)
 
     def get_wc_min_flow_temp(self) -> float:
-        """Get the minimum flow temperature in °C (25-60, default 25)."""
-        return self._get_float_option("wc_min_flow_temp", 25.0, 25.0, 60.0)
+        """Get the minimum flow temperature in °C (30-60, default 30; below 30 reads as 30)."""
+        return self._get_flow_limit_option("wc_min_flow_temp", 30.0, 60.0)
 
     def get_wc_shutoff_temp(self) -> float:
         """Get the heating shutoff outdoor temperature in °C (5-30, default 18)."""

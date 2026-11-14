@@ -1,10 +1,9 @@
-"""Tado CE heating-cycle storage: per-home cycle history in HA Store with one-shot migration from v3.x JSON file."""
+"""Tado CE heating-cycle storage: per-home cycle history in HA Store."""
 
 from __future__ import annotations
 
 from datetime import timedelta
 import logging
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.exceptions import HomeAssistantError
@@ -13,7 +12,6 @@ from homeassistant.util import dt as dt_util
 
 from .heating_models import HeatingCycle
 from .helpers import parse_iso_datetime
-from .storage import async_migrate_json_to_store
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -25,26 +23,36 @@ SAVE_DELAY = 15
 
 
 class HeatingCycleStorage:
-    """Persist heating cycles to HA Store with debounced writes and migration."""
+    """Persist heating cycles to HA Store with debounced writes."""
 
     def __init__(self, hass: HomeAssistant, home_id: str) -> None:
-        self._hass = hass
         self._home_id = home_id
         self._store: Store[dict[str, Any]] = Store(
             hass,
             STORE_VERSION,
             f"tado_ce/heating_cycles_{home_id}",
         )
-        # Old file path for migration
-        self._old_storage_path = Path(
-            hass.config.path(
-                f".storage/tado_ce/heating_cycle_history_{home_id}.json",
-            ),
-        )
         self._data: dict[str, Any] = {"zones": {}}
+        self._pending = False
+
+    async def async_flush(self) -> None:
+        """Write queued cycles at once; a reload does not run HA's final write."""
+        if not self._pending:
+            return
+        try:
+            await self._store.async_save(self._data)
+        except Exception:
+            # Broad: unload must still reach the remaining cleanup steps, and nothing can retry after it.
+            _LOGGER.warning(
+                "Heating Storage: could not write the cycle history, "
+                "recent cycles may be lost",
+                exc_info=True,
+            )
+            return
+        self._pending = False
 
     async def async_load(self) -> None:
-        """Load cycle history from Store, migrating from the v3.x JSON file when needed."""
+        """Load cycle history from Store."""
         from .helpers import mask_home_id
 
         try:
@@ -57,15 +65,6 @@ class HeatingCycleStorage:
                     mask_home_id(self._home_id),
                     len(self._data.get("zones", {})),
                 )
-                return
-
-            migrated = await async_migrate_json_to_store(
-                self._hass, self._old_storage_path, self._store,
-                label="heating_cycles",
-            )
-            if migrated is not None and isinstance(migrated, dict):
-                migrated.pop("version", None)
-                self._data = self._migrate_data_format(migrated)
                 return
 
             _LOGGER.debug(
@@ -122,6 +121,15 @@ class HeatingCycleStorage:
     def _schedule_save(self) -> None:
         """Schedule a debounced save to Store."""
         self._store.async_delay_save(lambda: self._data, SAVE_DELAY)
+        self._pending = True
+
+    def drop_zone(self, zone_id: str) -> bool:
+        """Forget a zone's stored cycles and queue the save; True when it held any."""
+        if zone_id not in self._data["zones"]:
+            return False
+        del self._data["zones"][zone_id]
+        self._schedule_save()
+        return True
 
     async def save_cycle(self, zone_id: str, cycle: HeatingCycle, *, window_days: int = 7) -> None:
         """Save completed cycle for a zone."""

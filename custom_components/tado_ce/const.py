@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 import os
 from pathlib import Path
 from typing import Any, Final
@@ -31,51 +31,6 @@ BRIDGE_POLL_INTERVAL_SECONDS: Final[float] = 60.0
 _BASE_CONFIG_DIR = os.environ.get("TADO_CE_CONFIG_DIR", "/config")
 DATA_DIR = Path(_BASE_CONFIG_DIR) / ".storage" / "tado_ce"
 
-# Multi-home support - per-home data files
-# Files that are per-home (need home_id suffix)
-PER_HOME_FILES = [
-    "config",
-    "zones",
-    "zones_info",
-    "ratelimit",
-    "weather",
-    "mobile_devices",
-    "home_state",
-    "api_call_history",
-    "offsets",
-    "ac_capabilities",
-    "schedules",
-    "homekit_pairing",
-    "homekit_device_map",
-]
-
-
-def get_data_file(base_name: str, home_id: str | None = None) -> Path:
-    """Get data file path, with optional home_id suffix for multi-home support.
-
-    Args:
-        base_name: Base filename without extension (e.g., "zones", "config")
-        home_id: Optional home ID for per-home files
-
-    Returns:
-        Path to the data file
-
-    Examples:
-        get_data_file("zones") -> /config/.storage/tado_ce/zones.json
-        get_data_file("zones", "12345") -> /config/.storage/tado_ce/zones_12345.json
-
-    """
-    if home_id and base_name in PER_HOME_FILES:
-        return DATA_DIR / f"{base_name}_{home_id}.json"
-    return DATA_DIR / f"{base_name}.json"
-
-
-# Global file paths (non-home-scoped, used for bootstrap and debugging)
-# Per-home files should use get_data_file() with home_id
-CONFIG_FILE = DATA_DIR / "config.json"
-ZONES_FILE = DATA_DIR / "zones.json"
-ZONES_INFO_FILE = DATA_DIR / "zones_info.json"
-
 # Service names
 SERVICE_SET_CLIMATE_TIMER = "set_climate_timer"
 SERVICE_SET_SCHEDULE_TEMPERATURE = "set_schedule_temperature"
@@ -93,6 +48,26 @@ SERVICE_SET_OPEN_WINDOW_MODE = "set_open_window_mode"
 SERVICE_RESTORE_PREVIOUS_STATE = "restore_previous_state"
 SERVICE_TURN_OFF_ALL_ZONES = "turn_off_all_zones"
 SERVICE_REFRESH = "refresh"
+
+# Every registered service, in registration order; unload removes exactly these.
+SERVICE_NAMES: Final[tuple[str, ...]] = (
+    SERVICE_SET_CLIMATE_TIMER,
+    SERVICE_SET_SCHEDULE_TEMPERATURE,
+    SERVICE_SET_WATER_HEATER_TIMER,
+    SERVICE_RESUME_SCHEDULE,
+    SERVICE_TURN_OFF_ALL_ZONES,
+    SERVICE_SET_TEMP_OFFSET,
+    SERVICE_ADD_METER_READING,
+    SERVICE_REFRESH,
+    SERVICE_IDENTIFY_DEVICE,
+    SERVICE_SET_AWAY_CONFIG,
+    SERVICE_ACTIVATE_OPEN_WINDOW,
+    SERVICE_DEACTIVATE_OPEN_WINDOW,
+    SERVICE_SET_OPEN_WINDOW_MODE,
+    SERVICE_GET_TEMP_OFFSET,
+    SERVICE_RESTORE_PREVIOUS_STATE,
+    SERVICE_GET_FLOW_TEMPERATURE_SETTINGS,
+)
 
 # Fetch types forceable via tado_ce.refresh (single source: gate, service enum,
 # and request_forced_fetch all use these tokens).
@@ -115,22 +90,6 @@ API_ENDPOINT_DEVICES = f"{TADO_API_BASE}/devices"  # + /{serial}
 AUTH_ENDPOINT_DEVICE = f"{TADO_AUTH_URL}/device_authorize"
 AUTH_ENDPOINT_TOKEN = f"{TADO_AUTH_URL}/token"
 
-# =============================================================================
-# Weather Compensation & Smart Comfort Presets
-# =============================================================================
-
-# Weather compensation presets: (cold_threshold, cold_factor, warm_threshold, warm_factor)
-# - cold_threshold: Apply cold factor when outdoor temp is below this (°C)
-# - cold_factor: Multiplier for heating rate in cold weather (>1 = slower heating)
-# - warm_threshold: Apply warm factor when outdoor temp is above this (°C)
-# - warm_factor: Multiplier for heating rate in warm weather (<1 = faster heating)
-WEATHER_COMPENSATION_PRESETS = {
-    "none": (None, 1.0, None, 1.0),
-    "light": (5, 1.1, 15, 0.95),
-    "moderate": (5, 1.2, 10, 0.9),
-    "aggressive": (0, 1.4, 10, 0.8),
-}
-
 # Adaptive Smart Polling Constants
 # MIN_POLLING_INTERVAL is the adaptive floor: the fastest cadence the adaptive
 # math will ever pick on its own. It is deliberately tier-agnostic: zone
@@ -141,6 +100,10 @@ WEATHER_COMPENSATION_PRESETS = {
 MIN_POLLING_INTERVAL = 5  # minutes (uniform adaptive floor, see note above)
 DEFAULT_DAY_INTERVAL = 30  # minutes (default day polling interval)
 DEFAULT_NIGHT_INTERVAL = 120  # minutes (default night polling interval)
+RESET_CLAMP_SLACK_MINUTES = 2  # minutes past the predicted quota reset that a poll may land
+LATE_RESET_FLOOR_MINUTES = 15  # minutes, longest interval while a predicted reset has not arrived
+LATE_RESET_WINDOW_HOURS = 2  # hours after the predicted reset during which the late-reset floor applies
+SMART_VALVE_NIGHT_FLOOR_MINUTES = 30  # minutes, longest night cloud interval for entries with valve-target zones
 MAX_POLLING_INTERVAL = 120  # minutes (ensure reasonable updates even with low quota)
 MAX_CUSTOM_INTERVAL = 1440  # minutes (24 hours, maximum custom polling interval)
 POLLING_SAFETY_BUFFER = 0.90  # Reserve 10% quota for manual calls and unexpected usage
@@ -212,6 +175,36 @@ WEATHER_MIN_REFRESH_MINUTES = DEFAULT_WEATHER_MIN_REFRESH_MINUTES
 PRESENCE_MIN_REFRESH_MINUTES = DEFAULT_PRESENCE_MIN_REFRESH_MINUTES
 MOBILE_DEVICES_MIN_REFRESH_MINUTES = DEFAULT_MOBILE_DEVICES_MIN_REFRESH_MINUTES
 
+# Mechanism counter ids (Stage 0 measurement); counts under any other id are dropped.
+MECH_POLL_SKIP: Final[str] = "poll_skip"
+MECH_POLL_PAUSE: Final[str] = "poll_pause"
+MECH_HK_PUT_AGREE: Final[str] = "homekit_put_agree"
+MECH_HK_PUT_70402: Final[str] = "homekit_put_70402"
+MECH_PREHEAT_PUT: Final[str] = "preheat_put"
+MECH_SVC_CLOUD_WRITE: Final[str] = "svc_cloud_write"
+MECH_BRIDGE_API_CALL: Final[str] = "bridge_api_call"
+MECH_REFRESH_PROBE: Final[str] = "refresh_probe"
+MECHANISM_IDS: Final[frozenset[str]] = frozenset(
+    {
+        MECH_POLL_SKIP,
+        MECH_POLL_PAUSE,
+        MECH_HK_PUT_AGREE,
+        MECH_HK_PUT_70402,
+        MECH_PREHEAT_PUT,
+        MECH_SVC_CLOUD_WRITE,
+        MECH_BRIDGE_API_CALL,
+        MECH_REFRESH_PROBE,
+    }
+)
+# Old id -> current id; load() renames through it so a later rename keeps stored counts.
+MECHANISM_ID_MIGRATION: Final[dict[str, str]] = {}
+# Upper edges (minutes) of the data-age gauge buckets; anything above the last is gt_<last>.
+FRESHNESS_BUCKET_MINUTES: Final[tuple[int, ...]] = (5, 15, 30, 60, 120, 240)
+# Upper edges (seconds) for the put-to-agreeing-fetch histogram.
+PUT_AGREE_BUCKET_SECONDS: Final[tuple[int, ...]] = (20, 40, 60, 90, 120)
+# Outcomes: le_<edge>/gt_<last>, unagreed (no agreeing fetch within this many seconds, then dropped), superseded (replaced by a newer put).
+HOMEKIT_PUT_PENDING_MAX_SECONDS: Final[float] = 900.0
+
 # Canonical window type to U-value mapping (W/m²K). Single source of truth for all
 # mold risk calculations.
 WINDOW_U_VALUES = {
@@ -247,8 +240,6 @@ OVERLAY_MODE_MAP = {
     "Timer": OVERLAY_MODE_TIMER,
 }
 OVERLAY_MODE_REVERSE_MAP = {v: k for k, v in OVERLAY_MODE_MAP.items()}
-# Older select states that select.select_option calls in existing automations may still send.
-OVERLAY_MODE_LEGACY_LABELS = {**OVERLAY_MODE_MAP, "Manual": OVERLAY_MODE_MANUAL, "Tado Mode": OVERLAY_MODE_TADO_MODE}
 
 # Per-zone write route (Heating only): "auto" lets MANUAL writes go over HomeKit, "cloud" always uses the API.
 WRITE_ROUTE_AUTO = "auto"
@@ -262,10 +253,7 @@ DEFAULT_ZONE_CONFIG = {
     "heating_type": "radiator",  # radiator or ufh (Heating only)
     "ufh_buffer_minutes": 30,  # 0-60 minutes (Heating only, when UFH)
     "adaptive_preheat": "off",  # off / active / passive (Heating + AC)
-    "smart_comfort_mode": "none",  # none/light/moderate/aggressive (Heating + AC)
     "window_type": "double_pane",  # single_pane/double_pane/triple_pane/passive_house (Heating + AC)
-    "window_predicted_mode": "auto",  # active/passive/auto (Heating + AC)
-    "window_predicted_sensitivity": "medium",  # low/medium/high (Heating + AC)
     "external_temp_sensor": "",  # HA entity_id for external temperature sensor (Heating + AC)
     "external_humidity_sensor": "",  # HA entity_id for external humidity sensor (Heating + AC)
     "overlay_mode": OVERLAY_MODE_DEFAULT,
@@ -278,6 +266,10 @@ DEFAULT_ZONE_CONFIG = {
     "svc_mode": "off",  # off / valve_target / offset_sync (Heating only)
     "svc_offset_min_change": 0.5,  # 0.5-3.0°C, minimum offset change before writing (Offset Sync)
 }
+
+# Plausible Celsius range for an external temperature reading; anything outside is a bad sensor
+EXTERNAL_TEMPERATURE_MIN_C: Final = -60.0
+EXTERNAL_TEMPERATURE_MAX_C: Final = 130.0
 
 # Surface temperature offset limits (for mold risk calibration)
 SURFACE_TEMP_OFFSET_MIN = -5.0
@@ -313,22 +305,6 @@ WINDOW_TYPE_MAP = {
     "Passive House": "passive_house",
 }
 WINDOW_TYPE_REVERSE_MAP = {v: k for k, v in WINDOW_TYPE_MAP.items()}
-
-# Window predicted sensitivity options (for per-zone select)
-WINDOW_SENSITIVITY_OPTIONS = ["Low", "Medium", "High"]
-WINDOW_SENSITIVITY_MAP = {"Low": "low", "Medium": "medium", "High": "high"}
-WINDOW_SENSITIVITY_REVERSE_MAP = {v: k for k, v in WINDOW_SENSITIVITY_MAP.items()}
-WINDOW_SENSITIVITY_DEFAULT = "medium"
-
-# Window detection mode options (for per-zone select)
-WINDOW_DETECTION_MODE_OPTIONS = ["active", "passive", "auto"]
-WINDOW_DETECTION_MODE_MAP = {
-    "active": "active",
-    "passive": "passive",
-    "auto": "auto",
-}
-WINDOW_DETECTION_MODE_REVERSE_MAP = {v: k for k, v in WINDOW_DETECTION_MODE_MAP.items()}
-WINDOW_DETECTION_MODE_DEFAULT = "auto"
 
 # Device offset sanity bounds, reject values outside this range.
 # Tado's API rejects exactly -10.0 (real floor is -9.99); -9.9 keeps clear of
@@ -453,11 +429,63 @@ DEFAULT_HOMEKIT_CLOUD_SYNC_MINUTES: Final[int] = 30
 MIN_HOMEKIT_CLOUD_SYNC_MINUTES: Final[int] = 5
 MAX_HOMEKIT_CLOUD_SYNC_MINUTES: Final[int] = 120
 
+# Provisional: shortest gap between HomeKit-triggered forced zone fetches, until FetchPlan accounts for them.
+HOMEKIT_DROP_FETCH_MIN_GAP_SECONDS: Final[float] = 600.0
+
+# One catch-up cloud fetch this long after a start on the saved snapshot.
+COLD_START_RETRY_SECONDS: Final[float] = 60.0
+# A refused catch-up tries again after 2x then 4x the first delay, three attempts in total.
+COLD_START_RETRY_MAX_ATTEMPTS: Final[int] = 3
+
 # HomeKit write timeout, fallback to cloud if local write exceeds this
 HOMEKIT_WRITE_TIMEOUT_SECONDS: Final[float] = 3.0
 
-# Buffer added to optimistic window before cloud verification refresh
-CLOUD_VERIFICATION_BUFFER_SECONDS: Final[float] = 2.0
+# Puts each within this many seconds of the previous one form one burst
+HOMEKIT_BURST_GAP_SECONDS: Final[float] = 5.0
+
+# Cloud deviceType of the radiator valves (VA02) and wall thermostat (RU02) whose HomeKit target heating state means power; any other device in a zone keeps the cloud power
+HOMEKIT_POWER_DEVICE_TYPES: Final = frozenset({"VA02", "RU02"})
+
+# How long the Tado cloud takes to show a HomeKit put, before its poll can be trusted to confirm or refute it
+HOMEKIT_CLOUD_LAG_SECONDS: Final[float] = 90.0
+
+# Whether a HomeKit put of each kind schedules a verification fetch; setting a kind to False skips that fetch and leaves the regular poll to verify it
+VERIFY_FETCH_BY_KIND: Final[dict[str, bool]] = {
+    "temperature": True,
+    "power_on": True,
+    "power_off": True,
+    "resume": True,
+    "timer": True,
+    "mode": True,
+    "fan": True,
+    "swing": True,
+    "operation": True,
+}
+
+# True asks for one spaced zone fetch when a valve zone's target or power changes over HomeKit and the change is not ours; False leaves it to the regular poll
+DEMAND_FETCH_ON_FOREIGN_CHANGE: Final = False
+
+# Extra seconds after a HomeKit-originated OFF before a zone fetch may release the app-off hold; 0.0 keeps today's behaviour until the cloud lag is measured
+HOMEKIT_OFF_RELEASE_LAG_SECONDS: Final[float] = 0.0
+
+
+def homekit_change_is_newer_than_fetch(
+    changed_at: datetime | None,
+    observed_at: datetime | None,
+    fetch_epoch: datetime | None,
+    lag_seconds: float = 0.0,
+) -> bool:
+    """Return True when a HomeKit change is newer than the published cloud fetch, less the lag the cloud needs to show it."""
+    # No fetch published: any reading counts. A poll-seeded entry has no change time, so with a fetch it never counts.
+    if fetch_epoch is None:
+        return observed_at is not None
+    return changed_at is not None and changed_at > fetch_epoch - timedelta(seconds=lag_seconds)
+
+# After the lag, how long an unconfirmed HomeKit put may still be resent over the cloud
+HOMEKIT_EXPIRE_WINDOW_SECONDS: Final[float] = 120.0
+
+# Longest a zone fetch that follows a chained write is expected to run
+HOMEKIT_CHAINED_FETCH_MAX_SECONDS: Final[float] = 110.0
 
 # Write-side circuit breaker, skip HomeKit writes after consecutive failures
 WRITE_FAILURE_THRESHOLD: Final[int] = 3
@@ -465,6 +493,8 @@ WRITE_CIRCUIT_OPEN_SECONDS: Final[float] = 300.0  # 5 minutes cooldown
 
 # Cache refresh failure threshold, trigger reconnect after consecutive failures
 CACHE_REFRESH_FAILURE_THRESHOLD: Final[int] = 3
+# A read loop that keeps failing backs its reconnects off to one per this many seconds
+HOMEKIT_LOOP_RECONNECT_MIN_GAP_SECONDS: Final[float] = 3600.0
 
 # HomeKit mapping retry: stop retrying after this many polls with no newly
 # mapped zone (the remaining zones have no matching bridge accessory)
@@ -501,6 +531,10 @@ ZONES_INFO_FREE_TIER_THRESHOLD: Final[int] = 200
 
 CLIMATE_ZONE_TYPES: Final[frozenset[str]] = frozenset({"HEATING", "AIR_CONDITIONING"})
 
+CAPABILITY_ZONE_TYPES: Final[frozenset[str]] = frozenset(
+    {"AIR_CONDITIONING", "HOT_WATER"},
+)
+
 # Outdoor temperature history: 14 days × 24 hourly readings
 OUTDOOR_TEMP_HISTORY_MAX: Final = 336
 
@@ -520,9 +554,6 @@ SECONDS_PER_DAY: Final[int] = 86400
 # Insight escalation: days before an insight is considered long-standing
 INSIGHT_ESCALATION_DAYS: Final[int] = 14
 
-# Insight temperature reading throttle, minimum seconds between readings
-INSIGHT_READING_THROTTLE_SECONDS: Final[int] = 25
-
 # Comfort deviation thresholds (°C from comfort target)
 _COMFORT_FREEZING_THRESHOLD: Final[int] = -6
 _COMFORT_COLD_THRESHOLD: Final[int] = -4
@@ -540,9 +571,6 @@ _HUMIDITY_HUMID_THRESHOLD: Final[int] = 70  # %: above this is "Humid"
 # =============================================================================
 
 ENTITY_DATA_CONDENSATION_RISK: Final[str] = "condensation_risk"
-# Removed with Air Comfort (C2): still read by sensor_environment's Air Comfort
-# sensor until that batch; the window producer is already gone so it reads empty.
-ENTITY_DATA_WINDOW_PREDICTED: Final[str] = "window_predicted"
 ENTITY_DATA_PREHEAT_NOW: Final[str] = "preheat_now"
 ENTITY_DATA_PREHEAT_ADVISOR: Final[str] = "preheat_advisor"
 

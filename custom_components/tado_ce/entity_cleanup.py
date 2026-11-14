@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
+from .bridge_enrichment import bridge_cleanup_suffixes
 from .const import DOMAIN
 from .device_manager import _hub_identifier
 from .entity_registry import ENTITY_REGISTRY
@@ -43,7 +44,6 @@ class FeatureGroupContext:
     # The options-flow toggle that gates this group's entities, or None when
     # the group is always-on (no disable transition).
     toggle_option: str | None = None
-    match_mode: str = "suffix"  # "suffix" or "contains"
     platform_filter: str | None = None
     remove_device: str | None = None
     exclude_suffixes: tuple[str, ...] = ()
@@ -119,8 +119,7 @@ FEATURE_GROUP_CONTEXTS: tuple[FeatureGroupContext, ...] = (
         toggle_option="mobile_devices_enabled",
         feature_group="mobile_devices",
         label="Mobile Devices",
-        legacy_suffixes=("_device_",),
-        match_mode="contains",
+        legacy_suffixes=(),
         platform_filter="device_tracker",
     ),
     FeatureGroupContext(
@@ -128,9 +127,7 @@ FEATURE_GROUP_CONTEXTS: tuple[FeatureGroupContext, ...] = (
         # No toggle_option: bridge_enabled's real default isn't False, so it's handled separately below.
         feature_group="bridge",
         label="Bridge",
-        legacy_suffixes=("_bridge_", "_boiler_"),
-        match_mode="contains",
-        exclude_suffixes=("boiler_flow_temp",),
+        legacy_suffixes=(*sorted(bridge_cleanup_suffixes()), "bridge_{serial}"),
     ),
     FeatureGroupContext(
         cleanup_flag="_cleanup_weather_compensation",
@@ -206,11 +203,9 @@ def suffix_to_pattern(suffix: str) -> re.Pattern[str]:
 def match_entity_for_cleanup(
     unique_id: str,
     patterns: frozenset[re.Pattern[str]],
-    match_mode: str,
     platform_filter: str | None,
     entity_id: str,
     exclude_patterns: frozenset[re.Pattern[str]] | None,
-    contains_substrings: tuple[str, ...] = (),
 ) -> bool:
     """Determine whether an entity should be removed during cleanup (pure function)."""
     if not unique_id.startswith("tado_ce_"):
@@ -219,12 +214,6 @@ def match_entity_for_cleanup(
     if platform_filter and not entity_id.startswith(f"{platform_filter}."):
         return False
 
-    if match_mode == "contains":
-        if exclude_patterns and any(p.search(unique_id) for p in exclude_patterns):
-            return False
-        return any(sub in unique_id for sub in contains_substrings)
-
-    # suffix mode: check excludes first
     if exclude_patterns and any(p.search(unique_id) for p in exclude_patterns):
         return False
 
@@ -292,7 +281,7 @@ def cleanup_orphan_devices(
 
     removed = 0
     for device_entry in list(device_registry.devices):
-        if entry.entry_id not in device_entry.config_entries:
+        if device_entry.config_entry_id != entry.entry_id:
             continue
 
         if (DOMAIN, hub_identifier) in device_entry.identifiers:
@@ -430,11 +419,9 @@ def _apply_cleanup_context(
         if match_entity_for_cleanup(
             unique_id=unique_id,
             patterns=patterns,
-            match_mode=ctx.match_mode,
             platform_filter=ctx.platform_filter,
             entity_id=entity_id,
             exclude_patterns=exclude_patterns,
-            contains_substrings=ctx.legacy_suffixes if ctx.match_mode == "contains" else (),
         ):
             _LOGGER.debug(
                 "Entity Cleanup: removing entity %s (unique_id %s)",
@@ -483,7 +470,7 @@ def cleanup_disabled_feature_entities(
         if not domain_data.get(ctx.cleanup_flag, False):
             continue
 
-        _LOGGER.info(
+        _LOGGER.debug(
             "Entity Cleanup: %s disabled, removing matching entities",
             ctx.label,
         )

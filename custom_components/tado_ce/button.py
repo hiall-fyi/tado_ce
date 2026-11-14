@@ -2,26 +2,32 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.button import ButtonEntity
-from homeassistant.helpers import entity_registry as er
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import slugify
 
-from .const import DOMAIN
+from .climate_base import cancel_zone_tap, release_zone_hold
+from .const import CAPABILITY_ZONE_TYPES, DOMAIN
 from .coordinator import TadoDataUpdateCoordinator
 from .device_manager import get_device_name_suffix, get_hub_device_info, get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
+from .error_dispatch import dispatch_to_service_call
+from .exceptions import TadoAuthError, TadoBlockedError, TadoRateLimitError
 from .helpers import (
     async_trigger_immediate_refresh,
     get_zone_states,
     mask_serial,
     merge_homekit_into_zone_data,
+    zone_entity_id,
 )
 from .ratelimit import async_check_bootstrap_reserve_or_raise as _check_bootstrap_reserve_or_raise
 from .services import _find_entity_by_id
+from .zone_write_ledger import ordered_zone_write
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -59,10 +65,11 @@ async def async_setup_entry(
     # Add Resume All Schedules button (hub-level)
     buttons.append(TadoResumeAllSchedulesButton(coordinator, home_id))
 
-    # Add Refresh AC Capabilities button (hub-level) - only if there are AC zones
-    has_ac_zones = any(z.get("type") == "AIR_CONDITIONING" for z in (zones_info or []))
-    if has_ac_zones:
-        buttons.append(TadoRefreshACCapabilitiesButton(coordinator, home_id))
+    has_capability_zones = any(
+        z.get("type") in CAPABILITY_ZONE_TYPES for z in (zones_info or [])
+    )
+    if has_capability_zones:
+        buttons.append(TadoRefreshZoneCapabilitiesButton(coordinator, home_id))
 
     if zones_info:
         for zone in zones_info:
@@ -135,9 +142,7 @@ class TadoResumeAllSchedulesButton(CoordinatorEntity[TadoDataUpdateCoordinator],
         self._attr_icon = _meta.icon
 
     async def async_press(self) -> None:
-        """Delete every zone's overlay in sequence, then trigger an immediate refresh."""
-        await _check_bootstrap_reserve_or_raise(self.hass, "Immediate Refresh", coordinator=self.coordinator)
-
+        """Delete each zone's overlay, then refresh (a rate limit, sign-in or blocked refusal stops the run before the refresh)."""
         _LOGGER.debug("Button: Resume All Schedules pressed")
 
         client = self.coordinator.api_client
@@ -152,39 +157,80 @@ class TadoResumeAllSchedulesButton(CoordinatorEntity[TadoDataUpdateCoordinator],
 
         from .write_optimizer import ResumeGuard
 
-        success_count = 0
+        # Zones already on schedule send no call; the trailing refresh keeps the cost at one at least.
+        overlay_zones = sum(1 for z in zones_info if not ResumeGuard.should_skip_resume(self.coordinator, str(z.get("id"))))
+        await _check_bootstrap_reserve_or_raise(
+            self.hass, "Resume All Schedules", coordinator=self.coordinator, cost=max(overlay_zones, 1),
+        )
+
+        resumed_count = 0
+        on_schedule_count = 0
         fail_count = 0
 
         for zone in zones_info:
             zone_id = str(zone.get("id"))
             zone_name = zone.get("name", f"Zone {zone_id}")
 
+            # Read before the cancel below ends the entry: data from before the outage cannot show a change held since.
+            owed_before = self.coordinator.write_ledger.owes_change(zone_id) is True
+
+            # Before the on-schedule skip: a pending debounced write must not re-create an overlay.
+            cancel_zone_tap(self.hass, self.coordinator, zone_id)
+
             # Skip the cloud call for zones already on schedule (no overlay).
-            if ResumeGuard.should_skip_resume(self.coordinator, zone_id):
+            if ResumeGuard.should_skip_resume(self.coordinator, zone_id, owed_before=owed_before):
                 _LOGGER.debug(
                     "Button: %s (zone %s) already on schedule, skipping",
                     zone_name, zone_id,
                 )
-                success_count += 1
+                on_schedule_count += 1
                 continue
 
             try:
-                if await client.delete_zone_overlay(zone_id):
+                try:
+                    # Behind any earlier write to the zone, and bounded like every other writer so a hung call cannot hold the slot.
+                    async with ordered_zone_write(self.coordinator, zone_id):
+                        async with asyncio.timeout(10):
+                            deleted = await client.delete_zone_overlay(zone_id)
+                except TimeoutError:
+                    _LOGGER.warning(
+                        "Button: Resume All Schedules for %s timed out after 10s, "
+                        "checking with Tado whether it went through",
+                        zone_name,
+                    )
+                    self.coordinator.write_ledger.mark_unknown(zone_id)
+                    # Forced: the button is not a refresh-capable entity type, so an unforced request is dropped.
+                    await async_trigger_immediate_refresh(self.hass, self.entity_id, "write_unknown", force=True)
+                    fail_count += 1
+                    continue
+                if deleted:
+                    # Counts as a write to the zone, so a pending HomeKit write is dropped, not resent over the schedule.
+                    if self.coordinator.state_reconciler is not None:
+                        self.coordinator.state_reconciler.record_local_write(zone_id)
+                    # The schedule decides the power now, so an earlier own OFF no longer stands.
+                    self.coordinator.record_own_power_write(zone_id, powered_off=False)
+                    release_zone_hold(self.hass, self.coordinator, zone_id)
                     _LOGGER.debug(
                         "Button: resumed schedule for %s (zone %s)",
                         zone_name, zone_id,
                     )
-                    success_count += 1
+                    resumed_count += 1
                 else:
-                    # API returns False when no overlay exists, which
-                    # is the desired end state, count as success.
-                    _LOGGER.debug(
-                        "Button: %s (zone %s) had no overlay, "
-                        "schedule already active",
-                        zone_name, zone_id,
+                    _LOGGER.warning(
+                        "Button: Resume All Schedules failed for %s, "
+                        "the zone will need to be resumed manually",
+                        zone_name,
                     )
-                    success_count += 1
+                    fail_count += 1
+            except (TadoAuthError, TadoRateLimitError, TadoBlockedError) as err:
+                _LOGGER.warning(
+                    "Button: Resume All Schedules stopped at %s: %d resumed, "
+                    "the remaining zones were not tried",
+                    zone_name, resumed_count,
+                )
+                dispatch_to_service_call(err, self.coordinator.config_entry, self.hass, self.coordinator)
             except Exception:
+                # One zone failing must not stop the others; counted and reported below.
                 _LOGGER.warning(
                     "Button: Resume All Schedules failed for %s, "
                     "the zone will need to be resumed manually",
@@ -195,15 +241,22 @@ class TadoResumeAllSchedulesButton(CoordinatorEntity[TadoDataUpdateCoordinator],
 
         if fail_count == 0:
             _LOGGER.info(
-                "Button: Resume All Schedules complete: %d zone(s) "
-                "processed",
-                success_count,
+                "Button: Resume All Schedules complete: %d resumed, "
+                "%d already on schedule, 0 failed",
+                resumed_count, on_schedule_count,
             )
         else:
             _LOGGER.warning(
-                "Button: Resume All Schedules: %d succeeded, %d "
-                "failed",
-                success_count, fail_count,
+                "Button: Resume All Schedules: %d resumed, "
+                "%d already on schedule, %d failed",
+                resumed_count, on_schedule_count, fail_count,
+            )
+
+        # Zones already on schedule needed nothing, so they must not hide a total failure of the rest.
+        if fail_count > 0 and resumed_count == 0:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="cloud_write_failed",
             )
 
         await async_trigger_immediate_refresh(
@@ -215,19 +268,18 @@ class TadoResumeAllSchedulesButton(CoordinatorEntity[TadoDataUpdateCoordinator],
         )
 
 
-class TadoRefreshACCapabilitiesButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonEntity):
-    """Drop the cached AC capabilities and re-fetch from the cloud.
+class TadoRefreshZoneCapabilitiesButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonEntity):
+    """Drop the cached zone capabilities and re-fetch from the cloud.
 
-    Useful when a unit's reported fan / swing options change
-    (firmware bump, replaced AC), the cache normally only
-    refreshes on integration setup.
+    Useful after a hardware swap or firmware update changes what a unit
+    reports: the cache otherwise only refreshes on integration setup.
     """
 
     _attr_has_entity_name = True
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator, home_id: str) -> None:
         super().__init__(coordinator)
-        _meta = ENTITY_REGISTRY["button_refresh_ac"]
+        _meta = ENTITY_REGISTRY["button_refresh_zone_capabilities"]
         self._entry_id = coordinator.config_entry.entry_id
 
         self._attr_translation_key = _meta.translation_key
@@ -237,38 +289,45 @@ class TadoRefreshACCapabilitiesButton(CoordinatorEntity[TadoDataUpdateCoordinato
         self._attr_icon = _meta.icon
 
     async def async_press(self) -> None:
-        """Mark the `ac_capabilities` cache dirty and re-fetch from the cloud."""
-        _LOGGER.debug("Button: Refresh AC Capabilities pressed")
+        """Mark the `zone_capabilities` cache dirty and re-fetch from the cloud."""
+        _LOGGER.debug("Button: Refresh Zone Capabilities pressed")
 
-        self.coordinator.data_loader.mark_cache_dirty("ac_capabilities")
+        zones_info = self.coordinator.data_loader.get_cached("zones_info")
+        capability_zones = sum(
+            1 for z in (zones_info if isinstance(zones_info, list) else []) if z.get("type") in CAPABILITY_ZONE_TYPES
+        )
+        # Before the dirty mark, so a blocked press leaves the cached capabilities in place.
+        await _check_bootstrap_reserve_or_raise(
+            self.hass, "Refresh Zone Capabilities", coordinator=self.coordinator, cost=max(capability_zones, 1),
+        )
+
+        self.coordinator.data_loader.mark_cache_dirty("zone_capabilities")
 
         client = self.coordinator.api_client
-        zones_info = self.coordinator.data_loader.get_cached("zones_info")
 
         if not zones_info or not isinstance(zones_info, list):
             _LOGGER.warning(
-                "Button: Refresh AC Capabilities, no zones available "
+                "Button: Refresh Zone Capabilities, no zones available "
                 "yet, will retry after the next zone fetch",
             )
             return
 
         try:
-            await client._sync_ac_capabilities(zones_info)
+            await client._sync_zone_capabilities(zones_info)
             _LOGGER.info(
-                "Button: AC capabilities refreshed, entities will "
+                "Button: zone capabilities refreshed, entities will "
                 "pick up the new shape on the next coordinator update",
             )
 
             await self.coordinator.async_request_refresh()
             _LOGGER.debug(
-                "Button: triggered coordinator refresh after AC "
+                "Button: triggered coordinator refresh after zone "
                 "capability re-fetch",
             )
         except Exception:
             _LOGGER.warning(
-                "Button: AC capabilities refresh failed, keeping "
-                "the previous capability cache, will retry on the "
-                "next press",
+                "Button: zone capabilities refresh failed, the cache stays "
+                "marked stale and the next poll or press re-fetches it",
                 exc_info=True,
             )
 
@@ -298,6 +357,8 @@ class TadoWaterHeaterTimerButton(CoordinatorEntity[TadoDataUpdateCoordinator], B
     async def async_press(self) -> None:
         """Apply the preset timer to the matching water heater entity."""
         from homeassistant.exceptions import HomeAssistantError
+        from homeassistant.helpers import entity_registry as er
+
         _LOGGER.debug(
             "Button: timer pressed: %s for %s minutes",
             self._zone_name, self._duration,
@@ -426,17 +487,14 @@ class TadoRefreshScheduleButton(CoordinatorEntity[TadoDataUpdateCoordinator], Bu
                 )
                 return
 
-            cached = self.coordinator.data_loader.get_cached("schedules")
-            schedules: dict[str, Any] = dict(cached) if isinstance(cached, dict) else {}
-
-            schedules[self._zone_id] = {
+            refreshed = {
                 "name": self._zone_name,
                 "type": schedule_data.get("type", "ONE_DAY"),
                 "blocks": schedule_data.get("blocks") or {},
                 "failed_days": schedule_data.get("failed_days") or [],
             }
 
-            await self.coordinator.data_loader.async_update_store("schedules", schedules)
+            await self.coordinator.data_loader.async_merge_store("schedules", {self._zone_id: refreshed})
 
             _LOGGER.debug(
                 "Button: schedule refreshed for %s, cache updated",
@@ -471,9 +529,7 @@ def _find_heating_climate(
     hass: HomeAssistant, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str,
 ) -> Any | None:
     """Return the zone's live heating climate entity, or None (with a warning) when it is not loaded."""
-    # Registry unique_id first (stable), slug only for entries created before unique ids were stable.
-    unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_climate"
-    entity_id = er.async_get(hass).async_get_entity_id("climate", DOMAIN, unique_id) or f"climate.{slugify(zone_name)}"
+    entity_id = zone_entity_id(hass, "climate", "climate_heating", coordinator.home_id, zone_id, slugify(zone_name))
     ent = _find_entity_by_id(hass, "climate", entity_id)
     if ent is None:
         _LOGGER.warning(
@@ -507,7 +563,9 @@ class TadoBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonEntity
         ent = _find_heating_climate(self.hass, self.coordinator, self._zone_id, self._zone_name)
         if ent is None:
             return
-        api_success = await ent.async_set_timer(BOOST_TEMPERATURE, BOOST_DURATION_MINUTES, None)
+        api_success = await ent.async_set_timer(
+            temperature=BOOST_TEMPERATURE, duration_minutes=BOOST_DURATION_MINUTES, overlay=None,
+        )
 
         if api_success:
             _LOGGER.info(
@@ -654,7 +712,7 @@ class TadoSmartBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonE
         ent = _find_heating_climate(self.hass, self.coordinator, self._zone_id, self._zone_name)
         if ent is None:
             return
-        api_success = await ent.async_set_timer(target_temp, duration_minutes, None)
+        api_success = await ent.async_set_timer(temperature=target_temp, duration_minutes=duration_minutes, overlay=None)
 
         if api_success:
             _LOGGER.info(
@@ -737,7 +795,10 @@ class TadoIdentifyButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonEnt
             self.hass, f"Identify {self._zone_name}", coordinator=self.coordinator,
         )
 
-        success = await self.coordinator.api_client.identify_device(self._device_serial)
+        try:
+            success = await self.coordinator.api_client.identify_device(self._device_serial)
+        except (TadoAuthError, TadoRateLimitError, TadoBlockedError) as err:
+            dispatch_to_service_call(err, self.coordinator.config_entry, self.hass, self.coordinator)
         if success:
             _LOGGER.debug("Button: identify sent to device %s", mask_serial(self._device_serial))
         else:

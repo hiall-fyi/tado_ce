@@ -21,11 +21,8 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .helpers import parse_iso_datetime
-from .storage import async_migrate_json_to_store
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from homeassistant.core import HomeAssistant
 
     from .config_manager import ConfigurationManager
@@ -41,6 +38,16 @@ CALL_TYPE_OVERLAY = 5
 CALL_TYPE_PRESENCE_LOCK = 6
 CALL_TYPE_HOME_STATE = 7
 CALL_TYPE_CAPABILITIES = 8
+CALL_TYPE_DEVICES = 9
+CALL_TYPE_DEVICE_OFFSET_READ = 10
+CALL_TYPE_DEVICE_OFFSET_WRITE = 11
+CALL_TYPE_CHILD_LOCK = 12
+CALL_TYPE_HEATING_CIRCUITS = 13
+CALL_TYPE_GRAPHQL = 14
+CALL_TYPE_BRIDGE_API = 15
+
+# Version 2 records call types 9 to 15; version 1 stopped at 8.
+TRACKER_COVERAGE_VERSION = 2
 
 CALL_TYPE_NAMES = {
     CALL_TYPE_ZONE_STATES: "zoneStates",
@@ -51,7 +58,23 @@ CALL_TYPE_NAMES = {
     CALL_TYPE_PRESENCE_LOCK: "presenceLock",
     CALL_TYPE_HOME_STATE: "homeState",
     CALL_TYPE_CAPABILITIES: "capabilities",
+    CALL_TYPE_DEVICES: "devices",
+    CALL_TYPE_DEVICE_OFFSET_READ: "deviceOffsetRead",
+    CALL_TYPE_DEVICE_OFFSET_WRITE: "deviceOffsetWrite",
+    CALL_TYPE_CHILD_LOCK: "childLock",
+    CALL_TYPE_HEATING_CIRCUITS: "heatingCircuits",
+    CALL_TYPE_GRAPHQL: "graphql",
+    CALL_TYPE_BRIDGE_API: "bridgeApi",
 }
+
+# Every REST call to my.tado.com; GraphQL and bridge API calls are tracked but not quota
+QUOTA_CALL_TYPES = frozenset(range(CALL_TYPE_ZONE_STATES, CALL_TYPE_HEATING_CIRCUITS + 1))
+
+
+def is_quota_call(record: dict[str, Any]) -> bool:
+    """Return True when a call record counts toward the daily quota (untyped old records do)."""
+    return record.get("type", CALL_TYPE_ZONE_STATES) in QUOTA_CALL_TYPES
+
 
 # Rate extrapolation thresholds
 _MIN_CALLS_FOR_RATE = 20
@@ -65,22 +88,17 @@ class APICallTracker:
     """Per-home record of every API call, persisted via HA Store.
 
     Async methods do their I/O off the event loop. Sync methods stay
-    available for non-async callers (mostly tests). `data_dir` is
-    only used to locate the legacy JSON path for one-time migration
-    into HA Store.
+    available for non-async callers (mostly tests).
     """
 
     def __init__(
         self,
         hass: HomeAssistant,
-        data_dir: Path,
         retention_days: int = 14,
         home_id: str | None = None,
         config_manager: ConfigurationManager | None = None,
     ) -> None:
         """Initialise the tracker for one home, with an optional retention cap."""
-        self._hass = hass
-        self.data_dir = data_dir
         self.retention_days = retention_days
         self.home_id = home_id
         self._config_manager = config_manager
@@ -91,10 +109,6 @@ class APICallTracker:
             f"tado_ce/api_call_tracker_{home_id or 'default'}",
         )
 
-        from .const import get_data_file  # avoid circular import
-
-        self._old_json_path = get_data_file("api_call_history", home_id)
-
         self._lock = Lock()
         self._async_lock = asyncio.Lock()
         self._call_history: dict[str, list[dict[str, Any]]] = {}
@@ -103,18 +117,11 @@ class APICallTracker:
         self._dirty = False
 
     async def _load_history_async(self) -> dict[str, Any]:
-        """Load call history from HA Store, falling back to the legacy JSON file."""
+        """Load call history from HA Store."""
         try:
             data = await self._store.async_load()
             if data is not None:
                 return data
-
-            migrated = await async_migrate_json_to_store(
-                self._hass, self._old_json_path, self._store,
-                label="api_call_tracker",
-            )
-            if migrated is not None and isinstance(migrated, dict):
-                return migrated
         except (OSError, HomeAssistantError):
             _LOGGER.warning(
                 "API Tracker: could not load call history, quota "
@@ -265,7 +272,7 @@ class APICallTracker:
 
     def _rate_from_history(self) -> tuple[float, str] | None:
         """Return (calls_per_hour, description) from recent calls, or None on too-thin data."""
-        calls = self.get_call_history(days=1)
+        calls = [c for c in self.get_call_history(days=1) if is_quota_call(c)]
         if len(calls) < _MIN_CALLS_FOR_RATE:
             return None
 
@@ -306,9 +313,14 @@ class APICallTracker:
             if not config_manager:
                 return _DEFAULT_CALLS_PER_HOUR, "default"
 
-            from .polling import _get_calls_per_sync
+            from .fetch_plan import PlanConfig, has_custom_interval, steady_state_cost
 
-            calls_per_sync = _get_calls_per_sync(config_manager)
+            # No HomeKit discount: the estimate must not under-count when HomeKit drops out.
+            calls_per_sync = steady_state_cost(
+                PlanConfig.from_config_manager(config_manager),
+                homekit_connected=False,
+                user_has_custom_interval=has_custom_interval(config_manager),
+            ).per_poll
 
             from .const import DEFAULT_DAY_INTERVAL, DEFAULT_NIGHT_INTERVAL
 

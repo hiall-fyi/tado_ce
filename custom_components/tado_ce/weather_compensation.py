@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 from typing import TYPE_CHECKING, Any
 
+from .bridge_api import MAX_FLOW_TEMP, MIN_FLOW_TEMP
 from .exceptions import TadoBridgeApiError
 
 if TYPE_CHECKING:
@@ -14,10 +16,6 @@ if TYPE_CHECKING:
 
     from .bridge_api import TadoBridgeApiClient
     from .config_manager import ConfigurationManager
-
-# Bridge API hard limits
-_API_MIN_FLOW: float = 25.0
-_API_MAX_FLOW: float = 80.0
 
 # Minimum seconds between Bridge API adjustments (10 min)
 _MIN_HOLD_SECONDS: float = 600.0
@@ -39,7 +37,7 @@ class WeatherCompensationConfig:
     slope: float = 1.5
     design_outdoor_temp: float = -5.0
     max_flow_temp: float = 65.0
-    min_flow_temp: float = 25.0
+    min_flow_temp: float = 30.0
     shutoff_temp: float = 18.0
     smoothing_method: str = "ema"
     smoothing_window_minutes: int = 60
@@ -47,6 +45,8 @@ class WeatherCompensationConfig:
     room_compensation_factor: float = 3.0
     step_size: float = 1.0
     hysteresis: float = 1.0
+    curve_shape: str = "linear"
+    curve_k: float = 0.02
 
 
 @dataclass
@@ -109,6 +109,8 @@ class WeatherCompensationResult:
     smoothing_window: int
     room_compensation_offset: float
     heating_system_preset: str
+    curve_shape: str
+    curve_k: float
 
 
 # ---------------------------------------------------------------------------
@@ -153,6 +155,29 @@ def calculate_base_flow_temp(
     )
 
 
+def calculate_exponential_flow_temp(
+    outdoor_temp: float,
+    config: WeatherCompensationConfig,
+) -> float:
+    """Anchored exponential curve: Max flow at the design outdoor temperature, Min flow at the shutoff."""
+    shutoff = config.shutoff_temp
+    design = config.design_outdoor_temp
+    if shutoff <= design:
+        return config.max_flow_temp
+    if outdoor_temp >= shutoff:
+        return config.min_flow_temp
+    k = config.curve_k
+    if k * (shutoff - design) < 1e-9:
+        auto_slope = calculate_auto_slope(
+            config.max_flow_temp, config.min_flow_temp, shutoff, design,
+        )
+        return config.max_flow_temp - auto_slope * (outdoor_temp - design)
+    span = config.max_flow_temp - config.min_flow_temp
+    return config.min_flow_temp + span * (
+        math.expm1(-k * (shutoff - outdoor_temp)) / math.expm1(-k * (shutoff - design))
+    )
+
+
 def calculate_room_offset(
     indoor_temp: float,
     target_temp: float,
@@ -182,10 +207,10 @@ def clamp_flow_temp(
     """Clamp flow temperature to user range AND Bridge API hard limits.
 
     Bounds-checked: result always in
-    [max(min_flow, 25.0), min(max_flow, 80.0)].
+    [max(min_flow, 30.0), min(max_flow, 80.0)].
     """
-    effective_min = max(min_flow, _API_MIN_FLOW)
-    effective_max = min(max_flow, _API_MAX_FLOW)
+    effective_min = max(min_flow, MIN_FLOW_TEMP)
+    effective_max = min(max_flow, MAX_FLOW_TEMP)
     return max(effective_min, min(value, effective_max))
 
 
@@ -248,7 +273,8 @@ def smooth_outdoor_temp(
         return smoothed
 
     if method == "rolling_average":
-        if state.rolling_buffer_max_size == 0 and poll_interval_minutes > 0:
+        # WHY: the poll interval swings between day and night, so the size follows the current one.
+        if poll_interval_minutes > 0:
             state.rolling_buffer_max_size = max(
                 int(config.smoothing_window_minutes / poll_interval_minutes), 1,
             )
@@ -286,6 +312,8 @@ def evaluate(
         smoothing_window=config.smoothing_window_minutes,
         room_compensation_offset=0.0,
         heating_system_preset=config.heating_system_preset,
+        curve_shape=config.curve_shape,
+        curve_k=config.curve_k,
     )
 
     # --- Step 1: outdoor temp availability ---
@@ -328,7 +356,10 @@ def evaluate(
         )
     else:
         # --- Step 5: heating curve + room compensation ---
-        flow = calculate_base_flow_temp(smoothed, config)
+        if config.curve_shape == "exponential":
+            flow = calculate_exponential_flow_temp(smoothed, config)
+        else:
+            flow = calculate_base_flow_temp(smoothed, config)
 
         room_offset = 0.0
         if (
@@ -393,6 +424,11 @@ def _build_wc_config(cm: ConfigurationManager) -> WeatherCompensationConfig:
     else:
         slope = calculate_auto_slope(max_flow, min_flow, shutoff, design)
 
+    # The one place that decides the effective shape: only Custom can run the curve.
+    curve_shape = "linear"
+    if preset == "custom" and cm.get_wc_curve_shape() == "exponential":
+        curve_shape = "exponential"
+
     return WeatherCompensationConfig(
         heating_system_preset=preset,
         slope=slope,
@@ -406,6 +442,8 @@ def _build_wc_config(cm: ConfigurationManager) -> WeatherCompensationConfig:
         room_compensation_factor=cm.get_wc_room_compensation_factor(),
         step_size=cm.get_wc_step_size(),
         hysteresis=cm.get_wc_hysteresis(),
+        curve_shape=curve_shape,
+        curve_k=cm.get_wc_curve_k(),
     )
 
 
@@ -546,5 +584,7 @@ async def async_run_wc_cycle(
         "smoothing_window": result.smoothing_window,
         "room_compensation_offset": result.room_compensation_offset,
         "heating_system_preset": result.heating_system_preset,
+        "curve_shape": result.curve_shape,
+        "curve_k": result.curve_k,
         "should_send": result.should_send,
     }

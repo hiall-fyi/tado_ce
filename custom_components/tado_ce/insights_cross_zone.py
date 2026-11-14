@@ -1,4 +1,4 @@
-"""Cross-zone insights: mold aggregation, window aggregation, condensation, efficiency."""
+"""Cross-zone insights: mold aggregation, condensation, efficiency."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from .insights_models import (
     CROSS_ZONE_CONDENSATION_MIN_ZONES,
     CROSS_ZONE_EFFICIENCY_MIN_ZONES,
     CROSS_ZONE_MOLD_MIN_ZONES,
-    CROSS_ZONE_WINDOW_MIN_ZONES,
     HUMIDITY_IMBALANCE_MIN_EXCESS,
     TEMP_IMBALANCE_MIN_DIFF,
     Insight,
@@ -42,29 +41,6 @@ def aggregate_cross_zone_mold_risk(
         priority=priority,
         recommendation=rec,
         insight_type="cross_zone_mold",
-        zone_name=None,
-    )
-
-
-def aggregate_cross_zone_window_predicted(
-    zone_window_states: dict[str, bool],
-) -> Insight | None:
-    """Aggregate window predicted across zones (multiple windows open simultaneously)."""
-    if not zone_window_states:
-        return None
-
-    open_zones = [name for name, is_open in zone_window_states.items() if is_open]
-
-    if len(open_zones) < CROSS_ZONE_WINDOW_MIN_ZONES:
-        return None
-
-    zones_str = ", ".join(open_zones)
-    rec = f"Multiple windows detected open: {zones_str} \u2014 close windows to prevent energy waste"
-
-    return Insight(
-        priority=InsightPriority.HIGH,
-        recommendation=rec,
-        insight_type="cross_zone_window",
         zone_name=None,
     )
 

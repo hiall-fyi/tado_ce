@@ -14,15 +14,13 @@ from dataclasses import dataclass
 from datetime import timedelta
 import json
 import logging
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .helpers import get_zone_states, parse_iso_datetime, prune_zone_keyed_dict
-from .storage import async_migrate_json_to_store
+from .helpers import get_zone_states, parse_iso_datetime
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -35,9 +33,6 @@ _LOGGER = logging.getLogger(__name__)
 
 # Stale state threshold: purge captured states older than this on load
 _STALE_THRESHOLD = timedelta(hours=24)
-
-# Storage base name (for old file migration)
-_STORAGE_BASE_NAME = "state_restore"
 
 # HA Store constants
 STORE_VERSION = 1
@@ -147,13 +142,6 @@ class StateRestoreManager:
             STORE_VERSION,
             f"tado_ce/state_restore_{data_loader.home_id}",
         )
-        # Older builds wrote a JSON file alongside the Store; the path
-        # is kept so async_setup can migrate any leftover data.
-        self._old_storage_path = Path(
-            hass.config.path(
-                f".storage/tado_ce/{_STORAGE_BASE_NAME}_{data_loader.home_id}.json",
-            ),
-        )
 
     def set_coordinator(self, coordinator: TadoDataUpdateCoordinator) -> None:
         """Wire the coordinator back-reference once it has been created."""
@@ -176,20 +164,6 @@ class StateRestoreManager:
                 e,
             )
             return
-
-        if raw is None:
-            try:
-                raw = await async_migrate_json_to_store(
-                    self._hass, self._old_storage_path, self._store,
-                    label="state_restore",
-                )
-            except (HomeAssistantError, OSError, json.JSONDecodeError) as e:
-                _LOGGER.warning(
-                    "State Restore: could not migrate legacy JSON storage "
-                    "(%s), starting fresh",
-                    e,
-                )
-                return
 
         if not raw or not isinstance(raw, dict):
             _LOGGER.debug("State Restore: no persisted state, starting fresh")
@@ -306,26 +280,19 @@ class StateRestoreManager:
                 _LOGGER.debug("State Restore: consumed %s for restoration", key)
             return state
 
-    def prune_stale_captures(self, current_zones: frozenset[str]) -> int:
-        """Drop captures whose zone_id is no longer in current_zones; return removed count."""
-        return prune_zone_keyed_dict(self._captured, current_zones)
-
-    async def prune_reassigned_zones(self, zone_ids: set[str]) -> set[str]:
-        """Drop captures for reassigned zone_ids, so a later restore can't apply the old room's snapshot."""
+    async def forget_zone(self, zone_id: str) -> bool:
+        """Drop a zone's captures and poll counters so a later restore can't apply another room's snapshot; True when any was held."""
         async with self._lock:
-            to_drop = {k for k in self._captured if k.split(":", 1)[0] in zone_ids}
-            if not to_drop:
-                return set()
-            pruned = {k.split(":", 1)[0] for k in to_drop}
+            to_drop = [k for k in self._captured if k.split(":", 1)[0] == zone_id]
             for k in to_drop:
                 del self._captured[k]
-            self._schedule_persist()
-        _LOGGER.info(
-            "State Restore: cleared captured state for reassigned zone(s) %s "
-            "(the id is now a different room)",
-            sorted(pruned),
-        )
-        return pruned
+            if to_drop:
+                self._schedule_persist()
+            overlay = self._previous_overlay_states.pop(zone_id, None)
+            cleared = self._consecutive_cleared.pop(zone_id, None)
+        _LOGGER.debug("State Restore: forgot zone %s (%d capture(s))", zone_id, len(to_drop))
+        # A False overlay flag is the steady state of every zone, so only a True one counts as held.
+        return bool(to_drop) or bool(overlay) or cleared is not None
 
     async def peek(
         self,

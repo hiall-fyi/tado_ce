@@ -21,7 +21,7 @@ from homeassistant.helpers.selector import (
     TextSelectorConfig,
     TextSelectorType,
 )
-import voluptuous as vol
+import probatio as vol
 
 from .config_manager import (
     DEFAULT_DAY_START_HOUR,
@@ -32,6 +32,7 @@ from .config_manager import (
     MAX_REFRESH_DEBOUNCE_SECONDS,
     MIN_HOUR,
     MIN_REFRESH_DEBOUNCE_SECONDS,
+    ConfigurationManager,
 )
 from .const import (
     DEFAULT_HOMEKIT_CLOUD_SYNC_MINUTES,
@@ -64,14 +65,6 @@ from .const import (
     TIMER_DURATION_MAX,
     TIMER_DURATION_MIN,
     TIMER_DURATION_OPTIONS,
-    WINDOW_DETECTION_MODE_DEFAULT,
-    WINDOW_DETECTION_MODE_MAP,
-    WINDOW_DETECTION_MODE_OPTIONS,
-    WINDOW_DETECTION_MODE_REVERSE_MAP,
-    WINDOW_SENSITIVITY_DEFAULT,
-    WINDOW_SENSITIVITY_MAP,
-    WINDOW_SENSITIVITY_OPTIONS,
-    WINDOW_SENSITIVITY_REVERSE_MAP,
     WRITE_ROUTE_AUTO,
     WRITE_ROUTE_CLOUD,
     ZONE_TEMP_MAX_CEILING,
@@ -88,7 +81,6 @@ _LOGGER = logging.getLogger(__name__)
 # Zone form select option keys; each key is also the stored value (overlay_mode stores the uppercase).
 _DISPLAY_TEMP_SOURCE_KEYS = ("auto", "homekit", "cloud")
 _HEATING_TYPE_KEYS = (HEATING_TYPE_RADIATOR, "ufh")
-_SMART_COMFORT_MODE_KEYS = ("none", "light", "moderate", "aggressive")
 _WRITE_ROUTE_KEYS = (WRITE_ROUTE_AUTO, WRITE_ROUTE_CLOUD)
 
 
@@ -118,7 +110,6 @@ _ALL_TOGGLE_KEYS = (
 # Per-scope default values for Reset to Defaults
 RESET_DEFAULTS: dict[str, dict[str, Any]] = {
     "smart_comfort": {
-        "smart_comfort_mode": "none",
         "use_feels_like": False,
         "mold_risk_window_type": "double_pane",
         "smart_comfort_history_days": 7,
@@ -139,9 +130,11 @@ RESET_DEFAULTS: dict[str, dict[str, Any]] = {
     "weather_compensation": {
         "wc_heating_system_preset": "radiators_standard",
         "wc_slope": 1.5,
+        "wc_curve_shape": "linear",
+        "wc_curve_k": 0.02,
         "wc_design_outdoor_temp": -5.0,
         "wc_max_flow_temp": 65.0,
-        "wc_min_flow_temp": 25.0,
+        "wc_min_flow_temp": 30.0,
         "wc_shutoff_temp": 18.0,
         "wc_smoothing_method": "ema",
         "wc_smoothing_window": 60,
@@ -155,7 +148,7 @@ RESET_DEFAULTS: dict[str, dict[str, Any]] = {
         "bridge_auth_key": "",
     },
     "homekit": {
-        "homekit_cloud_sync_minutes": 30,
+        "homekit_cloud_sync_minutes": DEFAULT_HOMEKIT_CLOUD_SYNC_MINUTES,
     },
     "polling_api": {
         "day_start_hour": 7,
@@ -195,6 +188,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         super().__init__()
         self._selected_zone_id: str | None = None
         self._pending_general_options: dict[str, Any] = {}
+        self._first_enable_done: set[str] = set()
         self._pending_advanced_options: dict[str, Any] = {}
         self._reset_scope: str = "everything"
 
@@ -211,9 +205,9 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             menu_options=menu_options,
         )
 
-    def _build_general_schema(self) -> vol.Schema:
+    def _build_general_schema(self, source: dict[str, Any] | None = None) -> vol.Schema:
         """Build the General Settings form schema: toggles grouped by mental model (Tado / hardware / automation / advanced)."""
-        opt = self.config_entry.options.get
+        opt = (self.config_entry.options if source is None else source).get
         has_bridge_credentials = bool(opt("bridge_serial", "")) and bool(opt("bridge_auth_key", ""))
         return vol.Schema(
             {
@@ -365,16 +359,9 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
 
         # --- Smart Comfort (if enabled) ---
         if opt("smart_comfort_enabled", False):
-            # Mirrors get_smart_comfort_mode()'s fallback chain so a cleared
-            # field re-suggests the real effective value, not a stale default.
-            smart_comfort_default = opt("smart_comfort_mode", opt("weather_compensation", "none"))
             sections[vol.Required("smart_comfort")] = data_entry_flow.section(
                 vol.Schema(
                     {
-                        vol.Optional(
-                            "smart_comfort_mode",
-                            description={"suggested_value": smart_comfort_default},
-                        ): SelectSelector(SelectSelectorConfig(options=["none", "light", "moderate", "aggressive"], translation_key="smart_comfort_mode", mode=SelectSelectorMode.DROPDOWN)),
                         vol.Optional("use_feels_like", default=opt("use_feels_like", False)): BooleanSelector(),
                         vol.Optional(
                             "mold_risk_window_type",
@@ -387,7 +374,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             )
 
         # --- External Data Sources (always visible) ---
-        # Outdoor data is a cross-feature input (window detection, Smart Comfort,
+        # Outdoor data is a cross-feature input (Smart Comfort,
         # mold risk, Air Comfort AQI), so its bindings live in a neutral section,
         # not under whichever feature consumes them.
         sections[vol.Required("external_data_sources")] = data_entry_flow.section(
@@ -432,14 +419,17 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
 
         # --- Weather Compensation (if enabled AND bridge exists) ---
         if opt("wc_enabled", False) and has_bridge_credentials:
+            flow_limits = ConfigurationManager(self.config_entry)  # same clamping getters as the engine
             sections[vol.Required("weather_compensation")] = data_entry_flow.section(
                 vol.Schema(
                     {
                         vol.Optional("wc_heating_system_preset", description={"suggested_value": opt("wc_heating_system_preset", "radiators_standard")}): SelectSelector(SelectSelectorConfig(options=["radiators_standard", "radiators_low_temp", "underfloor", "custom"], translation_key="wc_heating_system_preset", mode=SelectSelectorMode.DROPDOWN)),
                         vol.Optional("wc_slope", default=opt("wc_slope", 1.5)): NumberSelector(NumberSelectorConfig(min=0.3, max=3.0, step=0.1, mode=NumberSelectorMode.BOX)),
+                        vol.Optional("wc_curve_shape", description={"suggested_value": opt("wc_curve_shape", "linear")}): SelectSelector(SelectSelectorConfig(options=["linear", "exponential"], translation_key="wc_curve_shape", mode=SelectSelectorMode.DROPDOWN)),
+                        vol.Optional("wc_curve_k", default=opt("wc_curve_k", 0.02)): NumberSelector(NumberSelectorConfig(min=0.005, max=0.10, step=0.005, mode=NumberSelectorMode.BOX)),
                         vol.Optional("wc_design_outdoor_temp", default=opt("wc_design_outdoor_temp", -5.0)): NumberSelector(NumberSelectorConfig(min=-30, max=10, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="°C")),
-                        vol.Optional("wc_max_flow_temp", default=opt("wc_max_flow_temp", 65.0)): NumberSelector(NumberSelectorConfig(min=25, max=80, step=0.5, mode=NumberSelectorMode.BOX, unit_of_measurement="°C")),
-                        vol.Optional("wc_min_flow_temp", default=opt("wc_min_flow_temp", 25.0)): NumberSelector(NumberSelectorConfig(min=25, max=60, step=0.5, mode=NumberSelectorMode.BOX, unit_of_measurement="°C")),
+                        vol.Optional("wc_max_flow_temp", default=flow_limits.get_wc_max_flow_temp()): NumberSelector(NumberSelectorConfig(min=30, max=80, step=0.5, mode=NumberSelectorMode.BOX, unit_of_measurement="°C")),
+                        vol.Optional("wc_min_flow_temp", default=flow_limits.get_wc_min_flow_temp()): NumberSelector(NumberSelectorConfig(min=30, max=60, step=0.5, mode=NumberSelectorMode.BOX, unit_of_measurement="°C")),
                         vol.Optional("wc_shutoff_temp", default=opt("wc_shutoff_temp", 18.0)): NumberSelector(NumberSelectorConfig(min=5, max=30, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="°C")),
                         vol.Optional("wc_smoothing_method", description={"suggested_value": opt("wc_smoothing_method", "ema")}): SelectSelector(SelectSelectorConfig(options=["none", "ema", "rolling_average"], translation_key="wc_smoothing_method", mode=SelectSelectorMode.DROPDOWN)),
                         vol.Optional("wc_smoothing_window", default=opt("wc_smoothing_window", 60)): NumberSelector(NumberSelectorConfig(min=15, max=MAX_CUSTOM_INTERVAL, step=15, mode=NumberSelectorMode.BOX, unit_of_measurement="min")),
@@ -560,15 +550,20 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
     async def _detect_first_enable(self, new_options: dict[str, Any]) -> str | None:
         """Detect if a feature was just enabled, returning the sub-flow step_id, or None if no sub-flow needed."""
         prev = self.config_entry.options
+        done = self._first_enable_done
 
         # Bridge: first enable AND no credentials stored
-        if new_options.get("bridge_enabled") and not prev.get("bridge_serial"):
+        if "bridge_setup" not in done and new_options.get("bridge_enabled") and not prev.get("bridge_serial"):
             return "bridge_setup"
 
         # HomeKit: first enable AND no pairing stored. Ask HomeKitClient
         # (the Store owner) so the check can't drift from where the pairing
         # actually lives.
-        if new_options.get("homekit_enabled") and not prev.get("homekit_enabled"):
+        if (
+            "homekit_pairing" not in done
+            and new_options.get("homekit_enabled")
+            and not prev.get("homekit_enabled")
+        ):
             from .homekit_client import HomeKitClient
 
             client = HomeKitClient(
@@ -577,16 +572,24 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             if not await client.async_has_pairing():
                 return "homekit_pairing"
 
-        # WC: first enable AND bridge not enabled
-        if (
-            new_options.get("wc_enabled")
-            and not prev.get("wc_enabled")
-            and not new_options.get("bridge_enabled")
-            and not prev.get("bridge_serial")
-        ):
+        # WC: on while the bridge is off, whether newly ticked or left on from before
+        if new_options.get("wc_enabled") and not new_options.get("bridge_enabled"):
             return "wc_bridge_prompt"
 
         return None
+
+    async def _advance_first_enable(self, completed_step: str | None = None) -> ConfigFlowResult:
+        """Run the next first-enable step the pending options still need, else queue cleanup and save them."""
+        if completed_step:
+            self._first_enable_done.add(completed_step)
+        redirect = await self._detect_first_enable(self._pending_general_options)
+        if redirect:
+            return await getattr(self, f"async_step_{redirect}")()  # type: ignore[no-any-return]
+
+        from .entity_cleanup import queue_cleanup_flags
+
+        queue_cleanup_flags(self.config_entry, self.config_entry.options, self._pending_general_options)
+        return self.async_create_entry(title="", data=self._pending_general_options)
 
     async def async_step_general_settings(
         self, user_input: dict[str, Any] | None = None,
@@ -599,16 +602,9 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             self._process_general_settings(user_input, processed_input)
 
             if not errors:
-                # Check for first-enable sub-flows
-                redirect = await self._detect_first_enable(processed_input)
-                if redirect:
-                    self._pending_general_options = processed_input
-                    return await getattr(self, f"async_step_{redirect}")()  # type: ignore[no-any-return]
-
-                from .entity_cleanup import queue_cleanup_flags
-
-                queue_cleanup_flags(self.config_entry, self.config_entry.options, processed_input)
-                return self.async_create_entry(title="", data=processed_input)
+                self._pending_general_options = processed_input
+                self._first_enable_done = set()
+                return await self._advance_first_enable()
 
         schema = self._build_general_schema()
         return self.async_show_form(
@@ -679,8 +675,8 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                 # A cleared field is present-with-None, which the preserve loop
                 # above correctly leaves alone; strip it before persisting.
                 for key in (
-                    "smart_comfort_mode", "mold_risk_window_type",
-                    "wc_heating_system_preset", "wc_smoothing_method",
+                    "mold_risk_window_type",
+                    "wc_heating_system_preset", "wc_smoothing_method", "wc_curve_shape",
                     "thermal_analytics_zones",
                 ):
                     if processed_input.get(key) is None:
@@ -769,18 +765,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             if not errors:
                 self._pending_general_options["bridge_serial"] = bridge_serial
                 self._pending_general_options["bridge_auth_key"] = bridge_auth_key
-
-                # This redirect hands off before General Settings' own
-                # queue_cleanup_flags call ever runs, so a submit that both
-                # disables one feature and first-enables the bridge in the
-                # same form would otherwise never detect the disabled
-                # feature's cleanup.
-                from .entity_cleanup import queue_cleanup_flags
-
-                queue_cleanup_flags(
-                    self.config_entry, self.config_entry.options, self._pending_general_options,
-                )
-                return self.async_create_entry(title="", data=self._pending_general_options)
+                return await self._advance_first_enable("bridge_setup")
 
         return self.async_show_form(
             step_id="bridge_setup",
@@ -820,15 +805,16 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             if user_input.get("also_enable_bridge", False):
                 self._pending_general_options["bridge_enabled"] = True
+                stored = self.config_entry.options
+                if stored.get("bridge_serial") and stored.get("bridge_auth_key"):
+                    return await self._advance_first_enable("wc_bridge_prompt")
                 return await self.async_step_bridge_setup()
-            # Continue without bridge. Same redirect-skips-cleanup gap as
-            # async_step_bridge_setup above: queue it here too.
-            from .entity_cleanup import queue_cleanup_flags
-
-            queue_cleanup_flags(
-                self.config_entry, self.config_entry.options, self._pending_general_options,
+            # Nothing saved: back to General Settings, showing the submitted values, to untick Weather Compensation.
+            return self.async_show_form(
+                step_id="general_settings",
+                data_schema=self._build_general_schema(self._pending_general_options),
+                errors={"base": "wc_requires_bridge"},
             )
-            return self.async_create_entry(title="", data=self._pending_general_options)
 
         return self.async_show_form(
             step_id="wc_bridge_prompt",
@@ -862,6 +848,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             current.update(RESET_DEFAULTS[scope])
             if scope == "bridge":
                 current["bridge_enabled"] = False  # credentials just cleared, same reason as above
+                current["wc_enabled"] = False  # Weather Compensation cannot run without the bridge
         return current
 
     async def async_step_reset_to_defaults(
@@ -917,7 +904,6 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             if key in section:
                 processed[key] = section[key]
         # Always set (None if cleared) — see async_step_advanced_settings' cleanup step.
-        processed["smart_comfort_mode"] = section.get("smart_comfort_mode")
         processed["mold_risk_window_type"] = section.get("mold_risk_window_type")
 
     def _process_external_data_sources(
@@ -1020,12 +1006,13 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         processed: dict[str, Any],
         errors: dict[str, str],
     ) -> None:
-        """Flatten weather_compensation section: 12 WC tuning fields with min/max validation."""
+        """Flatten weather_compensation section: 14 WC tuning fields with min/max validation."""
         if "weather_compensation" not in user_input:
             return
         section = user_input["weather_compensation"]
         for key in (
             "wc_slope",
+            "wc_curve_k",
             "wc_design_outdoor_temp",
             "wc_max_flow_temp",
             "wc_min_flow_temp",
@@ -1041,9 +1028,10 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         # Always set (None if cleared) — see _process_smart_comfort's comment.
         processed["wc_heating_system_preset"] = section.get("wc_heating_system_preset")
         processed["wc_smoothing_method"] = section.get("wc_smoothing_method")
+        processed["wc_curve_shape"] = section.get("wc_curve_shape")
 
         # Validate min_flow <= max_flow
-        wc_min = processed.get("wc_min_flow_temp", 25.0)
+        wc_min = processed.get("wc_min_flow_temp", 30.0)
         wc_max = processed.get("wc_max_flow_temp", 65.0)
         if wc_min > wc_max:
             errors["weather_compensation"] = "wc_min_exceeds_max"
@@ -1138,19 +1126,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
 
         if "comfort_section" in user_input:
             s = user_input["comfort_section"]
-            # "none" means no comfort mode; an absent key means cleared.
-            all_values["smart_comfort_mode"] = _pick_option(
-                s.get("smart_comfort_mode"), _SMART_COMFORT_MODE_KEYS, "none",
-            )
             all_values["window_type"] = s.get("window_type")
-            raw = s.get("window_predicted_mode")
-            all_values["window_predicted_mode"] = (
-                WINDOW_DETECTION_MODE_MAP.get(raw, WINDOW_DETECTION_MODE_DEFAULT) if raw is not None else None
-            )
-            raw = s.get("window_predicted_sensitivity")
-            all_values["window_predicted_sensitivity"] = (
-                WINDOW_SENSITIVITY_MAP.get(raw, "medium") if raw is not None else None
-            )
 
         if "sensor_section" in user_input:
             s = user_input["sensor_section"]
@@ -1253,7 +1229,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                     zone_name = z.get("name", zone_id)
                     zone_type = z.get("type", "")
                     break
-        zone_capabilities = (coordinator.data or {}).get("ac_capabilities", {}).get(zone_id, {})
+        zone_capabilities = (coordinator.data or {}).get("zone_capabilities", {}).get(zone_id, {})
 
         if user_input is not None:
             all_values = self._process_zone_sensor_input(
@@ -1321,15 +1297,8 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         # Handle legacy bool values from pre-migration configs
         if isinstance(cur_adaptive, bool):
             cur_adaptive = "active" if cur_adaptive else "off"
-        cur_comfort = _pick_option(config.get("smart_comfort_mode", "none"), _SMART_COMFORT_MODE_KEYS, "none")
         cur_window_type = zone_config_manager.get_effective_window_type(
             zone_id, coordinator.config_manager,
-        )
-        cur_sensitivity = WINDOW_SENSITIVITY_REVERSE_MAP.get(
-            config.get("window_predicted_sensitivity", WINDOW_SENSITIVITY_DEFAULT), "Medium",
-        )
-        cur_detection_mode = WINDOW_DETECTION_MODE_REVERSE_MAP.get(
-            config.get("window_predicted_mode", WINDOW_DETECTION_MODE_DEFAULT), "auto",
         )
         cur_temp_sensor = config.get("external_temp_sensor", "")
         cur_humidity_sensor = config.get("external_humidity_sensor", "")
@@ -1512,37 +1481,11 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                         vol.Schema(
                             {
                                 vol.Optional(
-                                    "smart_comfort_mode", description={"suggested_value": cur_comfort},
-                                ): SelectSelector(
-                                    SelectSelectorConfig(
-                                        options=list(_SMART_COMFORT_MODE_KEYS),
-                                        mode=SelectSelectorMode.DROPDOWN,
-                                        translation_key="smart_comfort_mode",
-                                    ),
-                                ),
-                                vol.Optional(
                                     "window_type", description={"suggested_value": cur_window_type},
                                 ): SelectSelector(
                                     SelectSelectorConfig(
                                         options=["single_pane", "double_pane", "triple_pane", "passive_house"],
                                         translation_key="mold_risk_window_type",
-                                        mode=SelectSelectorMode.DROPDOWN,
-                                    ),
-                                ),
-                                vol.Optional(
-                                    "window_predicted_mode", description={"suggested_value": cur_detection_mode},
-                                ): SelectSelector(
-                                    SelectSelectorConfig(
-                                        options=WINDOW_DETECTION_MODE_OPTIONS,
-                                        translation_key="window_predicted_mode",
-                                        mode=SelectSelectorMode.DROPDOWN,
-                                    ),
-                                ),
-                                vol.Optional(
-                                    "window_predicted_sensitivity", description={"suggested_value": cur_sensitivity},
-                                ): SelectSelector(
-                                    SelectSelectorConfig(
-                                        options=WINDOW_SENSITIVITY_OPTIONS,
                                         mode=SelectSelectorMode.DROPDOWN,
                                     ),
                                 ),

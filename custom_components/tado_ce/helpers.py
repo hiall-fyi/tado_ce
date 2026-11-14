@@ -14,16 +14,27 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from enum import StrEnum
 import logging
 import random
 import re
 from typing import TYPE_CHECKING, Any, Final
 
+from homeassistant.const import UnitOfTemperature
+from homeassistant.helpers import entity_registry as er
+from homeassistant.util.unit_conversion import TemperatureConverter
+
+from .cloud_health import CloudHealthState
 from .const import (
     CLIMATE_ZONE_TYPES,
     CLOUD_READING_REPORT_SLACK,
     CLOUD_READING_STALE_AFTER,
+    DOMAIN,
+    EXTERNAL_TEMPERATURE_MAX_C,
+    EXTERNAL_TEMPERATURE_MIN_C,
+    HOMEKIT_CLOUD_LAG_SECONDS,
     MAX_RETRY_ATTEMPTS,
     MAX_RETRY_DELAY,
     OVERLAY_MODE_DEFAULT,
@@ -34,6 +45,8 @@ from .const import (
     TIMER_DURATION_MIN,
     WRITE_ROUTE_CLOUD,
 )
+from .entity_registry import get_meta
+from .mechanism_counters import put_agrees
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -52,6 +65,17 @@ else:
     _AvailabilityHost = object
 
 _LOGGER = logging.getLogger(__name__)
+
+REASON_NOT_CONNECTED: Final = "HomeKit is not connected"
+REASON_NO_CHARACTERISTIC: Final = "the zone has no HomeKit target characteristic"
+REASON_CIRCUIT_OPEN: Final = "the HomeKit write circuit is open"
+REASON_HELD: Final = "the cloud is not reachable, so the write is held locally"
+REASON_ZONE_OFF: Final = "the zone is off"
+REASON_CLOUD_ROUTE: Final = "the zone sends changes via the cloud"
+REASON_NOT_MANUAL: Final = "the overlay mode is not MANUAL"
+
+# Every CloudHealth state in which the cloud refuses or cannot take a write.
+_CLOUD_DOWN_STATES: Final = frozenset(state for state in CloudHealthState if state is not CloudHealthState.OK)
 
 # Serial number masking: keep prefix + first few chars for debugging, mask the rest.
 # Bridge serials (IB...) are especially sensitive: combined with the 4-digit auth
@@ -163,6 +187,32 @@ def get_zone_states(coord_data: dict[str, Any] | None) -> dict[str, dict[str, An
     return zones.get("zoneStates") or {}
 
 
+def get_entity_zone_ids(coord_data: dict[str, Any] | None) -> frozenset[str]:
+    """Zone ids that both zones_info and zoneStates list, the zones every per-zone platform can build for."""
+    zones_info = (coord_data or {}).get("zones_info")
+    listed = (
+        {str(z["id"]) for z in zones_info if isinstance(z, dict) and z.get("id") is not None}
+        if isinstance(zones_info, list)
+        else set()
+    )
+    return frozenset(listed & set(get_zone_states(coord_data)))
+
+
+def zone_build_identity(zone: dict[str, Any]) -> tuple[str, str]:
+    """Type and name a zone's entities are built with, read the way the platforms read them."""
+    return (zone.get("type") or "", zone.get("name", f"Zone {zone.get('id')}"))
+
+
+def get_entity_zone_identity(coord_data: dict[str, Any] | None) -> dict[str, tuple[str, str]]:
+    """Map each buildable zone id to the identity its entities are made with."""
+    listed = get_entity_zone_ids(coord_data)
+    return {
+        str(z["id"]): zone_build_identity(z)
+        for z in (coord_data or {}).get("zones_info") or []
+        if isinstance(z, dict) and z.get("id") is not None and str(z["id"]) in listed
+    }
+
+
 def get_zone_state(coord_data: dict[str, Any] | None, zone_id: str) -> dict[str, Any] | None:
     """Get state for a single zone from coordinator data.
 
@@ -178,15 +228,47 @@ def get_zone_state_for_control(coordinator: TadoDataUpdateCoordinator, zone_id: 
     return get_zone_state(coordinator.data, zone_id)
 
 
-def zone_confirmed_on(coordinator: TadoDataUpdateCoordinator, zone_id: str) -> bool:
-    """Whether the last cloud poll has this zone's power ON.
+def payload_to_time(coordinator: TadoDataUpdateCoordinator, zone_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Return the put payload, or None when the cloud state already shows it (it would agree at once)."""
+    cloud_state = get_zone_state(coordinator.data, zone_id)
+    return None if isinstance(cloud_state, dict) and put_agrees(payload, cloud_state) else payload
 
-    Not the entity's own `_attr_hvac_mode`, which flips optimistically
-    before a write is confirmed.
-    """
-    zone_data = get_zone_state(coordinator.data, zone_id) or {}
-    setting = zone_data.get("setting") or {}
-    return setting.get("power") == "ON"
+
+_TEMPERATURE_UNIT_ALIASES: Final[dict[str, str]] = {
+    "c": UnitOfTemperature.CELSIUS, "°c": UnitOfTemperature.CELSIUS, "degc": UnitOfTemperature.CELSIUS,
+    "celsius": UnitOfTemperature.CELSIUS,
+    "f": UnitOfTemperature.FAHRENHEIT, "°f": UnitOfTemperature.FAHRENHEIT, "degf": UnitOfTemperature.FAHRENHEIT,
+    "fahrenheit": UnitOfTemperature.FAHRENHEIT,
+    "k": UnitOfTemperature.KELVIN,
+}
+
+
+def parse_temperature_celsius(raw: Any, unit: Any) -> float | None:
+    """Return an external sensor reading in Celsius, or None when it is non-numeric, in an unknown unit or implausible."""
+    try:
+        value = float(raw)
+    except (ValueError, TypeError):
+        return None
+    # A missing or non-string unit means Celsius, so sensors that publish no unit keep working.
+    if isinstance(unit, str) and unit.strip():
+        canonical = _TEMPERATURE_UNIT_ALIASES.get(unit.strip().lower())
+        if canonical is None:
+            _LOGGER.debug("Helpers: external temperature unit %r is not supported, ignoring", unit)
+            return None
+        if canonical != UnitOfTemperature.CELSIUS:
+            value = TemperatureConverter.convert(value, canonical, UnitOfTemperature.CELSIUS)
+    if not EXTERNAL_TEMPERATURE_MIN_C <= value <= EXTERNAL_TEMPERATURE_MAX_C:
+        return None
+    return value
+
+
+def parse_percentage(raw: Any) -> float | None:
+    """Return an external humidity reading when it is a number from 0 to 100, else None."""
+    try:
+        value = float(raw)
+    except (ValueError, TypeError):
+        return None
+    return value if 0.0 <= value <= 100.0 else None
 
 
 def resolve_boiler_flow_temperature(
@@ -216,26 +298,23 @@ def resolve_boiler_flow_temperature(
     if state is None or state.state in ("unknown", "unavailable", ""):
         return None, None
 
-    try:
-        return float(state.state), "external"
-    except (ValueError, TypeError):
-        _LOGGER.debug(
-            "Helpers: boiler flow entity %s has non-numeric state %r, ignoring",
-            entity_id,
-            state.state,
-        )
+    value = parse_temperature_celsius(state.state, state.attributes.get("unit_of_measurement"))
+    if value is None:
+        _LOGGER.debug("Helpers: boiler flow entity %s has unusable state %r, ignoring", entity_id, state.state)
         return None, None
+    return value, "external"
 
 
-_merge_logged: dict[str, tuple[Any, ...]] = {}
+_merge_logged: dict[tuple[str, str], tuple[Any, ...]] = {}
 
 
 def merge_homekit_into_zone_data(
     zone_data: dict[str, Any],
     zone_id: str,
     coordinator: TadoDataUpdateCoordinator,
+    purpose: str = "control",
 ) -> dict[str, Any]:
-    """Return a shallow copy of zone_data with fresh HomeKit temperature merged in, and HomeKit humidity only when cloud has none."""
+    """Return a shallow copy of zone_data with fresh HomeKit temperature merged in (purpose="display" honours the zone's Temperature source), and HomeKit humidity only when cloud has none."""
     try:
         provider = coordinator.homekit_provider
         reconciler = coordinator.state_reconciler
@@ -247,10 +326,16 @@ def merge_homekit_into_zone_data(
         sensor_data = (zone_data.get("sensorDataPoints") or {}).copy()
         cloud_temp = (sensor_data.get("insideTemperature") or {}).get("celsius")
         cloud_humidity = (sensor_data.get("humidity") or {}).get("percentage")
-        # purpose="control": Smart Valve Control reads this merged
+        # Default purpose="control": Smart Valve Control reads this merged
         # insideTemperature as its calibration reference, so a per-zone
         # display-source preference must NOT bend it.
-        merged_temp, temp_src = reconciler.merge_zone_temperature(zone_id, cloud_temp, purpose="control")
+        merge_kwargs: dict[str, Any] = {"purpose": purpose}
+        if purpose == "display":
+            zcm = coordinator.zone_config_manager
+            merge_kwargs["display_source"] = (
+                zcm.get_zone_value(zone_id, "display_temp_source", "auto") if zcm else "auto"
+            )
+        merged_temp, temp_src = reconciler.merge_zone_temperature(zone_id, cloud_temp, **merge_kwargs)
         merged_hum, hum_src = reconciler.merge_zone_humidity(zone_id, cloud_humidity)
         # Rebuild the nested dicts rather than setdefault(...)[key]=: the shallow
         # .copy() above shares the nested insideTemperature/humidity objects with
@@ -269,11 +354,11 @@ def merge_homekit_into_zone_data(
                 "percentage": merged_hum,
             }
         # Only log when the merge changed something and differs from the last line
-        # logged for this zone; with no cloud data every entity update
+        # logged for this zone and purpose; with no cloud data every entity update
         # would otherwise repeat the same line.
         merge_state = (cloud_temp, merged_temp, temp_src, cloud_humidity, merged_hum, hum_src)
-        if (cloud_temp != merged_temp or cloud_humidity != merged_hum) and _merge_logged.get(zone_id) != merge_state:
-            _merge_logged[zone_id] = merge_state
+        if (cloud_temp != merged_temp or cloud_humidity != merged_hum) and _merge_logged.get((zone_id, purpose)) != merge_state:
+            _merge_logged[(zone_id, purpose)] = merge_state
             _LOGGER.debug(
                 "Helpers: zone %s merge, temp %s → %s (%s), "
                 "humidity %s → %s (%s)",
@@ -307,6 +392,82 @@ _OVERLAY_API_MAP: dict[str, str] = {
 def _map_overlay_to_api(mode: str) -> str:
     """Map a legacy service-arg overlay value to its Tado API-accepted value."""
     return _OVERLAY_API_MAP.get(mode, mode)
+
+
+class Route(StrEnum):
+    """Where one zone write goes."""
+
+    CLOUD = "cloud"
+    HOMEKIT = "homekit"
+    # Only the heating write entry points allow it, and only while CloudHealth is not OK.
+    HOMEKIT_HELD = "homekit_held"
+
+
+@dataclass(frozen=True, slots=True)
+class RouteDecision:
+    """The route one zone write takes and, when it is not HomeKit, the first reason."""
+
+    route: Route
+    reasons: tuple[str, ...] = ()
+
+
+def _cloud(reason: str) -> RouteDecision:
+    return RouteDecision(Route.CLOUD, (reason,))
+
+
+def _overlay_refusal_reason(hass: HomeAssistant, zone_id: str, entry_id: str | None) -> str:
+    """Name which of the two overlay gates refused (called only after `should_use_homekit_for_overlay` said no)."""
+    try:
+        coordinator = _get_coordinator(hass, entry_id) if entry_id else None
+        zone_config_manager = getattr(coordinator, "zone_config_manager", None)
+        if zone_config_manager and zone_config_manager.get_write_route(zone_id) == WRITE_ROUTE_CLOUD:
+            return REASON_CLOUD_ROUTE
+    except (AttributeError, TypeError):
+        # The same lookup errors the predicate degrades on; the mode reason is the fallback.
+        _LOGGER.debug("Helpers: zone %s write route unreadable while naming a route reason", zone_id)
+    return REASON_NOT_MANUAL
+
+
+def decide_route(
+    hass: HomeAssistant,
+    coordinator: TadoDataUpdateCoordinator,
+    zone_id: str,
+    *,
+    entry_id: str | None = None,
+    zone_was_off: bool = False,
+    honour_route: bool = True,
+    allow_held: bool = False,
+) -> RouteDecision:
+    """Decide where this zone's target write goes, in one written order (shared by heating, AC and the valve)."""
+    provider = coordinator.homekit_provider
+    if provider is None or not provider.is_connected:
+        return _cloud(REASON_NOT_CONNECTED)
+    # A zone with no accessory or characteristic can never recover, so it must not feed its own tracker.
+    if not provider.has_target_characteristic(zone_id):
+        return _cloud(REASON_NO_CHARACTERISTIC)
+    tracker = coordinator.write_health_for(zone_id)
+    if tracker is None or not tracker.should_try_homekit():
+        return _cloud(REASON_CIRCUIT_OPEN)
+    if allow_held and coordinator.cloud_health.state in _CLOUD_DOWN_STATES:
+        return RouteDecision(Route.HOMEKIT_HELD, (REASON_HELD,))
+    if zone_was_off:
+        return _cloud(REASON_ZONE_OFF)
+    if honour_route and not should_use_homekit_for_overlay(hass, zone_id, entry_id):
+        return _cloud(_overlay_refusal_reason(hass, zone_id, entry_id))
+    return RouteDecision(Route.HOMEKIT)
+
+
+def can_write_target(
+    hass: HomeAssistant,
+    coordinator: TadoDataUpdateCoordinator,
+    zone_id: str,
+    *,
+    entry_id: str | None = None,
+    honour_route: bool = True,
+) -> bool:
+    """Return True when this zone's target write may be tried over HomeKit (the valve's wrapper over `decide_route`)."""
+    decision = decide_route(hass, coordinator, zone_id, entry_id=entry_id, honour_route=honour_route)
+    return decision.route is not Route.CLOUD
 
 
 def should_use_homekit_for_overlay(hass: HomeAssistant, zone_id: str, entry_id: str | None = None) -> bool:
@@ -354,6 +515,24 @@ def should_use_homekit_for_overlay(hass: HomeAssistant, zone_id: str, entry_id: 
         return OVERLAY_MODE_DEFAULT == OVERLAY_MODE_MANUAL
 
     return True
+
+
+def zone_entity_id(
+    hass: HomeAssistant,
+    domain: str,
+    meta_key: str,
+    home_id: str | None,
+    zone_id: str,
+    fallback_object_id: str,
+) -> str:
+    """Return a zone entity's registry id by unique id, else the guessed `<domain>.<fallback_object_id>`."""
+    if home_id:
+        suffix = get_meta(meta_key).unique_id_suffix.format(zone_id=zone_id)
+        entity_id = er.async_get(hass).async_get_entity_id(domain, DOMAIN, f"tado_ce_{home_id}_{suffix}")
+        if entity_id:
+            return entity_id
+    _LOGGER.debug("Helpers: no registry entry for zone %s %s, falling back to %s.%s", zone_id, meta_key, domain, fallback_object_id)
+    return f"{domain}.{fallback_object_id}"
 
 
 def svc_schedule_zone_ids(
@@ -616,9 +795,9 @@ async def async_trigger_immediate_refresh(
 ) -> None:
     """Ask the entity's coordinator for an immediate (debounced) refresh.
 
-    `force=True` bypasses the cooldown so button-driven writes
-    show up straight away; `skip_debounce=True` removes the
-    debounce delay entirely (also button-style flow).
+    `force=True` bypasses the entity-domain filter (the quota check still
+    runs) so button-driven writes are refreshed; `skip_debounce=True`
+    removes the debounce delay entirely (also button-style flow).
     """
     try:
         from homeassistant.helpers import entity_registry as er
@@ -671,6 +850,16 @@ def get_optimistic_window(hass: HomeAssistant, entry_id: str | None = None) -> f
             err, DEFAULT_OPTIMISTIC_WINDOW_SECONDS,
         )
     return DEFAULT_OPTIMISTIC_WINDOW_SECONDS
+
+
+def get_homekit_cloud_lag_seconds(hass: HomeAssistant, entry_id: str | None = None) -> float:
+    """Return the cloud lag, never below the optimistic hold and never above the write protection window."""
+    # Imported here to keep helpers free of a module-level state_reconciler dependency
+    from .const import OPTIMISTIC_WINDOW_BUFFER_SECONDS
+    from .state_reconciler import WRITE_PROTECTION_WINDOW
+
+    floor = get_optimistic_window(hass, entry_id) + OPTIMISTIC_WINDOW_BUFFER_SECONDS
+    return min(max(HOMEKIT_CLOUD_LAG_SECONDS, floor), WRITE_PROTECTION_WINDOW.total_seconds())
 
 
 def get_overlay_termination(hass: HomeAssistant, entry_id: str | None = None) -> dict[str, Any]:
@@ -733,9 +922,7 @@ def get_zone_overlay_termination(hass: HomeAssistant, zone_id: str, entry_id: st
             zone_config_manager.get_effective_overlay_mode(zone_id, coordinator.overlay_mode),
         )
         if mode == "TIMER":
-            minutes = normalise_timer_minutes(
-                zone_config_manager.get_effective_timer_duration(zone_id, coordinator.timer_duration),
-            )
+            minutes = zone_config_manager.get_effective_timer_duration(zone_id, coordinator.timer_duration)
             return {"type": "TIMER", "durationInSeconds": minutes * 60}
         return {"type": mode}
 
@@ -802,20 +989,9 @@ def build_timer_termination(
     return {"type": "MANUAL"}
 
 
-def prune_zone_keyed_dict(
-    d: dict[str, Any],
-    current_zones: frozenset[str],
-) -> int:
-    """Drop entries whose zone_id is no longer in current_zones; return removed count.
-
-    Recognised key shapes:
-    - "zone_id":           DataLoader dict stores
-    - "zone_id:entity":    state_restore key shape (split on first colon)
-    """
-    to_drop = {k for k in d if k.split(":", 1)[0] not in current_zones}
-    for k in to_drop:
-        d.pop(k, None)
-    return len(to_drop)
+def unlisted_zone_keys(d: dict[str, Any], current_zones: frozenset[str]) -> list[str]:
+    """Return the keys of d whose zone_id (before any first colon) is not in current_zones, without touching d."""
+    return [k for k in d if k.split(":", 1)[0] not in current_zones]
 
 
 def retry_after_to_minutes(seconds: int) -> str:
@@ -826,37 +1002,20 @@ def retry_after_to_minutes(seconds: int) -> str:
 
 def low_quota_threshold(daily_limit: int | None) -> int:
     """Return the low-quota threshold scaled to the daily-limit tier."""
-    # WHY: max(absolute floor, percent of daily limit). Floor keeps the
-    # 100-call free tier on existing behaviour; percent scales the gate so
-    # 1,000-call transitional and 20,000-call legacy tiers fire with
-    # proportional cushion (10%) rather than the same absolute cushion as
-    # the free tier (which would mean fires at 99% used on the legacy tier).
-    from .const import LOW_QUOTA_RESERVE_FLOOR, LOW_QUOTA_RESERVE_PERCENT
+    from .quota_levels import QuotaLevels
 
-    if daily_limit is None or daily_limit <= 0:
-        return LOW_QUOTA_RESERVE_FLOOR
-    return max(LOW_QUOTA_RESERVE_FLOOR, int(daily_limit * LOW_QUOTA_RESERVE_PERCENT))
+    return QuotaLevels(QuotaLevels.normalise_limit(daily_limit)).soft_low
 
 
 def full_sync_period_seconds(daily_limit: int | None) -> int:
     """Return seconds between full syncs: the slower cadence on the free tier, hourly otherwise."""
-    from .const import (
-        ZONES_INFO_FREE_TIER_THRESHOLD,
-        ZONES_INFO_REFRESH_SECONDS_FREE,
-        ZONES_INFO_REFRESH_SECONDS_PAID,
-    )
+    from .quota_levels import QuotaLevels
 
-    if isinstance(daily_limit, int) and 0 < daily_limit <= ZONES_INFO_FREE_TIER_THRESHOLD:
-        return ZONES_INFO_REFRESH_SECONDS_FREE
-    return ZONES_INFO_REFRESH_SECONDS_PAID
+    return QuotaLevels(QuotaLevels.normalise_limit(daily_limit)).full_sync_period
 
 
 def hard_quota_reserve(daily_limit: int | None) -> int:
     """Return the reserve at which polling pauses, scaled to the daily-limit tier."""
-    # WHY: a hard floor kept for manual actions, unlike low_quota_threshold's
-    # "start conserving" signal. Nothing optional may spend into it.
-    from .const import QUOTA_RESERVE_CALLS, QUOTA_RESERVE_PERCENT
+    from .quota_levels import QuotaLevels
 
-    if daily_limit is None or daily_limit <= 0:
-        return QUOTA_RESERVE_CALLS
-    return max(QUOTA_RESERVE_CALLS, int(daily_limit * QUOTA_RESERVE_PERCENT))
+    return QuotaLevels(QuotaLevels.normalise_limit(daily_limit)).hard_reserve

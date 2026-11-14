@@ -20,21 +20,21 @@ body:
       options:
         - label: I have searched the existing issues and discussions for this
           required: true
-        - label: I'm running the latest Tado CE release shown in HACS
+        - label: I'm running the latest Tado CE release, or the beta I'm testing
           required: true
   - type: input
     id: tado_ce_version
     attributes:
       label: Tado CE version
       description: Copy it from the integration's device page rather than typing from memory.
-      placeholder: e.g. 4.5.0
+      placeholder: e.g. 5.0.0-beta.1
     validations:
       required: true
   - type: input
     id: ha_version
     attributes:
       label: Home Assistant version
-      placeholder: e.g. 2026.9.4
+      placeholder: e.g. 2026.11.1
     validations:
       required: true
   - type: dropdown

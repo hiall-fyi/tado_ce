@@ -106,7 +106,7 @@ class HeatingCycleDetector:
             )
             self._last_target_temp = new_target
 
-            _LOGGER.info(
+            _LOGGER.debug(
                 "Heating Detector: zone %s started a new cycle, "
                 "target %.1f°C",
                 self._zone_id,

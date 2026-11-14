@@ -35,6 +35,7 @@ from .repair_helpers import (
 from .write_optimizer import _log_task_exception
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
     from homeassistant.config_entries import ConfigFlowResult
@@ -144,9 +145,6 @@ class HomeKitClient:
         self._store: Store[dict[str, Any]] = Store(
             hass, _STORE_VERSION, f"tado_ce/homekit_pairing_{home_id}",
         )
-        from .const import get_data_file
-
-        self._old_pairing_path = get_data_file("homekit_pairing", home_id)
         self._controller: Any | None = controller  # aiohomekit Controller
         # True only when this client built the controller itself and is
         # therefore responsible for stopping it. False for an injected
@@ -155,6 +153,8 @@ class HomeKitClient:
         self._pairing: Any | None = None  # aiohomekit IpPairing
         self._is_connected = False
         self._reconnect_task: asyncio.Task[None] | None = None
+        self._reconnect_requested = False
+        self._catch_up_fetch = True
         self._closing = False
         self._unsub_config_changed: Any | None = None
         self._config_changed_task: asyncio.Task[None] | None = None
@@ -162,6 +162,7 @@ class HomeKitClient:
 
         self._serial_to_zone: dict[str, str] = {}
         self._zone_to_aids: dict[str, list[int]] = {}
+        self._cloud_serials: dict[str, list[str]] | None = None
 
         self._last_connected: str | None = None
         self._last_disconnected: str | None = None
@@ -169,6 +170,7 @@ class HomeKitClient:
 
         # Reconnect callbacks (e.g. re-subscribe events, reset circuit breaker)
         self._on_reconnect_callbacks: list[Any] = []
+        self._on_disconnect_callbacks: list[Callable[[], None]] = []
 
     @property
     def is_connected(self) -> bool:
@@ -193,14 +195,23 @@ class HomeKitClient:
         self,
         serial_to_zone: dict[str, str],
         zone_to_aids: dict[str, list[int]],
+        cloud_serials: dict[str, list[str]] | None = None,
     ) -> None:
-        """Wire up the serial-to-zone and zone-to-aids dictionaries."""
+        """Wire up the serial-to-zone and zone-to-aids dictionaries plus the cloud-serial fingerprint."""
         self._serial_to_zone = serial_to_zone
         self._zone_to_aids = zone_to_aids
+        self._cloud_serials = cloud_serials
+
+    @property
+    def cloud_serials(self) -> dict[str, list[str]] | None:
+        """Return the cloud device serials the mapping was built for (None for a legacy mapping)."""
+        return self._cloud_serials
 
     def remove_zone_mapping(self, zone_id: str) -> tuple[dict[str, str], dict[str, list[int]]]:
         """Remove one zone from the live mapping; returns the resulting pair for persistence."""
         self._zone_to_aids.pop(zone_id, None)
+        if self._cloud_serials is not None:
+            self._cloud_serials.pop(zone_id, None)
         self._serial_to_zone = {
             serial: zid for serial, zid in self._serial_to_zone.items() if zid != zone_id
         }
@@ -209,6 +220,10 @@ class HomeKitClient:
     def add_reconnect_callback(self, callback: Any) -> None:
         """Register an async callback to await after each successful reconnect."""
         self._on_reconnect_callbacks.append(callback)
+
+    def add_disconnect_callback(self, callback: Callable[[], None]) -> None:
+        """Register a sync callback run once when the reconnect loop starts."""
+        self._on_disconnect_callbacks.append(callback)
 
     @property
     def zone_aid_map(self) -> dict[str, list[int]]:
@@ -229,13 +244,6 @@ class HomeKitClient:
     async def async_connect(self) -> bool:
         """Connect using stored pairing credentials, returning success."""
         pairing_data: dict[str, Any] | list[Any] | None = await self._store.async_load()
-        if not pairing_data or not isinstance(pairing_data, dict):
-            from .storage import async_migrate_json_to_store
-
-            pairing_data = await async_migrate_json_to_store(
-                self._hass, self._old_pairing_path, self._store,
-                label="homekit_pairing",
-            )
         if not pairing_data or not isinstance(pairing_data, dict):
             _LOGGER.debug(
                 "HomeKit: no pairing credentials stored, staying "
@@ -387,18 +395,42 @@ class HomeKitClient:
                 )
             self._controller = None
 
-    async def async_reconnect(self) -> None:
+    @property
+    def catch_up_fetch(self) -> bool:
+        """Whether the running or last reconnect should trigger a cloud zone fetch on its drop and reconnect."""
+        return self._catch_up_fetch
+
+    async def async_reconnect(self, *, catch_up_fetch: bool = True) -> None:
         """Schedule a background reconnect with exponential backoff (idempotent)."""
         if self._closing:
             return
         if self._reconnect_task and not self._reconnect_task.done():
+            # Another reason that does want the catch-up fetch wins over a loop-started one.
+            self._catch_up_fetch = self._catch_up_fetch or catch_up_fetch
+            # Connected while the loop runs means its callback phase: remember the request.
+            if self._is_connected:
+                self._reconnect_requested = True
             return
-        self._reconnect_task = asyncio.create_task(self._reconnect_loop())
+        self._catch_up_fetch = catch_up_fetch
+        # eager_start=False keeps the first step on the next loop iteration, as asyncio.create_task does.
+        self._reconnect_task = self._hass.async_create_background_task(
+            self._reconnect_loop(),
+            name=f"tado_ce homekit reconnect {mask_home_id(self._home_id)}",
+            eager_start=False,
+        )
+        # The no-fetch request covers this loop only; a later rebuild that runs the reconnect callbacks must fetch again.
+        self._reconnect_task.add_done_callback(self._restore_catch_up_fetch)
+
+    def _restore_catch_up_fetch(self, _task: asyncio.Task[None]) -> None:
+        """Make the next reconnect callbacks ask for the catch-up fetch again."""
+        self._catch_up_fetch = True
 
     async def _reconnect_loop(self) -> None:
         """Reconnect indefinitely, backing off per `_BACKOFF_SCHEDULE` with jitter."""
         self._is_connected = False
         self._last_disconnected = dt_util.utcnow().isoformat()
+        self._run_disconnect_callbacks()
+        self._reconnect_requested = False
         backoff_idx = 0
 
         while not self._closing:
@@ -423,7 +455,12 @@ class HomeKitClient:
                         mask_home_id(self._home_id), backoff_idx + 1,
                     )
                     await self._run_reconnect_callbacks()
-                    return
+                    if not self._reconnect_requested:
+                        return
+                    self._reconnect_requested = False
+                    self._is_connected = False
+                    backoff_idx += 1
+                    continue
             except AuthenticationError as err:
                 await self._handle_homekit_pairing_invalid(err)
                 return  # stop the loop: retrying is pointless
@@ -442,6 +479,16 @@ class HomeKitClient:
                 )
 
             backoff_idx += 1
+
+    def _run_disconnect_callbacks(self) -> None:
+        """Run every disconnect callback, isolating each so one failure can't abort the loop."""
+        for cb in self._on_disconnect_callbacks:
+            try:
+                cb()
+            except Exception:
+                # Injected callbacks may fail: the broad catch keeps the reconnect loop running.
+                _LOGGER.warning("HomeKit: disconnect callback failed")
+                _LOGGER.debug("HomeKit: disconnect callback error details", exc_info=True)
 
     async def _run_reconnect_callbacks(self) -> None:
         """Await every post-reconnect callback, isolating each so one failure can't abort the rest."""
@@ -549,6 +596,11 @@ class HomeKitClient:
                 _LOGGER.debug("HomeKit: unpair error details", exc_info=True)
             finally:
                 await self.async_disconnect()
+        else:
+            _LOGGER.warning(
+                "HomeKit: the bridge could not be reached, so it still lists the pairing. "
+                "Local credentials are cleared; reset the bridge before pairing it again.",
+            )
 
         async_dismiss_homekit_pairing_invalid_issue(self._hass, self._home_id)
         await self._store.async_remove()
@@ -761,26 +813,14 @@ def _flush_pending_advanced_options(flow: TadoCEOptionsFlow) -> bool:
     """
     if not flow._pending_advanced_options:
         return False
+    from .entity_cleanup import queue_cleanup_flags
+
+    queue_cleanup_flags(
+        flow.config_entry, flow.config_entry.options, flow._pending_advanced_options,
+    )
     return flow.hass.config_entries.async_update_entry(
         flow.config_entry, options=flow._pending_advanced_options,
     )
-
-
-def _create_entry_with_cleanup(
-    flow: TadoCEOptionsFlow, data: dict[str, Any],
-) -> ConfigFlowResult:
-    """Finish a General Settings first-enable redirect that lands here.
-
-    `_detect_first_enable`'s redirect hands off before General Settings' own
-    `queue_cleanup_flags` call ever runs, so a submit that both disables one
-    feature and first-enables HomeKit in the same form would otherwise never
-    detect the disabled feature's cleanup. Every exit of this sub-step that
-    finishes such a submit must queue it itself.
-    """
-    from .entity_cleanup import queue_cleanup_flags
-
-    queue_cleanup_flags(flow.config_entry, flow.config_entry.options, data)
-    return flow.async_create_entry(title="", data=data)
 
 
 # HomeKit setup code: 8 digits, shown as XXX-XX-XXX. Accept the code with or
@@ -805,7 +845,7 @@ async def async_step_homekit_pairing(
 ) -> ConfigFlowResult:
     """Drive the options-flow HomeKit pairing sub-step."""
     from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, TextSelectorType
-    import voluptuous as vol
+    import probatio as vol
 
     errors: dict[str, str] = {}
 
@@ -825,7 +865,7 @@ async def async_step_homekit_pairing(
             # since there's no bridge for this home to pair with.
             if flow._pending_general_options:
                 flow._pending_general_options["homekit_enabled"] = False
-                return _create_entry_with_cleanup(flow, flow._pending_general_options)
+                return await flow._advance_first_enable("homekit_pairing")
             _flush_pending_advanced_options(flow)
             return await flow.async_step_init()
         return flow.async_show_form(
@@ -841,7 +881,7 @@ async def async_step_homekit_pairing(
             # flag so the options form reflects the actual state.
             if flow._pending_general_options:
                 flow._pending_general_options["homekit_enabled"] = False
-                return _create_entry_with_cleanup(flow, flow._pending_general_options)
+                return await flow._advance_first_enable("homekit_pairing")
             _flush_pending_advanced_options(flow)
             return await flow.async_step_init()
 
@@ -866,7 +906,7 @@ async def async_step_homekit_pairing(
                     # that clears runtime_data mid-pair and get reported as
                     # a pairing failure despite having succeeded.
                     zones_info = coordinator.data.get("zones_info") or []
-                    await async_rebuild_and_save_mapping(
+                    mapping = await async_rebuild_and_save_mapping(
                         flow.hass, client, home_id, zones_info,
                     )
                     async_dismiss_homekit_pairing_invalid_issue(
@@ -876,14 +916,19 @@ async def async_step_homekit_pairing(
                 finally:
                     await client.async_disconnect()
 
-                _LOGGER.info(
-                    "HomeKit: pairing complete and mapping saved",
-                )
+                if mapping.get("serial_to_zone"):
+                    _LOGGER.info("HomeKit: pairing complete and mapping saved")
+                else:
+                    _LOGGER.info(
+                        "HomeKit: pairing complete, but no zone mapping could be built yet. "
+                        "Tado CE tries again on the next polls after it reloads; if local control "
+                        "stays off, check the bridge is powered on and on your network.",
+                    )
 
                 if flow._pending_general_options:
                     # First enable: writing the options flips homekit_enabled,
                     # and the update listener reloads the entry for us.
-                    return _create_entry_with_cleanup(flow, flow._pending_general_options)
+                    return await flow._advance_first_enable("homekit_pairing")
 
                 # Re-pair: pairing happened on a throwaway client, so the
                 # entry's live client still holds whatever state it had, and
@@ -953,7 +998,7 @@ async def async_step_homekit_unpair(
     bridge can't be contacted (so a permanently-offline bridge
     doesn't trap the user with no recovery path).
     """
-    import voluptuous as vol
+    import probatio as vol
 
     if user_input is not None:
         try:
@@ -980,6 +1025,10 @@ async def async_step_homekit_unpair(
         new_options = dict(flow.config_entry.options)
         new_options.update(flow._pending_advanced_options)
         new_options["homekit_enabled"] = False
+
+        from .entity_cleanup import queue_cleanup_flags
+
+        queue_cleanup_flags(flow.config_entry, flow.config_entry.options, new_options)
 
         # Unpair itself is the recovery path for an offline bridge, and local
         # credentials are already cleared above by this point, so a missing

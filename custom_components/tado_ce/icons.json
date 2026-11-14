@@ -22,13 +22,6 @@
           "off": "mdi:radiator-off"
         }
       },
-      "window_predicted": {
-        "default": "mdi:window-closed-variant",
-        "state": {
-          "on": "mdi:window-open-variant",
-          "off": "mdi:window-closed-variant"
-        }
-      },
       "bridge_connected": {
         "default": "mdi:lan-connect",
         "state": {
@@ -48,8 +41,8 @@
       "resume_all": {
         "default": "mdi:calendar-refresh"
       },
-      "refresh_ac": {
-        "default": "mdi:air-conditioner"
+      "refresh_zone_capabilities": {
+        "default": "mdi:refresh"
       },
       "refresh_schedule": {
         "default": "mdi:calendar-refresh"

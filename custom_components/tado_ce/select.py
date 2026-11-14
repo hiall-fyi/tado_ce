@@ -18,17 +18,18 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import slugify
 
-from .climate_helpers import inject_presence_state
+from .climate_helpers import inject_heating_circuit, inject_presence_state
 from .const import (
     DOMAIN,
     OVERLAY_MODE_DEFAULT,
     OVERLAY_MODE_KEYS,
-    OVERLAY_MODE_LEGACY_LABELS,
     TIMER_DURATION_DEFAULT,
     TIMER_DURATION_OPTIONS,
 )
 from .device_manager import get_hub_device_info, get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
+from .error_dispatch import dispatch_to_service_call
+from .exceptions import TadoAuthError, TadoBlockedError, TadoRateLimitError
 from .helpers import async_trigger_immediate_refresh
 from .optimistic_helpers import (
     OptimisticUpdateResult,
@@ -215,17 +216,28 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
 
         await set_optimistic_fields(
             self, self.coordinator,
+            source="cloud",
             expected={"mode": option},
         )
 
+        sequence = self._optimistic_sequence
         self.async_write_ha_state()
 
         option_lower = option.lower()
         client = self.coordinator.api_client
-        if option_lower == "auto":
-            success = await client.delete_presence_lock()
-        else:
-            success = await client.set_presence_lock(option.upper())
+        success = False
+        reverted = False
+        try:
+            if option_lower == "auto":
+                success = bool(await client.delete_presence_lock())
+            else:
+                success = bool(await client.set_presence_lock(option.upper()))
+        except (TadoAuthError, TadoRateLimitError, TadoBlockedError) as err:
+            # The finally below still restores the option before this error reaches the caller.
+            dispatch_to_service_call(err, self.coordinator.config_entry, self.hass, self.coordinator)
+        finally:
+            if not success:
+                reverted = self._revert_presence(sequence, old_mode, old_presence, old_locked)
 
         if success:
             _LOGGER.debug(
@@ -245,21 +257,27 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
             )
         else:
             _LOGGER.warning(
-                "Select: presence mode %s write failed, reverted to "
-                "previous mode",
+                "Select: presence mode %s write failed, %s",
                 option,
+                "reverted to previous mode" if reverted else "left to the latest poll",
             )
-            self._attr_current_option = old_mode
-            self._presence = old_presence
-            self._presence_locked = old_locked
-            clear_optimistic_state(self)
-            self.async_write_ha_state()
             raise HomeAssistantError(
                 f"Set presence mode to {option} failed",
                 translation_domain=DOMAIN,
                 translation_key="presence_mode_set_failed",
                 translation_placeholders={"option": option},
             )
+
+    def _revert_presence(self, sequence: int | None, old_mode: str | None, old_presence: str, old_locked: bool) -> bool:
+        """Put back what the write assigned unless a poll or a newer write owns the fields; True if reverted."""
+        if self._optimistic_sequence != sequence:
+            return False
+        self._attr_current_option = old_mode
+        self._presence = old_presence
+        self._presence_locked = old_locked
+        clear_optimistic_state(self)
+        self.async_write_ha_state()
+        return True
 
 
 class TadoOverlayModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], SelectEntity):
@@ -320,10 +338,8 @@ class TadoOverlayModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sele
 
     async def async_select_option(self, option: str) -> None:
         """Persist a new overlay mode locally (no cloud call)."""
-        if option in OVERLAY_MODE_KEYS:
-            api_mode = option.upper()
-        else:
-            api_mode = OVERLAY_MODE_LEGACY_LABELS.get(option, OVERLAY_MODE_DEFAULT)
+        # HA validated the option against _attr_options before this runs
+        api_mode = option.upper()
         self._attr_current_option = api_mode.lower()
         self.async_write_ha_state()
 
@@ -523,5 +539,25 @@ class TadoHeatingCircuitSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], S
         self._attr_current_option = option
         self.async_write_ha_state()
 
-        await self.coordinator.api_client.set_zone_heating_circuit(self._zone_id, number)
+        committed = False
+        try:
+            committed = await self.coordinator.api_client.set_zone_heating_circuit(self._zone_id, number)
+        except (TadoAuthError, TadoRateLimitError, TadoBlockedError) as err:
+            # The finally below still restores the option before this error reaches the caller.
+            dispatch_to_service_call(err, self.coordinator.config_entry, self.hass, self.coordinator)
+        finally:
+            if not committed:
+                # Re-derive from the stored map, which a poll during the call may have refreshed.
+                self.update()
+                self.async_write_ha_state()
+        if not committed:
+            raise HomeAssistantError(
+                "Tado cloud write failed",
+                translation_domain=DOMAIN,
+                translation_key="cloud_write_failed",
+            )
+
+        await inject_heating_circuit(self.coordinator, self._zone_id, number)
+        self.update()
+        self.async_write_ha_state()
         await async_trigger_immediate_refresh(self.hass, self.entity_id, "heating_circuit_change")

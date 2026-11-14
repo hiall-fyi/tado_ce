@@ -73,6 +73,8 @@ class TadoWeatherCompensationTargetSensor(
             "room_compensation_offset": wc.get("room_compensation_offset"),
             "smoothing_method": wc.get("smoothing_method"),
             "smoothing_window": wc.get("smoothing_window"),
+            "curve_shape": wc.get("curve_shape"),
+            "curve_k": wc.get("curve_k"),
         }
 
 

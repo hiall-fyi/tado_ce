@@ -32,6 +32,7 @@ class FieldEnrichment:
     enabled_default: bool = True
     value_formatter: str | None = None  # name of format function in format_helpers.py
     platform: str = "sensor"  # "sensor", "binary_sensor", "number"
+    unique_id_suffix: str | None = None  # explicit; None derives bridge_<path>
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,20 +166,22 @@ def flatten_response(data: dict[str, object], prefix: str = "") -> list[Discover
 
 def get_unique_id_suffix(
     path: str,
-    legacy_map: dict[str, str] | None = None,
+    enrichment: dict[str, FieldEnrichment] | None = None,
 ) -> str:
-    """Get unique_id suffix, respecting legacy mappings for backward compat."""
-    if legacy_map:
-        for legacy_suffix, legacy_path in legacy_map.items():
-            if path == legacy_path:
-                return legacy_suffix
+    """Return the unique_id suffix for a field path.
+
+    An enrichment entry may name its suffix explicitly. Anything else,
+    including a field the API added that no entry describes, derives
+    bridge_<path>, which the cleanup open tail is what covers.
+    """
+    if enrichment and (entry := enrichment.get(path)) and entry.unique_id_suffix:
+        return entry.unique_id_suffix
     return f"bridge_{path.replace('.', '_')}"
 
 
 def resolve_entities(
     fields: list[DiscoveredField],
     enrichment: dict[str, FieldEnrichment],
-    legacy_map: dict[str, str] | None = None,
     skip_paths: frozenset[str] = frozenset(),
 ) -> list[ResolvedEntity]:
     """Apply enrichment + type inference to produce ResolvedEntity list."""
@@ -190,7 +193,7 @@ def resolve_entities(
         if f.path in skip_paths:
             continue
 
-        uid_suffix = get_unique_id_suffix(f.path, legacy_map)
+        uid_suffix = get_unique_id_suffix(f.path, enrichment)
         display = format_display_value(f.value, f.value_type, f.path)
 
         if f.path in enrichment:

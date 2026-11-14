@@ -29,7 +29,7 @@ class EntityMeta:
 
 ENTITY_REGISTRY: dict[str, EntityMeta] = {
     # ===================================================================
-    # Hub Sensors (sensor_hub.py): 12 entries, all DIAGNOSTIC
+    # Hub Sensors (sensor_hub.py): 13 entries, all DIAGNOSTIC
     # ===================================================================
     "sensor_home_id": EntityMeta(
         translation_key="home_id",
@@ -106,6 +106,12 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         unique_id_suffix="api_breakdown",
         entity_category="diagnostic",
         icon="mdi:chart-bar",
+    ),
+    "sensor_data_age": EntityMeta(
+        translation_key="data_age",
+        unique_id_suffix="data_age",
+        entity_category="diagnostic",
+        icon="mdi:timer-sand",
     ),
     # ===================================================================
     # Weather Sensors (sensor_weather.py): 3 entries, all DIAGNOSTIC
@@ -352,7 +358,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         feature_group="zone_diagnostics",
     ),
     # ===================================================================
-    # Binary Sensors (binary_sensor.py): 7 entries
+    # Binary Sensors (binary_sensor.py): 6 entries
     # ===================================================================
     "binary_sensor_home": EntityMeta(
         translation_key="home",
@@ -372,12 +378,6 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         entity_category="diagnostic",
         icon=None,  # uses device_class
         feature_group="smart_comfort",
-    ),
-    "binary_sensor_window_predicted": EntityMeta(
-        translation_key="window_predicted",
-        unique_id_suffix="zone_{zone_id}_window_predicted",
-        entity_category="diagnostic",
-        icon=None,  # uses device_class
     ),
     "binary_sensor_bridge_connected": EntityMeta(
         translation_key="bridge_connected",
@@ -440,11 +440,11 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         entity_category=None,
         icon="mdi:calendar-refresh",
     ),
-    "button_refresh_ac": EntityMeta(
-        translation_key="refresh_ac",
-        unique_id_suffix="refresh_ac",  # hub-level
+    "button_refresh_zone_capabilities": EntityMeta(
+        translation_key="refresh_zone_capabilities",
+        unique_id_suffix="refresh_zone_capabilities",  # hub-level
         entity_category="config",
-        icon="mdi:air-conditioner",
+        icon="mdi:refresh",
     ),
     "button_identify": EntityMeta(
         translation_key=None,  # uses dynamic _attr_name = f"Identify{suffix}"

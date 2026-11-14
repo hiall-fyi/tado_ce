@@ -3,27 +3,39 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from http import HTTPStatus
 import logging
 from typing import TYPE_CHECKING, Any, Protocol
 
 import aiohttp
+from homeassistant.util import dt as dt_util
 
+from .cloud_health import BACKOFF_CAP_SECONDS, CloudEvent
 from .const import CLIENT_ID, MAX_RETRY_ATTEMPTS, TADO_AUTH_URL
-from .exceptions import TadoAuthError
+from .exceptions import TadoAuthError, TadoBlockedError, TadoRateLimitError
 from .helpers import retry_delay
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
 
+    from .cloud_health import CloudHealth
     from .data_loader import DataLoader
 
 _LOGGER = logging.getLogger(__name__)
 
 # HTTP timeout for OAuth token refresh (15s, auth endpoint should be fast)
 _TOKEN_REFRESH_TIMEOUT = aiohttp.ClientTimeout(total=15)
+
+
+def _retry_after_seconds(header: str | None) -> int:
+    """Return a Retry-After header as whole non-negative seconds; anything unusable counts as 0."""
+    try:
+        seconds = int(float(header)) if header else 0
+    except (ValueError, TypeError, OverflowError):
+        return 0
+    return min(max(seconds, 0), BACKOFF_CAP_SECONDS)
 
 
 class _AuthHost(Protocol):
@@ -44,6 +56,10 @@ class _AuthHost(Protocol):
     _injected_refresh_token: str | None
     _data_loader: DataLoader | None
     _config_entry: ConfigEntry | None
+    _last_noted_event: CloudEvent | None
+
+    @property
+    def _cloud_health(self) -> CloudHealth | None: ...
 
     TOKEN_CACHE_DURATION: int
 
@@ -68,10 +84,27 @@ class TadoAuthMixin:
     # to leave headroom for clock skew and one retry.
     TOKEN_CACHE_DURATION = 300
 
+    # The last classified outcome, so a caller can tell what its own token attempt just recorded.
+    _last_noted_event: CloudEvent | None = None
+
     @property
     def has_valid_credentials(self: _AuthHost) -> bool:
         """Return True when either a refresh token or a cached access token is on hand."""
         return bool(self._injected_refresh_token or self._access_token)
+
+    def note_cloud(
+        self: _AuthHost,
+        event: CloudEvent,
+        *,
+        retry_after: float = 0.0,
+        exhausted: bool = False,
+        reset_cap_seconds: float | None = None,
+    ) -> None:
+        """Record a classified cloud outcome on the shared CloudHealth; the one production caller of `record`."""
+        self._last_noted_event = event
+        health = getattr(self, "_cloud_health", None)
+        if health is not None:
+            health.record(event, retry_after=retry_after, exhausted=exhausted, reset_cap_seconds=reset_cap_seconds)
 
     # --- Config I/O ---
 
@@ -87,8 +120,8 @@ class TadoAuthMixin:
 
         ConfigEntry is the sole source of truth for auth credentials.
         The DataLoader "config" cache is updated in-memory for runtime
-        consumers but its Store entry is not touched. The Store only
-        exists for v3.5.3 → v4.x migration bootstrap.
+        consumers, but its Store entry is deliberately left alone: a
+        rotated token must not be written to disk twice.
         """
         if self._hass and self._config_entry:
             new_data = {**self._config_entry.data, **config}
@@ -105,7 +138,7 @@ class TadoAuthMixin:
         """Return a valid access token, refreshing under lock when expired."""
         async with self._refresh_lock:
             if self._access_token and self._token_expiry:
-                if datetime.now(UTC) < (self._token_expiry - timedelta(seconds=10)):
+                if dt_util.utcnow() < (self._token_expiry - timedelta(seconds=10)):
                     return self._access_token
 
             return await self._refresh_token()
@@ -144,7 +177,7 @@ class TadoAuthMixin:
         if expires_in < 60:
             expires_in = self.TOKEN_CACHE_DURATION
 
-        self._token_expiry = datetime.now(UTC) + timedelta(seconds=expires_in)
+        self._token_expiry = dt_util.utcnow() + timedelta(seconds=expires_in)
         _LOGGER.debug(
             "Auth: access token refreshed, valid for %ds",
             expires_in,
@@ -156,8 +189,8 @@ class TadoAuthMixin:
         config: dict[str, Any],
         refresh_token: str,
         attempt: int,
-    ) -> str | None:
-        """Run one HTTP refresh attempt; return token on success or None on retryable 403."""
+    ) -> str | CloudEvent | None:
+        """Run one HTTP refresh attempt; return the token, a 5xx event to classify, or None to retry."""
         async with self._session.post(
             f"{TADO_AUTH_URL}/token",
             data={
@@ -173,17 +206,14 @@ class TadoAuthMixin:
 
             error_text = await resp.text()
 
-            if resp.status == HTTPStatus.UNAUTHORIZED or "invalid_grant" in error_text:
+            if resp.status == HTTPStatus.TOO_MANY_REQUESTS:
+                retry_after = _retry_after_seconds(resp.headers.get("Retry-After"))
                 _LOGGER.warning(
-                    "Auth: refresh token rejected by Tado (HTTP %s). "
-                    "HA will request re-authentication",
-                    resp.status,
+                    "Auth: token endpoint rate limited (HTTP 429), backing off for at least %ss",
+                    max(retry_after, 60),
                 )
-                # Don't null the refresh_token here. A transient 401
-                # (server glitch) would otherwise permanently
-                # invalidate a working token. Let HA's reauth flow
-                # decide whether the user needs to re-log-in.
-                raise TadoAuthError("Refresh token invalid (auth failure)")
+                self.note_cloud(CloudEvent.TOKEN_429, retry_after=retry_after)  # type: ignore[attr-defined]
+                raise TadoRateLimitError("Token endpoint rate limited (429)", retry_after=retry_after)
 
             if resp.status == HTTPStatus.FORBIDDEN:
                 if attempt < MAX_RETRY_ATTEMPTS:
@@ -195,11 +225,33 @@ class TadoAuthMixin:
                     return None
                 _LOGGER.warning(
                     "Auth: refresh kept returning HTTP 403 after %s "
-                    "attempts. Tado's CDN may be blocking us, will "
-                    "retry on next poll",
+                    "attempts. Tado is refusing this connection (not a "
+                    "login problem), will retry on the next poll",
                     MAX_RETRY_ATTEMPTS,
                 )
-                raise TadoAuthError(f"Token refresh failed after {MAX_RETRY_ATTEMPTS} attempts (403)")
+                self.note_cloud(CloudEvent.TOKEN_403_PERSISTENT)  # type: ignore[attr-defined]
+                raise TadoBlockedError(f"Token refresh failed after {MAX_RETRY_ATTEMPTS} attempts (403)")
+
+            # WHY: a CDN or proxy error body that mentions invalid_grant is an outage, not a rejected credential.
+            if resp.status >= HTTPStatus.INTERNAL_SERVER_ERROR:
+                _LOGGER.warning(
+                    "Auth: refresh failed with HTTP %s: %s",
+                    resp.status, error_text[:200],
+                )
+                return CloudEvent.TOKEN_5XX_EXHAUSTED
+
+            if resp.status == HTTPStatus.UNAUTHORIZED or (resp.status < 500 and "invalid_grant" in error_text):
+                _LOGGER.warning(
+                    "Auth: refresh token rejected by Tado (HTTP %s). "
+                    "HA will request re-authentication",
+                    resp.status,
+                )
+                # Don't null the refresh_token here. A transient 401
+                # (server glitch) would otherwise permanently
+                # invalidate a working token. Let HA's reauth flow
+                # decide whether the user needs to re-log-in.
+                self.note_cloud(CloudEvent.TOKEN_INVALID_GRANT)  # type: ignore[attr-defined]
+                raise TadoAuthError("Refresh token invalid (auth failure)")
 
             if 400 <= resp.status < 500:
                 _LOGGER.warning(
@@ -209,6 +261,7 @@ class TadoAuthMixin:
                 # A 4xx other than 401/403 means the refresh request shape is
                 # wrong, not a transient CDN block, so retrying won't help.
                 # Raise so the coordinator triggers reauth.
+                self.note_cloud(CloudEvent.TOKEN_OTHER_4XX)  # type: ignore[attr-defined]
                 raise TadoAuthError(
                     f"Token refresh rejected (HTTP {resp.status}): {error_text[:80]}",
                 )
@@ -232,14 +285,18 @@ class TadoAuthMixin:
 
         _LOGGER.debug("Auth: refreshing access token")
 
+        last_event: CloudEvent | None = None
         for attempt in range(1, MAX_RETRY_ATTEMPTS + 1):
+            last_event = None
             try:
                 result = await self._attempt_token_refresh(config, refresh_token, attempt)  # type: ignore[attr-defined]
-                if result is not None:
+                if isinstance(result, CloudEvent):
+                    last_event = result
+                elif result is not None:
                     return result  # type: ignore[no-any-return]
-                # `None` here means a retryable 403: fall through to
-                # the backoff and try again.
-            except TadoAuthError:
+                # `None` or an event here means a retryable answer: fall
+                # through to the backoff and try again.
+            except (TadoAuthError, TadoRateLimitError, TadoBlockedError):
                 raise
             except aiohttp.ClientError:
                 if attempt >= MAX_RETRY_ATTEMPTS:
@@ -249,7 +306,16 @@ class TadoAuthMixin:
                         MAX_RETRY_ATTEMPTS,
                         exc_info=True,
                     )
+                    self.note_cloud(CloudEvent.TOKEN_NETWORK_EXHAUSTED)  # type: ignore[attr-defined]
                     return None
+            except TimeoutError:
+                # The token timeout is not retried, so the one attempt is the exhaustion.
+                _LOGGER.warning(
+                    "Auth: token refresh timed out, will retry on next poll",
+                    exc_info=True,
+                )
+                self.note_cloud(CloudEvent.TOKEN_TIMEOUT)  # type: ignore[attr-defined]
+                return None
             except Exception:
                 _LOGGER.warning(
                     "Auth: unexpected error during token refresh, "
@@ -265,4 +331,6 @@ class TadoAuthMixin:
             )
             await asyncio.sleep(delay)
 
+        if last_event is not None:
+            self.note_cloud(last_event)  # type: ignore[attr-defined]
         return None

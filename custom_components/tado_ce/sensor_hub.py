@@ -16,11 +16,13 @@ from homeassistant.core import callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
+from .api_call_tracker import is_quota_call
 from .device_manager import get_hub_device_info
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
 from .format_helpers import format_api_status as _format_api_status
 from .helpers import PerEntityAvailabilityMixin, parse_iso_datetime
 from .insights_api import calculate_api_status_recommendation
+from .quota_levels import cloud_health_view
 
 if TYPE_CHECKING:
     from .coordinator import TadoDataUpdateCoordinator
@@ -74,7 +76,10 @@ def _calculate_calls_per_hour(all_calls: list[dict[str, Any]]) -> float | None:
     try:
         now = dt_util.utcnow()
         cutoff = now - timedelta(hours=24)
-        last_24h = [c for c in all_calls if parse_iso_datetime(c["timestamp"]) > cutoff]
+        last_24h = [
+            c for c in all_calls
+            if is_quota_call(c) and parse_iso_datetime(c["timestamp"]) > cutoff
+        ]
         return round(len(last_24h) / 24, 1) if last_24h else 0
     except (KeyError, TypeError, ValueError) as e:
         _LOGGER.debug(
@@ -89,7 +94,7 @@ def _calculate_calls_today(history_data: dict[str, Any]) -> int | None:
     """Calculate number of API calls made today."""
     try:
         today_str = dt_util.utcnow().strftime("%Y-%m-%d")
-        return len(history_data.get(today_str, []))
+        return sum(1 for c in history_data.get(today_str, []) if is_quota_call(c))
     except (KeyError, TypeError, ValueError) as e:
         _LOGGER.debug(
             "Hub Sensor: could not compute today's call count from "
@@ -198,7 +203,7 @@ class TadoApiUsageSensor(PerEntityAvailabilityMixin, TadoHubSensor):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return extra state attributes."""
-        rate_limited_until = self.coordinator._rate_limited_until
+        rate_limited_until = self.coordinator.cloud_health.backoff_until
 
         def _min_ago(stamp: datetime | None) -> float | None:
             if stamp is None:
@@ -213,6 +218,9 @@ class TadoApiUsageSensor(PerEntityAvailabilityMixin, TadoHubSensor):
             "status": self._data.get("status"),
             "rate_limited_until": (
                 rate_limited_until.isoformat() if rate_limited_until is not None else None
+            ),
+            "cloud_health": cloud_health_view(
+                self.coordinator.cloud_health, self._data or None, self.coordinator.config_manager,
             ),
             "weather_last_fetched_min_ago": _min_ago(
                 getattr(self.coordinator, "_last_weather_fetch", None)
@@ -356,6 +364,7 @@ class TadoApiResetSensor(PerEntityAvailabilityMixin, TadoHubSensor):
                 self._current_interval = get_polling_interval(
                     config_manager, cached_ratelimit=data, homekit_connected=homekit_connected,
                     full_sync_extra_calls=self.coordinator.full_sync_extra_calls_per_cycle,
+                    night_floor_minutes=self.coordinator.smart_valve_night_floor_minutes,
                 )
                 next_poll_time = last_sync + timedelta(minutes=self._current_interval)
                 self._next_poll = dt_util.as_local(next_poll_time).strftime("%Y-%m-%d %H:%M:%S")
@@ -436,9 +445,9 @@ class TadoApiLimitSensor(PerEntityAvailabilityMixin, TadoHubSensor):
             try:
                 history = (self.coordinator.data or {}).get("api_call_history")
                 if history:
-                    all_calls = []
+                    all_calls: list[dict[str, Any]] = []
                     for calls in history.values():
-                        all_calls.extend(calls)
+                        all_calls.extend(c for c in calls if is_quota_call(c))
 
                     all_calls.sort(key=lambda x: x["timestamp"], reverse=True)
                     raw_recent_calls = all_calls[:_ATTR_HISTORY_CAP]
@@ -509,13 +518,15 @@ class TadoApiStatusSensor(TadoHubSensor):
         self._total_calls: int | None = None
         self._reset_time: str | None = None
         self._recommendation: str = ""
+        self._raw_status: str | None = None
 
     @property
     def icon(self) -> str:
         """Return the icon for the sensor."""
-        if self._attr_native_value == "ok":
+        # The icon follows the raw status key, the state shows its display text.
+        if self._raw_status == "ok":
             return "mdi:check-circle"
-        if self._attr_native_value == "rate_limited":
+        if self._raw_status == "rate_limited":
             return "mdi:alert-circle"
         return "mdi:help-circle"
 
@@ -535,7 +546,8 @@ class TadoApiStatusSensor(TadoHubSensor):
         try:
             data = (self.coordinator.data or {}).get("ratelimit")
             if data:
-                self._attr_native_value = _format_api_status(data.get("status", "unknown"))
+                self._raw_status = data.get("status", "unknown")
+                self._attr_native_value = _format_api_status(self._raw_status)
                 self._remaining_calls = data.get("remaining")
                 self._total_calls = data.get("limit")
                 self._reset_time = data.get("reset_human")
@@ -547,6 +559,7 @@ class TadoApiStatusSensor(TadoHubSensor):
                     current_interval_minutes=None,  # Could get from config_manager if needed
                 )
             else:
+                self._raw_status = None
                 self._attr_native_value = "unknown"
         except Exception:
             _LOGGER.debug(
@@ -554,6 +567,7 @@ class TadoApiStatusSensor(TadoHubSensor):
                 "to 'error' state, will retry on the next poll",
                 exc_info=True,
             )
+            self._raw_status = None
             self._attr_native_value = "error"
 
 
@@ -670,7 +684,6 @@ class TadoNextSyncSensor(PerEntityAvailabilityMixin, TadoHubSensor):
         self._attr_device_class = SensorDeviceClass.TIMESTAMP
         self._countdown: str | None = None
         self._current_interval: int | None = None
-        self._countdown_unsub: Any | None = None  # HA CALLBACK_TYPE
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -692,16 +705,7 @@ class TadoNextSyncSensor(PerEntityAvailabilityMixin, TadoHubSensor):
             self._recalculate_countdown()
             self.async_write_ha_state()
 
-        self._countdown_unsub = async_track_time_interval(
-            self.hass, _refresh_countdown, timedelta(seconds=30),
-        )
-
-    async def async_will_remove_from_hass(self) -> None:
-        """Cancel periodic countdown refresh on removal."""
-        if self._countdown_unsub:
-            self._countdown_unsub()
-            self._countdown_unsub = None
-        await super().async_will_remove_from_hass()
+        self.async_on_remove(async_track_time_interval(self.hass, _refresh_countdown, timedelta(seconds=30)))
 
     def _recalculate_countdown(self) -> None:
         """Recalculate countdown from current native_value."""
@@ -746,6 +750,7 @@ class TadoNextSyncSensor(PerEntityAvailabilityMixin, TadoHubSensor):
                 self._current_interval = get_polling_interval(
                     config_manager, cached_ratelimit=data, homekit_connected=homekit_connected,
                     full_sync_extra_calls=self.coordinator.full_sync_extra_calls_per_cycle,
+                    night_floor_minutes=self.coordinator.smart_valve_night_floor_minutes,
                 )
 
                 next_sync_time = last_sync + timedelta(minutes=self._current_interval)
@@ -821,7 +826,7 @@ class TadoPollingIntervalSensor(PerEntityAvailabilityMixin, TadoHubSensor):
         """Update sensor state from coordinator data."""
         try:
             from .const import DEFAULT_DAY_INTERVAL, DEFAULT_NIGHT_INTERVAL
-            from .polling import calculate_adaptive_interval, get_polling_interval
+            from .polling import calculate_adaptive_interval, get_polling_interval, is_daytime
 
             config_manager = self.coordinator.config_manager
             if not config_manager:
@@ -838,6 +843,7 @@ class TadoPollingIntervalSensor(PerEntityAvailabilityMixin, TadoHubSensor):
             self._attr_native_value = get_polling_interval(
                 config_manager, cached_ratelimit=ratelimit_data, homekit_connected=homekit_connected,
                 full_sync_extra_calls=full_sync_calls,
+                night_floor_minutes=self.coordinator.smart_valve_night_floor_minutes,
             )
             self._data_present = True
 
@@ -846,11 +852,8 @@ class TadoPollingIntervalSensor(PerEntityAvailabilityMixin, TadoHubSensor):
             self._day_interval = custom_day or DEFAULT_DAY_INTERVAL
             self._night_interval = custom_night or DEFAULT_NIGHT_INTERVAL
 
-            current_hour = dt_util.now().hour
-            day_start = config_manager.get_day_start_hour()
-            night_start = config_manager.get_night_start_hour()
-            is_uniform_mode = day_start == night_start
-            self._is_night_mode = False if is_uniform_mode else not (day_start <= current_hour < night_start)
+            is_uniform_mode = config_manager.get_day_start_hour() == config_manager.get_night_start_hour()
+            self._is_night_mode = not is_daytime(config_manager)
 
             adaptive_interval = None
             if ratelimit_data:
@@ -1042,6 +1045,90 @@ class TadoApiBreakdownSensor(TadoHubSensor):
                 "Hub Sensor: API call breakdown update failed "
                 "unexpectedly, last values retained, will retry on "
                 "the next poll",
+                exc_info=True,
+            )
+
+
+class TadoDataAgeSensor(PerEntityAvailabilityMixin, TadoHubSensor):
+    """Sensor showing the age of the cloud zone data and why the last poll skipped."""
+
+    def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
+        super().__init__(coordinator, "sensor_data_age")
+        self._attr_native_unit_of_measurement = "min"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_suggested_display_precision = 0
+        self._data_present = True
+        self._attrs: dict[str, Any] = self._empty_attrs()
+
+    async def async_added_to_hass(self) -> None:
+        """Tick the age every minute, as the coordinator only updates once per poll."""
+        await super().async_added_to_hass()
+
+        from homeassistant.helpers.event import async_track_time_interval
+
+        @callback
+        def _tick_ages(_now: Any) -> None:
+            self._refresh_ages()
+            self.async_write_ha_state()
+
+        self.async_on_remove(async_track_time_interval(self.hass, _tick_ages, timedelta(minutes=1)))
+
+    def _refresh_ages(self) -> None:
+        """Recompute the zone-data age and the full-sync age from the coordinator clocks."""
+        now = dt_util.utcnow()
+        self._attr_native_value = self._age_minutes(self.coordinator.last_zone_fetch_ts(), now)
+        self._attrs = {**self._attrs, "full_sync_age_minutes": self._age_minutes(self.coordinator.last_full_sync_ts(), now)}
+
+    @staticmethod
+    def _empty_attrs() -> dict[str, Any]:
+        return {
+            "zone_states_fetched_at": None,
+            "full_sync_fetched_at": None,
+            "full_sync_age_minutes": None,
+            "last_poll_skips": {},
+            "last_poll_skips_at": None,
+            "calls_today": None,
+            "breakdown_today": {},
+        }
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return extra state attributes."""
+        return self._attrs
+
+    @staticmethod
+    def _age_minutes(stamp: datetime | None, now: datetime) -> float | None:
+        if stamp is None:
+            return None
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=dt_util.UTC)
+        return round(max(0.0, (now - stamp).total_seconds() / 60), 1)
+
+    @callback
+    def update(self) -> None:
+        """Update sensor state from the coordinator clocks, poll skips and call history."""
+        try:
+            coordinator = self.coordinator
+            now = dt_util.utcnow()
+            zone_ts = coordinator.last_zone_fetch_ts()
+            full_ts = coordinator.last_full_sync_ts()
+            skips_at = coordinator.last_poll_skips_at
+            history = (coordinator.data or {}).get("api_call_history") or {}
+            today_calls = [c for c in history.get(now.strftime("%Y-%m-%d"), []) if is_quota_call(c)]
+            self._attr_native_value = self._age_minutes(zone_ts, now)
+            self._attrs = {
+                "zone_states_fetched_at": zone_ts.isoformat() if zone_ts else None,
+                "full_sync_fetched_at": full_ts.isoformat() if full_ts else None,
+                "full_sync_age_minutes": self._age_minutes(full_ts, now),
+                "last_poll_skips": dict(coordinator.last_poll_skips),
+                "last_poll_skips_at": skips_at.isoformat() if skips_at else None,
+                "calls_today": _calculate_calls_today(history),
+                "breakdown_today": TadoApiBreakdownSensor._count_by_type(today_calls),
+            }
+        except Exception:  # optional diagnostic sensor: keep the last values rather than fail the platform
+            _LOGGER.warning(
+                "Hub Sensor: data age update failed unexpectedly, "
+                "last values retained, will retry on the next poll",
                 exc_info=True,
             )
 

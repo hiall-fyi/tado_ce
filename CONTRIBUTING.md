@@ -17,10 +17,12 @@ To test locally in Home Assistant, symlink or copy `custom_components/tado_ce/` 
 ## Testing
 
 ```bash
-pytest              # Full test suite
+pytest -p no:respx  # Tests you add
 ruff check .        # Lint
 mypy custom_components/tado_ce/   # Type check
 ```
+
+The maintainer's test suite isn't part of this repository, so a fresh clone has no tests until you add some. `-p no:respx` is needed because Home Assistant's pytest plugin stops at start-up otherwise (see `requirements-dev.txt`).
 
 `ruff.toml` and `pyproject.toml`'s mypy settings aren't part of this repository (see the comment at the top of `requirements-dev.txt` for why), so `ruff check`/`mypy` without a local config check against tool defaults rather than the exact ruleset a maintainer runs locally. Don't worry about matching that ruleset exactly; a PR gets reviewed against it either way.
 
@@ -30,7 +32,7 @@ Everything lives under `custom_components/tado_ce/`, roughly grouped as:
 
 - **Platform entities** — `climate_heating.py`, `climate_ac.py`, `sensor_*.py`, `binary_sensor.py`, `switch.py`, `select.py`, `number.py`, `button.py`, `calendar.py`, `water_heater.py`, `device_tracker.py`
 - **Setup & coordination** — `__init__.py`, `coordinator.py`, `entry_lifecycle.py`, `setup_entry_helpers.py`, `config_flow.py`, `config_flow_options.py`, `config_manager.py`, `entity_registry.py`, `entity_cleanup.py`
-- **Tado API access** — `api_client.py`, `api_auth.py`, `bridge_api.py`, `bridge_discovery.py`, `data_loader.py`, `polling.py`, `ratelimit.py`
+- **Tado API access** — `api_client.py`, `api_auth.py`, `bridge_api.py`, `bridge_discovery.py`, `data_loader.py`, `polling.py`, `fetch_plan.py`, `ratelimit.py`, `quota_levels.py` (every quota tier number and hold predicate; do not read the tier constants in `const.py` anywhere else)
 - **Controllers** — `offset_sync_controller.py`, `valve_controller.py`, `heating_coordinator.py`, `weather_compensation.py`, `write_optimizer.py`
 - **HomeKit local control** — `homekit_client.py`, `homekit_provider.py`, `homekit_mapping.py`
 - **Insights & analytics** — `insights_*.py`, `heating_analyzer.py`, `heating_detector.py`, `thermal_analyzer.py`, `smart_comfort.py`, `calculations.py`
@@ -40,7 +42,7 @@ Everything lives under `custom_components/tado_ce/`, roughly grouped as:
 
 - Keep PRs focused on a single change
 - Add tests for new functionality (aim for the same coverage the file already has)
-- Run `pytest`, `ruff check`, and `mypy` before submitting
+- Run `pytest -p no:respx` on your tests, `ruff check`, and `mypy` before submitting
 - Update `CHANGELOG.md` with your change, under the current `[Unreleased]`/in-progress section
 - No ticket/issue numbers in source comments, docstrings, or log strings — CHANGELOG and the PR description are where those belong
 

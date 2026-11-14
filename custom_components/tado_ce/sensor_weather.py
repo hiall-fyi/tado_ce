@@ -147,7 +147,6 @@ class TadoWeatherStateSensor(
         _meta = ENTITY_REGISTRY["sensor_weather"]
         self._attr_translation_key = _meta.translation_key
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
-        self._attr_icon = _meta.icon
         self._attr_entity_category = get_entity_category(_meta)
         self._data_present = False
         self._attr_native_value = None

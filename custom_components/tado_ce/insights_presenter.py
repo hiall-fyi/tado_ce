@@ -79,7 +79,7 @@ CATEGORY_MAP: dict[str, tuple[str, list[str]]] = {
         "away_heating", "home_all_off", "geofencing_offline",
     ]),
     "window": ("\U0001fa9f Window", [
-        "window_predicted", "cross_zone_window", "cross_zone_mold",
+        "cross_zone_mold",
     ]),
     "system": ("\u2699\ufe0f System", [
         "api_quota_planning", "api_usage_spike", "cross_zone_condensation",
@@ -128,9 +128,6 @@ _HEALTH_DEDUCTIONS: dict[InsightPriority, int] = {
 def get_insight_priority(insight_type: str, severity: str) -> InsightPriority:
     """Get priority level for an insight based on type and severity."""
     priority_map = {
-        ("window_predicted", "high"): InsightPriority.HIGH,
-        ("window_predicted", "medium"): InsightPriority.MEDIUM,
-        ("window_predicted", "low"): InsightPriority.LOW,
         ("mold_risk", "critical"): InsightPriority.CRITICAL,
         ("mold_risk", "high"): InsightPriority.HIGH,
         ("mold_risk", "medium"): InsightPriority.MEDIUM,
@@ -177,8 +174,6 @@ def _get_action_label(insight_type: str) -> str:
         "frost_risk": "Frost protection needed",
         "ventilation_opportunity": "Open a window to dry the air",
         "temp_imbalance": "Balance temperatures across zones",
-        "window_predicted": "Close window (heat loss detected)",
-        "cross_zone_window": "Multiple windows open",
         "cross_zone_mold": "Mold risk across multiple zones",
         "away_heating": "Heating active while away",
         "home_all_off": "All zones off while home",
@@ -483,8 +478,6 @@ def _reverse_action_label(label: str) -> str:
         "Frost protection needed": "frost_risk",
         "Open a window to dry the air": "ventilation_opportunity",
         "Balance temperatures across zones": "temp_imbalance",
-        "Close window (heat loss detected)": "window_predicted",
-        "Multiple windows open": "cross_zone_window",
         "Mold risk across multiple zones": "cross_zone_mold",
         "Heating active while away": "away_heating",
         "All zones off while home": "home_all_off",

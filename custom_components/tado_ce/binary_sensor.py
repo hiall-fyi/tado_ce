@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from collections import deque
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -11,25 +10,13 @@ from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
     BinarySensorEntity,
 )
-from homeassistant.core import CALLBACK_TYPE, Event, EventStateChangedData, HomeAssistant, callback
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
-from .climate_helpers import (
-    read_external_sensor,
-    subscribe_external_sensors,
-    unsubscribe_external_sensors,
-)
 from .const import (
-    DEFAULT_WINDOW_TYPE,
     ENTITY_DATA_PREHEAT_ADVISOR,
     ENTITY_DATA_PREHEAT_NOW,
-    ENTITY_DATA_WINDOW_PREDICTED,
-    INSIGHT_READING_THROTTLE_SECONDS,
-    SIGNAL_HOMEKIT_UPDATE,
-    WINDOW_U_VALUES,
-    is_climate_zone,
 )
 from .device_manager import (
     get_bridge_device_info,
@@ -59,20 +46,9 @@ from .helpers import (
     get_zone_state,
     get_zone_states,
     mask_serial,
-    merge_homekit_into_zone_data,
     parse_iso_datetime,
 )
 from .insights_device import calculate_connection_recommendation
-from .insights_models import (
-    COOLDOWN_READINGS,
-    SEASONAL_BASELINE_MIN_SAMPLES,
-    InsightTemperatureReading,
-    WindowPredictedResult,
-)
-from .insights_window import (
-    detect_window_passive,
-    detect_window_predicted,
-)
 
 if TYPE_CHECKING:
     from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -119,10 +95,6 @@ async def async_setup_entry(
                 # Add Preheat Now sensor if Smart Comfort is enabled
                 if smart_comfort_enabled:
                     sensors.append(TadoPreheatNowSensor(coordinator, zone_id, zone_name, zone_type, home_id))
-
-            # Window Predicted sensor for all climate zones (HEATING and AIR_CONDITIONING)
-            if is_climate_zone(zone_type):
-                sensors.append(TadoWindowPredictedSensor(coordinator, zone_id, zone_name, zone_type, home_id))
 
     # Bridge connected sensor: local pairing when configured, cloud-only otherwise
     bridge_serial = entry.options.get("bridge_serial")
@@ -371,6 +343,13 @@ class TadoOpenWindowSensor(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDa
             self._data_present = False
 
 
+def _parse_preheat_start(time_str: str, now: datetime, days_ahead: int = 0) -> datetime:
+    """Return the tz-aware datetime for an advisor "HH:MM" on now's date plus days_ahead (ValueError if unparseable)."""
+    parsed = datetime.strptime(time_str, "%H:%M")
+    day = now + timedelta(days=days_ahead)
+    return day.replace(hour=parsed.hour, minute=parsed.minute, second=0, microsecond=0)
+
+
 class TadoPreheatNowSensor(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateCoordinator"], BinarySensorEntity):
     """Binary sensor indicating when to start preheating (turns ON at recommended start time)."""
 
@@ -436,9 +415,8 @@ class TadoPreheatNowSensor(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDa
     @callback
     def update(self) -> None:
         """Update preheat now status."""
+        start_at: datetime | None = None
         try:
-            from datetime import datetime
-
             if not self.hass:
                 self._data_present = False
                 return
@@ -478,6 +456,12 @@ class TadoPreheatNowSensor(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDa
                 self._attr_is_on = False
                 self._data_present = True
                 self._recommended_start = preheat_state_val
+                try:
+                    start_at = _parse_preheat_start(
+                        preheat_state_val.removeprefix("Tomorrow "), dt_util.now(), days_ahead=1,
+                    )
+                except ValueError:
+                    start_at = None
                 return
 
             # Parse recommended start time (format: "HH:MM")
@@ -485,18 +469,14 @@ class TadoPreheatNowSensor(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDa
             try:
                 recommended_str = preheat_state_val
                 now = dt_util.now()
-                recommended_time = datetime.strptime(recommended_str, "%H:%M").replace(
-                    year=now.year,
-                    month=now.month,
-                    day=now.day,
-                    tzinfo=now.tzinfo,
-                )
+                recommended_time = _parse_preheat_start(recommended_str, now)
 
                 self._recommended_start = recommended_str
 
                 # Check if it's time to preheat
                 self._attr_is_on = now >= recommended_time
                 self._data_present = True
+                start_at = recommended_time
 
             except ValueError:
                 _LOGGER.debug(
@@ -518,6 +498,9 @@ class TadoPreheatNowSensor(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDa
             )
             self._data_present = False
         finally:
+            manager = self.coordinator.adaptive_preheat_manager
+            if manager is not None:
+                manager.schedule_start(self._zone_id, start_at)
             # Publish computed state to coordinator for cross-component access
             # (used by AdaptivePreheatManager initial state check)
             if self._data_present:
@@ -529,490 +512,6 @@ class TadoPreheatNowSensor(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDa
                         "recommended_start": self._recommended_start,
                     },
                 )
-
-
-def _serialize_window_detection_state(
-    sensor: TadoWindowPredictedSensor,
-) -> dict[str, Any]:
-    """Serialize window detection state for persistence."""
-    return {
-        "detection_count_today": sensor._detection_count_today,
-        "last_count_reset_date": (
-            sensor._last_count_reset_date.isoformat()
-            if sensor._last_count_reset_date
-            else None
-        ),
-        "last_detected_at": (
-            sensor._last_detected_at.isoformat()
-            if sensor._last_detected_at
-            else None
-        ),
-        "anomaly_readings": sensor._anomaly_readings,
-        "temp_history": [
-            {
-                "temperature": r.temperature,
-                "humidity": r.humidity,
-                "timestamp": r.timestamp.isoformat(),
-            }
-            for r in sensor._temp_history
-        ],
-    }
-
-
-def _restore_temp_history(
-    raw_history: list[Any],
-    cutoff: datetime,
-) -> list[InsightTemperatureReading]:
-    """Restore temperature history entries, pruning stale ones (>1 hour)."""
-    result: list[InsightTemperatureReading] = []
-    for entry in raw_history:
-        if not isinstance(entry, dict):
-            continue
-        try:
-            ts = parse_iso_datetime(entry["timestamp"])
-            if ts < cutoff:
-                continue  # Prune stale
-            reading = InsightTemperatureReading(
-                temperature=float(entry["temperature"]),
-                humidity=(
-                    float(entry["humidity"])
-                    if entry.get("humidity") is not None
-                    else None
-                ),
-                timestamp=ts,
-            )
-            result.append(reading)
-        except (KeyError, ValueError, TypeError):
-            continue  # Skip corrupt entries
-    return result
-
-
-def _restore_window_detection_state(
-    sensor: TadoWindowPredictedSensor,
-    data: dict[str, Any],
-) -> None:
-    """Restore window detection state from persisted data, pruning stale entries."""
-    if isinstance(data.get("detection_count_today"), int):
-        sensor._detection_count_today = data["detection_count_today"]
-    date_str = data.get("last_count_reset_date")
-    if isinstance(date_str, str):
-        try:
-            sensor._last_count_reset_date = date.fromisoformat(date_str)
-        except ValueError:
-            _LOGGER.debug("binary_sensor: corrupt last_count_reset_date %r, keeping default", date_str)
-    detected_str = data.get("last_detected_at")
-    if isinstance(detected_str, str):
-        try:
-            sensor._last_detected_at = parse_iso_datetime(detected_str)
-        except (ValueError, TypeError):
-            _LOGGER.debug("binary_sensor: corrupt last_detected_at %r, keeping default", detected_str)
-    if isinstance(data.get("anomaly_readings"), int):
-        sensor._anomaly_readings = data["anomaly_readings"]
-    # Restore temp_history with staleness pruning (>1 hour = stale)
-    raw_history = data.get("temp_history")
-    if isinstance(raw_history, list):
-        cutoff = dt_util.utcnow() - timedelta(hours=1)
-        sensor._temp_history.extend(_restore_temp_history(raw_history, cutoff))
-
-
-class TadoWindowPredictedSensor(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateCoordinator"], BinarySensorEntity):
-    """Binary sensor for early open window detection (predictive, does not replace Tado's openWindow)."""
-
-    _attr_has_entity_name = True
-
-    _attr_device_class = BinarySensorDeviceClass.WINDOW
-
-    def __init__(
-        self,
-        coordinator: TadoDataUpdateCoordinator,
-        zone_id: str,
-        zone_name: str,
-        zone_type: str = "HEATING",
-        home_id: str = "",
-    ) -> None:
-        super().__init__(coordinator)
-        _meta = ENTITY_REGISTRY["binary_sensor_window_predicted"]
-        self._zone_id = zone_id
-        self._zone_name = zone_name
-        self._zone_type = zone_type
-        self._attr_translation_key = _meta.translation_key
-        self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
-        self._attr_entity_category = get_entity_category(_meta)
-        self._data_present = False
-        self._attr_is_on = None
-        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, home_id)
-
-        # Detection state
-        self._confidence: str = "none"
-        self._temp_drop: float = 0.0
-        self._time_window: int = 5
-        self._recommendation: str = ""
-        self._anomaly_readings: int = 0
-
-        # Sensitivity level for window predicted detection
-        self._sensitivity: str = "medium"
-
-        # Rolling temperature history for consecutive-reading comparison
-        self._temp_history: deque = deque(maxlen=10)  # type: ignore[type-arg]
-        self._last_reading_time: datetime = None  # type: ignore[assignment]
-
-        # Unsubscribe callbacks for external sensor state change listeners
-        self._unsub_external_sensors: list[CALLBACK_TYPE] = []
-
-        # Unsubscribe callback for HomeKit real-time events
-        self._unsub_homekit_signal: CALLBACK_TYPE | None = None
-
-        # Detection mode (active/passive/auto)
-        self._detection_mode: str = "auto"
-
-        # Cooldown state
-        self._cooldown_counter: int = 0
-
-        # Detection history
-        self._last_detected_at: datetime | None = None
-        self._detection_count_today: int = 0
-        self._last_count_reset_date: date | None = None
-        self._detection_mode_used: str = "none"
-
-        # Previous detection state for event firing
-        self._prev_detected: bool = False
-
-    async def async_added_to_hass(self) -> None:
-        """Register listeners when entity is added to hass."""
-        await super().async_added_to_hass()
-        # Restore persisted window detection state
-        raw = await self.coordinator.data_loader.async_load_window_detection()
-        if raw and isinstance(raw, dict):
-            zone_data = raw.get(self._zone_id)
-            if zone_data and isinstance(zone_data, dict):
-                _restore_window_detection_state(self, zone_data)
-                _LOGGER.debug(
-                    "Binary Sensor: zone %s window detection state "
-                    "restored, today's count %d, history %d readings",
-                    self._zone_id,
-                    self._detection_count_today,
-                    len(self._temp_history),
-                )
-        self._subscribe_external_sensors()
-
-        # Subscribe to HomeKit real-time events for faster window detection
-        self._unsub_homekit_signal = async_dispatcher_connect(
-            self.hass,
-            SIGNAL_HOMEKIT_UPDATE.format(home_id=self.coordinator.home_id),
-            self._handle_homekit_update,
-        )
-
-    async def async_will_remove_from_hass(self) -> None:
-        """Unregister listeners when entity is removed."""
-        self._unsubscribe_external_sensors()
-        if self._unsub_homekit_signal:
-            self._unsub_homekit_signal()
-            self._unsub_homekit_signal = None
-        await self._async_save_detection_state()
-        await super().async_will_remove_from_hass()
-
-    async def _async_save_detection_state(self) -> None:
-        """Persist window detection state via Store."""
-        if self.coordinator.data_loader is None:
-            _LOGGER.debug(
-                "Binary Sensor: zone %s data loader gone at teardown, "
-                "window detection state not persisted this cycle",
-                self._zone_id,
-            )
-            return
-        try:
-            raw = await self.coordinator.data_loader.async_load_window_detection()
-            all_zones: dict[str, Any] = raw if raw and isinstance(raw, dict) else {}
-            all_zones[self._zone_id] = _serialize_window_detection_state(self)
-            self.coordinator.data_loader.save_window_detection(all_zones)
-        except (OSError, AttributeError):
-            _LOGGER.debug(
-                "Binary Sensor: zone %s window detection state could "
-                "not be persisted, counters will reset on the next "
-                "HA restart",
-                self._zone_id,
-                exc_info=True,
-            )
-
-    @callback
-    def _subscribe_external_sensors(self) -> None:
-        """Subscribe to external temp sensor state changes for real-time window detection."""
-        unsubscribe_external_sensors(self._unsub_external_sensors)
-
-        @callback
-        def _on_external_sensor_change(event: Event[EventStateChangedData]) -> None:
-            """Handle external temp sensor state change: re-run window detection."""
-            self.update()
-            self.async_write_ha_state()
-
-        self._unsub_external_sensors = subscribe_external_sensors(
-            self, self._zone_id, _on_external_sensor_change,
-            include_humidity=False,
-        )
-
-    @callback
-    def _unsubscribe_external_sensors(self) -> None:
-        """Unsubscribe from external sensor state change listeners."""
-        unsubscribe_external_sensors(self._unsub_external_sensors)
-
-    @callback
-    def _handle_homekit_update(self, zone_id: str) -> None:
-        """Handle HomeKit real-time event: re-run window detection for this zone."""
-        if zone_id != self._zone_id:
-            return
-        self._handle_coordinator_update()
-
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
-        self.update()
-        self.async_write_ha_state()
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Return extra state attributes."""
-        return {
-            "confidence": _format_confidence(self._confidence),
-            "temp_drop": self._temp_drop,
-            "time_window_minutes": self._time_window,
-            "recommendation": _strip_zone_prefix(self._recommendation, self._zone_name),
-            "zone_type": _format_zone_type(self._zone_type),
-            "readings_count": len(self._temp_history),
-            "anomaly_readings": self._anomaly_readings,
-            "sensitivity": self._sensitivity,
-            "detection_mode": self._detection_mode,
-            "detection_mode_used": self._detection_mode_used,
-            "cooldown_active": self._cooldown_counter > 0,
-            "last_detected_at": self._last_detected_at.isoformat() if self._last_detected_at else None,
-            "detection_count_today": self._detection_count_today,
-        }
-
-    @property
-    def icon(self) -> str | None:
-        """Dynamic icon based on state."""
-        if self._attr_is_on:
-            return "mdi:window-open-variant"
-        return "mdi:window-closed-variant"
-
-    def _get_outdoor_temp(self) -> float | None:
-        """Get outdoor temperature from global config entity."""
-        outdoor_entity = self.coordinator.config_manager.get_outdoor_temp_entity()
-        if outdoor_entity and self.hass:
-            state = self.hass.states.get(outdoor_entity)
-            if state and state.state not in ("unknown", "unavailable", ""):
-                try:
-                    return float(state.state)
-                except (ValueError, TypeError):
-                    _LOGGER.debug("binary_sensor: outdoor_entity %s has non-numeric state %r", outdoor_entity, state.state)
-        return None
-
-    def _get_seasonal_baseline(self) -> float | None:
-        """Get seasonal baseline from outdoor temp history."""
-        history = self.coordinator.outdoor_temp_history
-        if len(history) < SEASONAL_BASELINE_MIN_SAMPLES:
-            return None
-        recent = history[-168:]
-        return float(sum(recent) / len(recent))
-
-    def _apply_cooldown(self, result: WindowPredictedResult) -> WindowPredictedResult:
-        """Apply cooldown/hysteresis (require N consecutive clears before flipping off)."""
-        if result.detected:
-            self._cooldown_counter = 0
-            return result
-
-        if self._attr_is_on and not result.detected:
-            self._cooldown_counter += 1
-            cooldown_needed = COOLDOWN_READINGS.get(self._sensitivity, 2)
-
-            if self._cooldown_counter < cooldown_needed:
-                return WindowPredictedResult(
-                    detected=True,
-                    confidence=self._confidence,
-                    temp_drop=result.temp_drop,
-                    time_window_minutes=result.time_window_minutes,
-                    recommendation=self._recommendation,
-                    anomaly_readings=result.anomaly_readings,
-                    cooldown_active=True,
-                    detection_mode=result.detection_mode,
-                )
-            self._cooldown_counter = 0
-
-        return result
-
-    def _fire_detection_events(self, result: WindowPredictedResult) -> None:
-        """Fire HA events on detection state transitions."""
-        if not self.hass:
-            return
-
-        is_transition = (
-            (result.detected and not self._prev_detected)
-            or (not result.detected and self._prev_detected and not result.cooldown_active)
-        )
-
-        if result.detected and not self._prev_detected:
-            self.hass.bus.async_fire("tado_ce_window_predicted", {
-                "zone_id": self._zone_id,
-                "zone_name": self._zone_name,
-                "confidence": result.confidence,
-                "temp_drop": result.temp_drop,
-                "anomaly_readings": result.anomaly_readings,
-                "detection_mode": result.detection_mode,
-                "recommendation": result.recommendation,
-            })
-        elif not result.detected and self._prev_detected and not result.cooldown_active:
-            self.hass.bus.async_fire("tado_ce_window_predicted_cleared", {
-                "zone_id": self._zone_id,
-                "zone_name": self._zone_name,
-            })
-
-        self._prev_detected = result.detected
-
-        # Persist state on transitions to avoid losing detection history on crash
-        if is_transition:
-            self.hass.async_create_task(self._async_save_detection_state())
-
-    def _update_detection_history(self, result: WindowPredictedResult) -> None:
-        """Update detection history attributes."""
-        today = dt_util.utcnow().date()
-        if self._last_count_reset_date != today:
-            self._detection_count_today = 0
-            self._last_count_reset_date = today
-
-        if result.detected and not self._prev_detected:
-            self._last_detected_at = dt_util.utcnow()
-            self._detection_count_today += 1
-            self._detection_mode_used = result.detection_mode
-
-    @callback
-    def update(self) -> None:
-        """Update window predicted detection via heating anomaly algorithm."""
-        try:
-            coord_data = self.coordinator.data or {}
-            zone_data = get_zone_state(coord_data, self._zone_id)
-
-            if not zone_data:
-                self._data_present = False
-                return
-
-            zone_data = merge_homekit_into_zone_data(zone_data, self._zone_id, self.coordinator)
-            sensor_data = zone_data.get("sensorDataPoints") or {}
-            temp_data = sensor_data.get("insideTemperature") or {}
-            humidity_data = sensor_data.get("humidity") or {}
-
-            current_temp = temp_data.get("celsius")
-            current_humidity = humidity_data.get("percentage")
-
-            # External temp sensor override (fallback to Tado API value above)
-            zcm = self.coordinator.zone_config_manager
-            ext_temp = read_external_sensor(self.hass, zcm, self._zone_id, "external_temp_sensor")
-            if ext_temp is not None:
-                current_temp = ext_temp
-
-            if current_temp is None:
-                self._data_present = False
-                return
-
-            # Add reading to history (throttle to avoid duplicates)
-            now = dt_util.utcnow()
-            if self._last_reading_time is None or (now - self._last_reading_time).total_seconds() >= INSIGHT_READING_THROTTLE_SECONDS:
-                reading = InsightTemperatureReading(
-                    temperature=current_temp,
-                    humidity=current_humidity,
-                    timestamp=now,
-                )
-                self._temp_history.append(reading)
-                self._last_reading_time = now
-
-            # Determine HVAC state and mode
-            activity_data = zone_data.get("activityDataPoints") or {}
-            heating_power = activity_data.get("heatingPower") or {}
-            ac_power = activity_data.get("acPower")
-
-            heating_percentage = heating_power.get("percentage", 0)
-            ac_on = ac_power is not None and ac_power.get("value") == "ON"
-            hvac_active = heating_percentage > 0 or ac_on
-
-            # Determine hvac_mode for anomaly direction
-            hvac_mode = "cooling" if ac_on else "heating"
-
-            # Read sensitivity and detection mode from zone config manager
-            if zcm:
-                self._sensitivity = zcm.get_zone_value(
-                    self._zone_id, "window_predicted_sensitivity", "medium",
-                )
-                self._detection_mode = zcm.get_zone_value(
-                    self._zone_id, "window_predicted_mode", "auto",
-                )
-
-            # Determine which detection path to use
-            use_passive = (
-                self._detection_mode == "passive"
-                or (self._detection_mode == "auto" and not hvac_active)
-            )
-
-            if use_passive:
-                outdoor_temp = self._get_outdoor_temp()
-                window_u_value = (
-                    zcm.get_passive_detector_window_u_value(self._zone_id)
-                    if zcm
-                    else WINDOW_U_VALUES[DEFAULT_WINDOW_TYPE]
-                )
-                seasonal_baseline = self._get_seasonal_baseline()
-
-                result = detect_window_passive(
-                    readings=list(self._temp_history),
-                    zone_name=self._zone_name,
-                    sensitivity=self._sensitivity,
-                    hvac_mode=hvac_mode,
-                    outdoor_temp=outdoor_temp,
-                    window_u_value=window_u_value,
-                    seasonal_baseline=seasonal_baseline,
-                )
-            else:
-                # Active path: unchanged
-                result = detect_window_predicted(
-                    readings=list(self._temp_history),
-                    hvac_active=hvac_active,
-                    zone_name=self._zone_name,
-                    time_window_minutes=self._time_window,
-                    hvac_mode=hvac_mode,
-                    sensitivity=self._sensitivity,
-                )
-
-            # Apply cooldown/hysteresis
-            result = self._apply_cooldown(result)
-
-            # Fire events on state transitions
-            self._fire_detection_events(result)
-
-            # Update history attributes
-            self._update_detection_history(result)
-
-            self._attr_is_on = result.detected
-            self._confidence = result.confidence
-            self._temp_drop = result.temp_drop
-            self._recommendation = result.recommendation
-            self._anomaly_readings = result.anomaly_readings
-            self._data_present = True
-
-        except Exception as e:
-            _LOGGER.debug(
-                "Binary Sensor: zone %s window predicted update "
-                "failed (%s), marking unavailable until the next "
-                "poll",
-                self._zone_id, e,
-            )
-            self._data_present = False
-        finally:
-            self._publish_window_predicted()
-
-    def _publish_window_predicted(self) -> None:
-        """Publish the current detection, or an unavailable state that consumers ignore."""
-        if self._data_present:
-            payload = {"state": "on" if self._attr_is_on else "off", "recommendation": self._recommendation}
-        else:
-            payload = {"state": "unavailable", "recommendation": ""}
-        self.coordinator.publish_entity_data(self._zone_id, ENTITY_DATA_WINDOW_PREDICTED, payload)
 
 
 class TadoDeviceConnectionBinarySensor(

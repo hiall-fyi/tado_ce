@@ -41,3 +41,7 @@ class TadoRateLimitError(HomeAssistantError):
         """Store retry_after seconds for the coordinator's UpdateFailed dispatch."""
         super().__init__(*args)
         self.retry_after = retry_after
+
+
+class TadoBlockedError(HomeAssistantError):
+    """Tado's CDN keeps answering 403 after the retries, so the credentials are not at fault."""

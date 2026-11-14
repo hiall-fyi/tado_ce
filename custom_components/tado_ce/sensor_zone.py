@@ -25,10 +25,9 @@ from .helpers import (
     merge_homekit_into_zone_data,
     resolve_boiler_flow_temperature,
 )
+from .zone_signals import owes_held_on, resolve_zone_card_target, zone_power
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from .coordinator import TadoDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -38,6 +37,7 @@ class TadoZoneSensor(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpda
     """Represent a base Tado zone sensor."""
 
     _attr_has_entity_name = True
+    _merge_purpose = "control"
 
     def __init__(
         self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
@@ -50,23 +50,17 @@ class TadoZoneSensor(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpda
         self._data_present = False
         self._attr_native_value = None
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, coordinator.home_id)
-        self._unsub_homekit_signal: Callable[[], None] | None = None
 
     async def async_added_to_hass(self) -> None:
         """Register listeners when entity is added to hass."""
         await super().async_added_to_hass()
-        self._unsub_homekit_signal = async_dispatcher_connect(
-            self.hass,
-            SIGNAL_HOMEKIT_UPDATE.format(home_id=self._home_id),
-            self._handle_homekit_signal,
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                SIGNAL_HOMEKIT_UPDATE.format(home_id=self._home_id),
+                self._handle_homekit_signal,
+            ),
         )
-
-    async def async_will_remove_from_hass(self) -> None:
-        """Unregister listeners when entity is removed."""
-        if self._unsub_homekit_signal:
-            self._unsub_homekit_signal()
-            self._unsub_homekit_signal = None
-        await super().async_will_remove_from_hass()
 
     @callback
     def _handle_homekit_signal(self, zone_id: str) -> None:
@@ -88,7 +82,7 @@ class TadoZoneSensor(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpda
             return None
         if zone_data is None:
             return None
-        return merge_homekit_into_zone_data(zone_data, self._zone_id, self.coordinator)
+        return merge_homekit_into_zone_data(zone_data, self._zone_id, self.coordinator, purpose=self._merge_purpose)
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -117,6 +111,7 @@ class TadoTemperatureSensor(TadoZoneSensor):
     """Represent a Tado zone temperature sensor."""
 
     _attr_has_entity_name = True
+    _merge_purpose = "display"
 
     def __init__(
         self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
@@ -371,15 +366,26 @@ class TadoTargetTempSensor(TadoZoneSensor):
     @callback
     def _update_from_zone_data(self, zone_data: dict[str, Any]) -> None:
         setting = zone_data.get("setting") or {}
+        ledger = getattr(self.coordinator, "write_ledger", None)
+        held_target = ledger.owed_target(self._zone_id) if ledger is not None and owes_held_on(self.coordinator, self._zone_id) else None
         if setting.get("power") == "ON":
-            self._attr_native_value = (setting.get("temperature") or {}).get("celsius")
-        elif zone_data.get("overlayType") == "MANUAL":
-            # A manual OFF overlay is frost protection, same as the climate card.
+            celsius = (setting.get("temperature") or {}).get("celsius")
+            if celsius is not None:
+                # Follows the cloud target while the cloud says ON, even when HomeKit says OFF and the card shows frost.
+                celsius, _ = resolve_zone_card_target(
+                    self.coordinator, self._zone_id, cloud_celsius=celsius,
+                    power=zone_power(self.coordinator, self._zone_id),
+                    fetch_epoch=self.coordinator.last_zone_fetch_ts(),
+                )
+            self._attr_native_value = celsius
+        elif held_target is not None:
+            # Tado still shows the room off, but our own held switch-on is newer than that data.
+            self._attr_native_value = held_target
+        elif zone_data.get("overlayType") == "MANUAL" or self._zone_type == "HEATING":
+            # A heating zone the cloud says is OFF shows frost protection, as does a manual AC OFF.
             self._attr_native_value = OPEN_WINDOW_DEFAULT_TEMP
         else:
-            # Schedule/Away OFF: no target to show. The climate entity's own
-            # target here can go stale when the schedule lookup fails, so
-            # mirroring it is a separate, undecided question.
+            # AC schedule/Away OFF: no target to show; the AC card keeps its last setpoint, a separate question.
             self._attr_native_value = None
 
 
@@ -421,7 +427,8 @@ class TadoOverlaySensor(TadoZoneSensor):
         setting = zone_data.get("setting") or {}
         power = setting.get("power")
 
-        if power == "OFF":
+        # Tado still shows the room off, but our own held switch-on is newer than that data.
+        if power == "OFF" and not owes_held_on(self.coordinator, self._zone_id):
             self._attr_native_value = "Off"
         elif overlay_type == "MANUAL":
             self._attr_native_value = "Manual"

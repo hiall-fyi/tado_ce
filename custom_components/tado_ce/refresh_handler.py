@@ -10,13 +10,21 @@ front of the refresh so a degrading API can't be hammered further.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.util import dt as dt_util
 
+from . import const
+from .cloud_health import BACKOFF_FLOOR_SECONDS, CloudHealthState
+from .const import MECH_REFRESH_PROBE
+from .fetch_plan import FetchPlan, PollOutcome, requeue_flags
+from .quota_levels import QuotaLevels
+
 if TYPE_CHECKING:
+    from .cloud_health import CloudHealth
     from .coordinator import TadoDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -29,10 +37,14 @@ REFRESH_ENTITY_TYPES = {
     "select",  # Presence mode changes
 }
 
-# Rate limiting thresholds
-QUOTA_WARNING_THRESHOLD = 0.8  # 80% quota used
-QUOTA_CRITICAL_THRESHOLD = 0.9  # 90% quota used
-MIN_QUOTA_PERCENTAGE_FOR_REFRESH = 0.10  # Minimum 10% remaining to allow refresh
+
+@dataclass
+class _VerifyGroup:
+    """Puts sharing one verification fetch: each zone's latest put time, the fetch not-before and its timer."""
+
+    puts: dict[str, datetime]
+    not_before: datetime
+    timer: asyncio.TimerHandle | None = None
 
 
 class RefreshHandler:
@@ -48,11 +60,15 @@ class RefreshHandler:
         self._max_backoff_interval = 300
 
         self._pending_refresh: bool = False
-        self._pending_zone_only: bool = False
         self._pending_force_zone_fetch: bool = False
         self._pending_forced_fetch: set[str] = set()
         self._debounce_task: asyncio.Task[None] | None = None
         self._debounce_delay = 15.0
+        self._refresh_in_flight = False
+        self._followup_reason = "state_change"
+        self._followup_skip_debounce = False
+        self._verify_groups: list[_VerifyGroup] = []
+        self._last_probe_at: datetime | None = None
 
     def _get_debounce_delay(self) -> float:
         """Return the configured debounce delay in seconds, defaulting on error."""
@@ -67,10 +83,48 @@ class RefreshHandler:
         return self._debounce_delay
 
     def cancel(self) -> None:
-        """Cancel any pending debounced refresh."""
+        """Cancel any pending debounced refresh and verification request."""
         if self._debounce_task is not None:
             self._debounce_task.cancel()
             self._debounce_task = None
+        for group in self._verify_groups:
+            if group.timer is not None:
+                group.timer.cancel()
+        self._verify_groups = []
+
+    def schedule_homekit_verification(self, put_at: datetime, lag_seconds: float, entity_id: str) -> None:
+        """Request a forced zone fetch at put_at + lag_seconds; puts within the chain bound share one fetch."""
+        group = self._verify_groups[-1] if self._verify_groups else None
+        # Read at call time so a test can patch it; the bound caps how far chained puts push the shared fetch.
+        max_chain = timedelta(seconds=const.HOMEKIT_CHAINED_FETCH_MAX_SECONDS)
+        # A zone keeps only its latest put, so its own earlier put no longer counts towards the bound.
+        puts = {**group.puts, entity_id: max(put_at, group.puts.get(entity_id, put_at))} if group is not None else {}
+        if group is not None and max(puts.values()) - min(puts.values()) <= max_chain:
+            if group.timer is not None:
+                group.timer.cancel()
+            group.puts = puts
+        else:
+            group = _VerifyGroup(puts={entity_id: put_at}, not_before=put_at)
+            self._verify_groups.append(group)
+        group.not_before = max(group.not_before, put_at + timedelta(seconds=lag_seconds))
+        self._arm_verification(group, entity_id)
+
+    def _arm_verification(self, group: _VerifyGroup, entity_id: str) -> None:
+        """Arm the group timer for the time left until its wall-clock not-before."""
+        remaining = max(0.0, (group.not_before - dt_util.utcnow()).total_seconds())
+        group.timer = asyncio.get_running_loop().call_later(remaining, self._fire_verification, group, entity_id)
+
+    def _fire_verification(self, group: _VerifyGroup, entity_id: str) -> None:
+        """Fetch when the wall clock has reached not-before, else wait the remainder."""
+        group.timer = None
+        if dt_util.utcnow() < group.not_before:
+            # The loop clock fired ahead of the wall clock; never fetch early.
+            self._arm_verification(group, entity_id)
+            return
+        self._verify_groups.remove(group)
+        self.hass.async_create_task(
+            self.trigger_refresh(entity_id, "homekit_verification", force=True, skip_debounce=True),
+        )
 
     def request_forced_fetch(self, fetch_type: str) -> None:
         """Queue a floored data type to bypass its floor on the next poll."""
@@ -80,21 +134,29 @@ class RefreshHandler:
         """Force the next poll to fetch zone states even inside the HomeKit skip window."""
         self._pending_force_zone_fetch = True
 
-    def consume_pending_flags(self) -> tuple[bool, bool, set[str]]:
-        """Atomically read and reset the pending zone-only / force-fetch / forced-type flags.
+    def requeue(
+        self,
+        plan: FetchPlan,
+        outcome: PollOutcome,
+        satisfied: frozenset[str] = frozenset(),
+        enabled_types: frozenset[str] = frozenset(),
+    ) -> None:
+        """Put back the flags a poll consumed and did not use; it only adds and never raises."""
+        try:
+            back = requeue_flags(plan, outcome, satisfied=satisfied, enabled_types=enabled_types)
+            if back.force_zone:
+                self._pending_force_zone_fetch = True
+            self._pending_forced_fetch.update(back.forced_types)
+        except Exception:  # noqa: BLE001 - runs on a failing exit; it must never replace the original error
+            _LOGGER.warning("RefreshHandler: could not requeue the pending fetch flags", exc_info=True)
 
-        Called once per poll so the coordinator knows whether the upcoming
-        fetch was triggered by a write (zone data only) or a general refresh,
-        and which slow-data types to force past their floor; resets so the
-        next poll starts clean.
-        """
-        zone_only = self._pending_zone_only
+    def consume_pending_flags(self) -> tuple[bool, set[str]]:
+        """Atomically read and reset the force-zone flag and the forced slow-data types, once per poll."""
         force_zone_fetch = self._pending_force_zone_fetch
         forced_fetch = self._pending_forced_fetch
-        self._pending_zone_only = False
         self._pending_force_zone_fetch = False
         self._pending_forced_fetch = set()
-        return zone_only, force_zone_fetch, forced_fetch
+        return force_zone_fetch, forced_fetch
 
     async def _get_rate_limit_info(self) -> dict[str, Any]:
         """Read the latest rate-limit snapshot from the data loader cache."""
@@ -109,37 +171,41 @@ class RefreshHandler:
         return {}
 
     async def _check_quota_available(self) -> tuple[bool, str]:
-        """Return (can_refresh, reason); fails open when quota info is missing."""
+        """Return (can_refresh, reason); refuses while the cloud holds except one probe a minute while UNREACHABLE."""
+        coordinator = self._coordinator
+        if coordinator.cloud_health.holds():
+            if not self._probe_due(coordinator.cloud_health):
+                coordinator.mechanism_counters.count(MECH_REFRESH_PROBE, "refused")
+                return False, "cloud_held"
+            # A probe still waits for the quota like any other refresh.
+            can_probe, quota_reason = await self._quota_verdict()
+            if not can_probe:
+                return False, quota_reason
+            self._last_probe_at = dt_util.utcnow()
+            coordinator.mechanism_counters.count(MECH_REFRESH_PROBE, "allowed", calls=1)
+            _LOGGER.debug("Refresh: cloud unreachable, a user refresh is allowed as the once-a-minute probe")
+            return True, "probe"
+        return await self._quota_verdict()
+
+    async def _quota_verdict(self) -> tuple[bool, str]:
+        """Return (can_refresh, reason) from the quota alone; fails open when quota info is missing."""
+        coordinator = self._coordinator
         rl_info = await self._get_rate_limit_info()
 
         if not rl_info:
             return True, "no_rate_limit_data"
 
-        remaining = rl_info.get("remaining")
-        limit = rl_info.get("limit")
-        status = rl_info.get("status")
-
-        if status == "rate_limited" or remaining == 0:
-            return False, "rate_limited"
-
-        if limit and remaining is not None:
-            percentage_remaining = remaining / limit
-            percentage_used = 1 - percentage_remaining
-
-            if percentage_remaining < MIN_QUOTA_PERCENTAGE_FOR_REFRESH:
-                return False, f"quota_too_low ({int(percentage_remaining * 100)}% remaining)"
-
-            if percentage_used >= QUOTA_CRITICAL_THRESHOLD:
-                return False, f"quota_critical ({int(percentage_used * 100)}% used)"
-
-            if percentage_used >= QUOTA_WARNING_THRESHOLD:
-                _LOGGER.warning(
-                    "Refresh: Tado API quota at %d%% used (%s of %s calls "
-                    "remaining), immediate refreshes may start being skipped",
-                    int(percentage_used * 100), remaining, limit,
-                )
-
+        levels = QuotaLevels.build(rl_info, coordinator.config_manager)
+        if levels.poll_holds(rl_info, coordinator.refresh_plan_cost(), dt_util.utcnow()):
+            return False, f"quota_held (remaining={rl_info.get('remaining')}, reserve={levels.hard_reserve})"
         return True, "ok"
+
+    def _probe_due(self, health: CloudHealth) -> bool:
+        """Return True when the cloud is UNREACHABLE and the last probe is a minute old."""
+        if health.state is not CloudHealthState.UNREACHABLE:
+            return False
+        last = self._last_probe_at
+        return last is None or (dt_util.utcnow() - last).total_seconds() >= BACKOFF_FLOOR_SECONDS
 
     def _get_backoff_interval(self) -> int:
         """Return the next backoff window: exponential, capped at 5 minutes."""
@@ -156,55 +222,73 @@ class RefreshHandler:
 
 
     async def _execute_debounced_refresh(self, reason: str, skip_debounce: bool) -> None:
-        """Wait out the debounce, then run the refresh through the coordinator."""
+        """Run debounced refreshes until no trigger that arrived during a poll is left pending."""
         try:
-            if not skip_debounce:
-                delay = self._get_debounce_delay()
-                await asyncio.sleep(delay)
-
-            if not self._pending_refresh:
-                return
-
-            self._pending_refresh = False
-
-            now = dt_util.utcnow()
-            if self._global_last_refresh:
-                global_elapsed = (now - self._global_last_refresh).total_seconds()
-                required_global = self._get_backoff_interval()
-                if global_elapsed < required_global:
-                    _LOGGER.debug(
-                        "Refresh: global backoff active (%ds remaining)",
-                        int(required_global - global_elapsed),
-                    )
+            while True:
+                await self._debounced_pass(reason, skip_debounce)
+                if not self._pending_refresh:
                     return
+                reason, skip_debounce = self._followup_reason, self._followup_skip_debounce
+                self._followup_skip_debounce = False
+        finally:
+            # A cancelled task must not clear the handle of the task that replaced it.
+            if self._debounce_task is asyncio.current_task():
+                self._debounce_task = None
 
-            _LOGGER.debug(
-                "Refresh: running debounced refresh (triggered by %s)", reason,
-            )
+    async def _debounced_pass(self, reason: str, skip_debounce: bool) -> None:
+        """Wait out the debounce, then run one refresh through the coordinator."""
+        if not skip_debounce:
+            delay = self._get_debounce_delay()
+            await asyncio.sleep(delay)
 
+        if not self._pending_refresh:
+            return
+
+        self._pending_refresh = False
+
+        now = dt_util.utcnow()
+        if self._global_last_refresh:
+            global_elapsed = (now - self._global_last_refresh).total_seconds()
+            required_global = self._get_backoff_interval()
+            if global_elapsed < required_global:
+                _LOGGER.debug(
+                    "Refresh: global backoff active (%ds remaining)",
+                    int(required_global - global_elapsed),
+                )
+                # A newer trigger re-sets the pending flag and cancels this wait.
+                await asyncio.sleep(required_global - global_elapsed)
+
+        _LOGGER.debug(
+            "Refresh: running debounced refresh (triggered by %s)", reason,
+        )
+
+        try:
+            # A poll still running would make HA's Debouncer drop this request after its cooldown.
+            await self._coordinator.async_wait_for_poll_end()
+            self._refresh_in_flight = True
             try:
                 await self._coordinator.async_request_refresh()
-                self._global_last_refresh = dt_util.utcnow()
+            finally:
+                self._refresh_in_flight = False
+            self._global_last_refresh = dt_util.utcnow()
 
-                if self._consecutive_failures > 0:
-                    _LOGGER.info(
-                        "Refresh: recovered after %d consecutive failure(s)",
-                        self._consecutive_failures,
-                    )
-                    self._consecutive_failures = 0
-
-                _LOGGER.debug("Refresh: coordinator refresh completed")
-
-            except Exception:
-                self._consecutive_failures += 1
-                _LOGGER.warning(
-                    "Refresh: coordinator refresh failed (attempt %d), "
-                    "next try in %ds",
-                    self._consecutive_failures, self._get_backoff_interval(),
-                    exc_info=True,
+            if self._consecutive_failures > 0:
+                _LOGGER.info(
+                    "Refresh: recovered after %d consecutive failure(s)",
+                    self._consecutive_failures,
                 )
-        finally:
-            self._debounce_task = None
+                self._consecutive_failures = 0
+
+            _LOGGER.debug("Refresh: coordinator refresh completed")
+
+        except Exception:
+            self._consecutive_failures += 1
+            _LOGGER.warning(
+                "Refresh: coordinator refresh failed (attempt %d), "
+                "next try in %ds",
+                self._consecutive_failures, self._get_backoff_interval(),
+                exc_info=True,
+            )
 
     async def trigger_refresh(
         self,
@@ -212,45 +296,51 @@ class RefreshHandler:
         reason: str = "state_change",
         force: bool = False,
         skip_debounce: bool = False,
-        zone_only: bool = False,
-    ) -> None:
-        """Schedule a debounced coordinator refresh after a state-changing action.
+    ) -> bool:
+        """Schedule a debounced coordinator refresh and return False when it was refused.
 
         `force=True` bypasses the entity-domain filter (used by buttons
         like "Resume All Schedules"). `skip_debounce=True` runs
         immediately, useful when the user expects an instant response.
-        `zone_only=True` narrows the next fetch to zone data,
-        skipping weather / mobile / insights work.
         """
         if not force and not self.should_refresh(entity_id):
             _LOGGER.debug(
                 "Refresh: %s is not in a domain that triggers immediate refresh",
                 entity_id,
             )
-            return
+            return False
 
         can_refresh, quota_reason = await self._check_quota_available()
         if not can_refresh:
             _LOGGER.debug(
                 "Refresh: skipping immediate refresh for %s (%s), "
-                "next normal poll will catch the change",
+                "next normal poll will catch the change, zone fetch kept for the next poll",
                 entity_id, quota_reason,
             )
-            return
+            # The needed zone fetch must not be lost with the refused refresh.
+            self._pending_force_zone_fetch = True
+            return False
 
         _LOGGER.debug(
             "Refresh: queued debounced refresh for %s (reason=%s)",
             entity_id, reason,
         )
 
+        self._pending_refresh = True
+        self._pending_force_zone_fetch = True
+
+        if self._refresh_in_flight:
+            # Cancelling would kill the poll itself; the running task makes one more pass for these flags.
+            self._followup_reason = reason
+            self._followup_skip_debounce = self._followup_skip_debounce or skip_debounce
+            return True
+
         if self._debounce_task is not None:
             self._debounce_task.cancel()
             self._debounce_task = None
 
-        self._pending_refresh = True
-        self._pending_zone_only = zone_only
-        self._pending_force_zone_fetch = True
-
+        self._followup_skip_debounce = False
         self._debounce_task = asyncio.create_task(
             self._execute_debounced_refresh(reason, skip_debounce),
         )
+        return True

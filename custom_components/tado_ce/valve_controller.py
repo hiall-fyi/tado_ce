@@ -14,6 +14,7 @@ import aiohttp
 from .const import (
     ABSOLUTE_MAX_VALVE_TARGET,
     HOMEKIT_WRITE_GRACE_SECONDS,
+    MECH_SVC_CLOUD_WRITE,
     SMART_VALVE_CLOUD_RATE_LIMIT,
     SMART_VALVE_DEBOUNCE_WINDOW,
     SMART_VALVE_HYSTERESIS,
@@ -31,9 +32,16 @@ if TYPE_CHECKING:
 
 from .climate_helpers import SensorProxy, subscribe_external_sensors
 from .error_dispatch import handle_background_write_error
-from .exceptions import TadoAuthError, TadoRateLimitError
-from .helpers import get_zone_overlay_termination, is_reading_withheld, mask_serial
-from .homekit_provider import HOMEKIT_UNKNOWN_OUTCOME_ERRORS
+from .exceptions import TadoAuthError, TadoBlockedError, TadoRateLimitError
+from .helpers import (
+    can_write_target,
+    get_zone_overlay_termination,
+    is_reading_withheld,
+    mask_api_url,
+    mask_serial,
+)
+from .homekit_provider import PutOutcome
+from .zone_signals import fresher_than, is_off_in_app
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -126,6 +134,7 @@ class SmartValveController:
         # Logged once while the zone waits for the first real zone update after a restart.
         self._awaiting_fetch_logged = False
         self._unreadable_overlay_logged = False
+        self._app_off_logged = False
 
     # ------------------------------------------------------------------
     # Properties
@@ -208,12 +217,8 @@ class SmartValveController:
 
     def _zone_data_newer_than_own_change(self) -> bool:
         """Whether the zone data comes from a fetch that started after SVC's own last change."""
-        recorded = self._runtime.zone_fetch_at_own_change
-        current = self._coordinator.last_zone_fetch_ts()
         # No own change recorded: any real fetch in this process counts, a saved snapshot does not.
-        if recorded is None:
-            return current is not None
-        return current is not None and current > recorded
+        return fresher_than(self._coordinator.last_zone_fetch_ts(), self._runtime.zone_fetch_at_own_change)
 
     def detect_manual_override(self, zone_data: dict[str, Any]) -> bool:
         """Return True when zone data newer than our last change shows our overlay gone, unreadable or replaced."""
@@ -361,23 +366,23 @@ class SmartValveController:
 
     async def _async_write_valve_target(self, valve_target: float) -> bool:
         """Write the valve target via HomeKit, falling back to cloud on failure."""
-        if self._homekit_provider is not None:
-            try:
-                success = await self._homekit_provider.set_temperature(
-                    self._zone_id, valve_target, raise_ambiguous=True,
+        # The valve ignores the overlay mode and write route; only the accessory and circuit decide.
+        if self._homekit_provider is not None and can_write_target(
+            self._hass, self._coordinator, self._zone_id, honour_route=False,
+        ):
+            outcome = await self._homekit_provider.set_temperature(self._zone_id, valve_target)
+            if outcome is PutOutcome.ACCEPTED:
+                _LOGGER.debug(
+                    "Smart Valve: zone %s set TRV target to %.1f°C via HomeKit",
+                    self._zone_id, valve_target,
                 )
-                if success:
-                    _LOGGER.debug(
-                        "Smart Valve: zone %s set TRV target to %.1f°C via HomeKit",
-                        self._zone_id, valve_target,
-                    )
-                    self._record_own_write(valve_target)
-                    return True
-            except HOMEKIT_UNKNOWN_OUTCOME_ERRORS:
+                self._record_own_write(valve_target)
+                return True
+            if outcome is PutOutcome.AMBIGUOUS:
                 _LOGGER.warning(
                     "Smart Valve: zone %s HomeKit write failed, falling "
                     "back to cloud",
-                    self._zone_id, exc_info=True,
+                    self._zone_id,
                 )
                 # Sent but unanswered: the bridge may have applied it.
                 self._mark_possible_ownership(valve_target)
@@ -422,6 +427,10 @@ class SmartValveController:
             success = await self._api_client.set_zone_overlay(
                 self._zone_id, setting, termination, raise_network_errors=True,
             )
+            # A False reply cannot tell a refusal from no token or URL (no request sent), so spend is slightly overstated then.
+            self._coordinator.mechanism_counters.count(
+                MECH_SVC_CLOUD_WRITE, "accepted" if success else "rejected", calls=1,
+            )
             if success:
                 _LOGGER.debug(
                     "Smart Valve: zone %s set TRV target to %.1f°C via cloud",
@@ -436,18 +445,20 @@ class SmartValveController:
                 self._zone_id,
             )
             return False
-        except (TadoAuthError, TadoRateLimitError) as e:
+        except (TadoAuthError, TadoRateLimitError, TadoBlockedError) as e:
+            self._coordinator.mechanism_counters.count(MECH_SVC_CLOUD_WRITE, "error", calls=1)
             handle_background_write_error(
                 e, self._coordinator.config_entry, self._hass, self._coordinator,
                 f"Smart Valve: zone {self._zone_id} cloud write failed, "
                 "starting recovery; will retry on next sensor change",
             )
             return False
-        except (TimeoutError, aiohttp.ClientError):
+        except (TimeoutError, aiohttp.ClientError) as e:
+            self._coordinator.mechanism_counters.count(MECH_SVC_CLOUD_WRITE, "error", calls=1)
             _LOGGER.warning(
                 "Smart Valve: zone %s cloud write raised an exception, "
-                "will retry on next sensor change",
-                self._zone_id, exc_info=True,
+                "will retry on next sensor change: %s",
+                self._zone_id, mask_api_url(str(e) or type(e).__name__),
             )
             # Sent but unanswered: Tado may have applied it.
             self._mark_possible_ownership(valve_target)
@@ -470,6 +481,10 @@ class SmartValveController:
         # No write of ours is known or suspected to be on the zone, so a delete could only remove someone else's overlay.
         if not self._runtime.overlay_set_by_controller:
             return True
+        # The overlay on the zone may by now be the user's app-OFF, which a DELETE on older data would lift; the hand-back stays owed.
+        zone_data = self._get_zone_data()
+        if zone_data is not None and self._is_turned_off_in_app(zone_data):
+            return False
         # A hold is not a failure: nothing is stamped or counted, so the retry fires on the first fetch after the reset.
         if self._is_hand_back_held():
             return False
@@ -485,6 +500,9 @@ class SmartValveController:
                     "Smart Valve: zone %s overlay cleared. Tado schedule resumed",
                     self._zone_id,
                 )
+                self._stamp_local_write()
+                # The schedule decides the power now, so an earlier own OFF no longer stands.
+                self._coordinator.record_own_power_write(self._zone_id, powered_off=False)
                 self._runtime.overlay_set_by_controller = False
                 # The cleared flag is saved at once, so a crash cannot restore "flag set, no overlay" as a manual change.
                 await self.async_persist_state()
@@ -496,7 +514,7 @@ class SmartValveController:
                 self._zone_id,
             )
             return False
-        except (TadoAuthError, TadoRateLimitError) as e:
+        except (TadoAuthError, TadoRateLimitError, TadoBlockedError) as e:
             self._runtime.resume_failures += 1
             handle_background_write_error(
                 e, self._coordinator.config_entry, self._hass, self._coordinator,
@@ -504,12 +522,12 @@ class SmartValveController:
                 "starting recovery; will retry on a later cycle",
             )
             return False
-        except (TimeoutError, aiohttp.ClientError):
+        except (TimeoutError, aiohttp.ClientError) as e:
             self._runtime.resume_failures += 1
             _LOGGER.warning(
                 "Smart Valve: zone %s clearing overlay raised an exception, "
-                "will retry on a later cycle",
-                self._zone_id, exc_info=True,
+                "will retry on a later cycle: %s",
+                self._zone_id, mask_api_url(str(e) or type(e).__name__),
             )
             return False
 
@@ -611,6 +629,10 @@ class SmartValveController:
         )
 
         current_state = self._runtime.state
+
+        # The hold comes first: a hand-back DELETE on data older than an app-OFF would remove the user's OFF overlay.
+        if self._hold_while_turned_off(zone_data):
+            return
 
         # Return after an attempt: the rest of this pass would act on zone_data read before the DELETE.
         if await self._async_retry_pending_resume(zone_data, current_state):
@@ -811,6 +833,26 @@ class SmartValveController:
         except (KeyError, TypeError, ValueError):
             return None
 
+    def _is_turned_off_in_app(self, zone_data: dict[str, Any]) -> bool:
+        """Whether the cloud overlay or a newer HomeKit reading says the zone was switched off in the app."""
+        return is_off_in_app(self._coordinator, self._zone_id, zone_data)
+
+    def _hold_while_turned_off(self, zone_data: dict[str, Any]) -> bool:
+        """Leave a zone turned off in the Tado app alone: drop any queued write and stop driving the valve."""
+        if not self._is_turned_off_in_app(zone_data):
+            self._app_off_logged = False
+            return False
+        if not self._app_off_logged:
+            _LOGGER.debug(
+                "Smart Valve: zone %s was turned off in the Tado app, leaving it alone until it is switched on",
+                self._zone_id,
+            )
+            self._app_off_logged = True
+        self._action_debouncer.cancel(f"svc_{self._zone_id}")
+        if self._runtime.state == ControllerState.ACTIVE:
+            self._enter_idle()
+        return True
+
     def _overlay_temp(self, overlay: Any) -> float | None:
         """Return the overlay's celsius target, or None if absent, malformed or not a finite number."""
         if overlay is None:
@@ -995,7 +1037,7 @@ class SmartValveController:
         self._stop()
         self._runtime.discarded = True
         self._runtime.retiring = False
-        _LOGGER.info(
+        _LOGGER.debug(
             "Smart Valve: zone %s controller discarded without a hand-back",
             self._zone_id,
         )

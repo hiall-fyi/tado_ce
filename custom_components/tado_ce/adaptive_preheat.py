@@ -2,22 +2,27 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import Event, HomeAssistant, callback
-from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.event import async_track_point_in_time, async_track_state_change_event
 from homeassistant.util import dt as dt_util
 from homeassistant.util import slugify
 
-from .const import ENTITY_DATA_PREHEAT_ADVISOR, ENTITY_DATA_PREHEAT_NOW
+from .const import ENTITY_DATA_PREHEAT_ADVISOR, ENTITY_DATA_PREHEAT_NOW, MECH_PREHEAT_PUT
 from .error_dispatch import handle_background_write_error
-from .exceptions import TadoAuthError, TadoRateLimitError
-from .helpers import build_timer_termination, get_zone_states
+from .exceptions import TadoAuthError, TadoBlockedError, TadoRateLimitError
+from .helpers import build_timer_termination, get_zone_states, zone_entity_id
+from .zone_signals import fresher_than, is_off_in_app
 
 if TYPE_CHECKING:
-    from datetime import datetime
+    from collections.abc import Callable
+
+    from homeassistant.core import State
 
     from .api_client import TadoApiClient
     from .config_manager import ConfigurationManager
@@ -29,6 +34,9 @@ _LOGGER = logging.getLogger(__name__)
 
 # api_call makes up to three attempts at a 403 inside each try, so three tries is at most nine requests per window.
 _MAX_START_TRIES = 3
+
+# How long unload waits for a start whose write is already on the wire.
+_UNLOAD_DRAIN_SECONDS = 10
 
 
 @dataclass
@@ -50,9 +58,11 @@ class AdaptivePreheatManager:
         api_client: TadoApiClient | None = None,
         data_loader: DataLoader | None = None,
         zone_config_manager: ZoneConfigManager | None = None,
+        home_id: str | None = None,
     ) -> None:
         """Initialise the Adaptive Preheat Manager."""
         self._hass = hass
+        self._home_id = home_id
         self._config_manager = config_manager
         self._api_client = api_client
         self._data_loader = data_loader
@@ -62,11 +72,19 @@ class AdaptivePreheatManager:
         self._enabled_zones: list[str] = []
         self._active_overlays: dict[str, dict[str, Any]] = {}
         self._state_listeners: list[Any] = []
+        # One preheat_now subscription per watched zone, each a cancel callable.
+        self._zone_unsubs: dict[str, Callable[[], None]] = {}
         self._zone_info: dict[str, dict[str, Any]] = {}
         # Zones with a start still owed this window: the overlay seen when it was armed, tries so far, and the zone fetch of the last try.
         self._retry_overlay: dict[str, _StartMark] = {}
         # Zones with a start write in flight, so a second update or the start-up check cannot send another.
         self._starting: set[str] = set()
+        # Zones whose app OFF has been logged, cleared once the zone is back on.
+        self._app_off_logged: set[str] = set()
+        # One pending time trigger per zone, each a cancel callable.
+        self._start_handles: dict[str, Callable[[], None]] = {}
+        # Start tasks that have not finished, so unload can wait for a write on the wire.
+        self._start_tasks: set[asyncio.Future[Any]] = set()
 
     def set_coordinator(self, coordinator: TadoDataUpdateCoordinator) -> None:
         """Wire the coordinator back-reference once it has been created.
@@ -102,95 +120,183 @@ class AdaptivePreheatManager:
 
         if not zones_info:
             _LOGGER.warning("Adaptive Preheat: no zones found in zone data, skipping setup")
-            return
 
-        for zone in zones_info:
-            if zone.get("type") != "HEATING":
-                continue
-
-            zone_id = str(zone.get("id"))
-            zone_name = zone.get("name", f"Zone {zone_id}")
-
-            if self._zone_config_manager:
-                zone_cfg = self._zone_config_manager.get_zone_config(zone_id)
-                preheat_mode = zone_cfg.get("adaptive_preheat", "off")
-                if preheat_mode not in ("active", "passive"):
-                    continue
-            else:
-                continue
-
-            zone_slug = slugify(zone_name)
-            self._zone_info[zone_id] = {
-                "name": zone_name,
-                "slug": zone_slug,
-                "preheat_now_entity": f"binary_sensor.{zone_slug}_preheat_now",
-                "preheat_advisor_entity": f"sensor.{zone_slug}_preheat_advisor",
-                "climate_entity": f"climate.{zone_slug}",
-            }
-            self._enabled_zones.append(zone_id)
+        for zone in zones_info or []:
+            self._register_zone(zone)
 
         if not self._enabled_zones:
             _LOGGER.debug("Adaptive Preheat: no zones configured for adaptive preheat")
-            return
-
-        _LOGGER.info(
-            "Adaptive Preheat: enabled for %d zone(s): %s",
-            len(self._enabled_zones),
-            ", ".join(self._zone_info[z]["name"] for z in self._enabled_zones),
-        )
+        else:
+            _LOGGER.info(
+                "Adaptive Preheat: enabled for %d zone(s): %s",
+                len(self._enabled_zones),
+                ", ".join(self._zone_info[z]["name"] for z in self._enabled_zones),
+            )
 
         await self._start_monitoring()
 
+    def _register_zone(self, zone: dict[str, Any]) -> bool:
+        """Register an unregistered HEATING zone whose mode is active or passive; True only when newly registered."""
+        if zone.get("type") != "HEATING" or not self._zone_config_manager:
+            return False
+        zone_id = str(zone.get("id"))
+        if zone_id in self._zone_info:
+            return False
+        if self._zone_config_manager.get_zone_config(zone_id).get("adaptive_preheat", "off") not in ("active", "passive"):
+            return False
+
+        zone_name = zone.get("name", f"Zone {zone_id}")
+        self._zone_info[zone_id] = {
+            "name": zone_name,
+            "preheat_now_entity": zone_entity_id(
+                self._hass, "binary_sensor", "binary_sensor_preheat_now", self._home_id, zone_id,
+                f"{slugify(zone_name)}_preheat_now",
+            ),
+        }
+        self._enabled_zones.append(zone_id)
+        return True
+
+    @callback
+    def _watch_zone(self, zone_id: str) -> None:
+        """Replace the zone's preheat_now subscription with a fresh one."""
+        self._unwatch_zone(zone_id)
+        self._zone_unsubs[zone_id] = async_track_state_change_event(
+            self._hass,
+            [self._zone_info[zone_id]["preheat_now_entity"]],
+            self._on_preheat_now_change,  # type: ignore[arg-type]
+        )
+
+    @callback
+    def _spawn_trigger(self, zone_id: str) -> None:
+        """Start the zone's preheat as a task that unload can wait for."""
+        task = self._hass.async_create_task(self._trigger_preheat(zone_id))
+        self._start_tasks.add(task)
+        task.add_done_callback(self._start_tasks.discard)
+
+    @callback
+    def _unwatch_zone(self, zone_id: str) -> None:
+        """Cancel the zone's preheat_now subscription, if any."""
+        cancel = self._zone_unsubs.pop(zone_id, None)
+        if cancel is not None:
+            cancel()
+
+    @callback
+    def _on_preheat_now_change(self, event: Event) -> None:
+        entity_id = event.data.get("entity_id")
+        new_state = event.data.get("new_state")
+        old_state = event.data.get("old_state")
+
+        if not new_state:
+            return
+
+        zone_id = None
+        for zid, info in self._zone_info.items():
+            if info["preheat_now_entity"] == entity_id:
+                zone_id = zid
+                break
+
+        if not zone_id:
+            return
+
+        old_is_on = old_state and old_state.state == "on"
+        new_is_on = new_state.state == "on"
+
+        if new_is_on and (not old_is_on or zone_id in self._retry_overlay):
+            self._spawn_trigger(zone_id)
+        elif not new_is_on and old_is_on:
+            self._hass.async_create_task(
+                self._check_clear_overlay(zone_id),
+            )
+
+    async def async_enable_zone(self, zone_id: str) -> None:
+        """Register, watch and start-check a zone that became eligible after setup."""
+        if not self._enabled or zone_id in self._zone_info:
+            return
+        zones_info = (self._coordinator.data or {}).get("zones_info") if self._coordinator else None
+        if not zones_info and self._data_loader is not None:
+            zones_info = await self._hass.async_add_executor_job(self._data_loader.load_zones_info_file)
+            # An unload can run while the zone file loads.
+            if not self._enabled:
+                return
+        zone = next((z for z in zones_info or [] if str(z.get("id")) == zone_id), None)
+        if zone is None:
+            _LOGGER.debug("Adaptive Preheat: zone %s is not in the zone data, nothing to enable", zone_id)
+            return
+        if not self._register_zone(zone):
+            return
+        self._watch_zone(zone_id)
+        _LOGGER.debug("Adaptive Preheat: enabled zone %s", self._zone_info[zone_id]["name"])
+        await self._check_initial_zone_state(zone_id)
+
     async def _start_monitoring(self) -> None:
-        """Subscribe to state changes on each zone's preheat_now binary sensor."""
-        entities_to_monitor = [
-            self._zone_info[zone_id]["preheat_now_entity"]
-            for zone_id in self._enabled_zones
-        ]
+        """Subscribe to each enabled zone's preheat_now sensor and to zone-config changes."""
+        for zone_id in self._enabled_zones:
+            self._watch_zone(zone_id)
 
         @callback
-        def _state_change_handler(event: Event) -> None:
-            entity_id = event.data.get("entity_id")
-            new_state = event.data.get("new_state")
-            old_state = event.data.get("old_state")
-
-            if not new_state:
+        def _zone_config_handler(zone_id: str, key: str, value: Any) -> None:
+            if key != "adaptive_preheat":
                 return
+            if value in ("active", "passive"):
+                self._hass.async_create_task(self.async_enable_zone(zone_id))
+            else:
+                self._cancel_start(zone_id)
 
-            zone_id = None
-            for zid, info in self._zone_info.items():
-                if info["preheat_now_entity"] == entity_id:
-                    zone_id = zid
-                    break
-
-            if not zone_id:
-                return
-
-            old_is_on = old_state and old_state.state == "on"
-            new_is_on = new_state.state == "on"
-
-            if new_is_on and (not old_is_on or zone_id in self._retry_overlay):
-                self._hass.async_create_task(
-                    self._trigger_preheat(zone_id),
-                )
-            elif not new_is_on and old_is_on:
-                self._hass.async_create_task(
-                    self._check_clear_overlay(zone_id),
-                )
-
-        cancel = async_track_state_change_event(
-            self._hass,
-            entities_to_monitor,
-            _state_change_handler,  # type: ignore[arg-type]
-        )
-        self._state_listeners.append(cancel)
+        if self._zone_config_manager:
+            self._state_listeners.append(self._zone_config_manager.add_listener(_zone_config_handler))
 
         _LOGGER.debug(
             "Adaptive Preheat: monitoring preheat_now for %d zone(s)",
-            len(entities_to_monitor),
+            len(self._zone_unsubs),
         )
 
         await self._check_initial_preheat_states()
+
+    @callback
+    def _cancel_start(self, zone_id: str) -> None:
+        """Cancel the zone's pending start trigger, if any."""
+        cancel = self._start_handles.pop(zone_id, None)
+        if cancel is not None:
+            cancel()
+
+    @callback
+    def forget_zone(self, zone_id: str) -> bool:
+        """Drop everything held for a zone that no longer exists; True when it held any."""
+        held = any(
+            zone_id in table
+            for table in (
+                self._start_handles, self._zone_unsubs, self._retry_overlay, self._active_overlays,
+                self._zone_info, self._enabled_zones, self._app_off_logged,
+            )
+        )
+        self._cancel_start(zone_id)
+        self._app_off_logged.discard(zone_id)
+        self._unwatch_zone(zone_id)
+        self._retry_overlay.pop(zone_id, None)
+        self._active_overlays.pop(zone_id, None)
+        self._zone_info.pop(zone_id, None)
+        if zone_id in self._enabled_zones:
+            self._enabled_zones.remove(zone_id)
+        return held
+
+    @callback
+    def schedule_start(self, zone_id: str, start_at: datetime | None) -> None:
+        """Replace the zone's start trigger with one at the timezone-aware start_at, or none when it cannot fire."""
+        self._cancel_start(zone_id)
+        if zone_id not in self._zone_info or start_at is None or start_at <= dt_util.utcnow():
+            return
+        mode = "active"
+        if self._zone_config_manager:
+            mode = self._zone_config_manager.get_zone_config(zone_id).get("adaptive_preheat", "off")
+        if mode not in ("active", "passive"):
+            return
+
+        @callback
+        def _fire(_now: datetime) -> None:
+            self._start_handles.pop(zone_id, None)
+            self._spawn_trigger(zone_id)
+
+        self._start_handles[zone_id] = async_track_point_in_time(self._hass, _fire, start_at)
 
     async def _check_initial_preheat_states(self) -> None:
         """Catch zones whose preheat_now is already ON at setup time.
@@ -199,7 +305,12 @@ class AdaptivePreheatManager:
         for the moment of setup. Falls back silently when the
         coordinator isn't ready yet.
         """
-        if not self._coordinator:
+        for zone_id in list(self._enabled_zones):
+            await self._check_initial_zone_state(zone_id)
+
+    async def _check_initial_zone_state(self, zone_id: str) -> None:
+        """Start the zone now when its preheat_now is already ON."""
+        if not self._coordinator or zone_id not in self._zone_info:
             return
 
         if self._is_home_away():
@@ -208,15 +319,14 @@ class AdaptivePreheatManager:
             )
             return
 
-        for zone_id in self._enabled_zones:
-            preheat_data = self._coordinator.get_entity_data(zone_id, ENTITY_DATA_PREHEAT_NOW)
-            if preheat_data and preheat_data.get("state") == "on":
-                _LOGGER.info(
-                    "Adaptive Preheat: %s already needs preheat at startup, "
-                    "triggering now",
-                    self._zone_info[zone_id]["name"],
-                )
-                await self._trigger_preheat(zone_id)
+        preheat_data = self._coordinator.get_entity_data(zone_id, ENTITY_DATA_PREHEAT_NOW)
+        if preheat_data and preheat_data.get("state") == "on":
+            _LOGGER.info(
+                "Adaptive Preheat: %s already needs preheat at startup, "
+                "triggering now",
+                self._zone_info[zone_id]["name"],
+            )
+            await self._trigger_preheat(zone_id)
 
     def _is_home_away(self) -> bool:
         """Return True when the home presence is anything other than HOME."""
@@ -231,11 +341,27 @@ class AdaptivePreheatManager:
         zone_states = get_zone_states(coord_data)
         return zone_states.get(zone_id) or zone_states.get(str(zone_id))
 
+    def _is_turned_off_in_app(self, zone_id: str, zone_name: str) -> bool:
+        """Return True while the cloud overlay or HomeKit switches the zone off; logs once per off period."""
+        if self._coordinator is None:
+            return False
+        # Reads the coordinator snapshot, not the control view: Preheat can run before the first fetch, where the latch records None and holds.
+        if not is_off_in_app(self._coordinator, zone_id, self._get_zone_state(zone_id)):
+            self._app_off_logged.discard(zone_id)
+            return False
+        if zone_id not in self._app_off_logged:
+            _LOGGER.debug(
+                "Adaptive Preheat: %s was turned off in the Tado app, leaving it off until it is switched on",
+                zone_name,
+            )
+            self._app_off_logged.add(zone_id)
+        return True
+
     def _should_suppress_passive(self, zone_id: str, zone_name: str) -> bool:
         """Return True when passive mode should defer to an existing overlay."""
         zd = self._get_zone_state(zone_id)
         if zd and zd.get("overlay") is not None:
-            _LOGGER.info(
+            _LOGGER.debug(
                 "Adaptive Preheat: %s skipped in passive mode, zone "
                 "already has an active overlay (%s)",
                 zone_name,
@@ -274,6 +400,27 @@ class AdaptivePreheatManager:
             )
             return None
 
+    def _window_end(self, zone_id: str) -> datetime | None:
+        """Return the advisor's next block start, else now plus its duration, or None when neither is readable."""
+        if self._coordinator is None:
+            return None
+        data = self._coordinator.get_entity_data(zone_id, ENTITY_DATA_PREHEAT_ADVISOR)
+        if not isinstance(data, dict):
+            return None
+        raw = data.get("target_time")
+        if isinstance(raw, str):
+            try:
+                parsed = datetime.strptime(raw.removeprefix("Tomorrow "), "%H:%M")
+            except ValueError:
+                parsed = None
+            if parsed is not None:
+                day = dt_util.now() + timedelta(days=1 if raw.startswith("Tomorrow ") else 0)
+                return day.replace(hour=parsed.hour, minute=parsed.minute, second=0, microsecond=0)
+        minutes = data.get("duration_minutes")
+        if isinstance(minutes, (int, float)) and not isinstance(minutes, bool) and minutes > 0:
+            return dt_util.utcnow() + timedelta(minutes=minutes)
+        return None
+
     def _is_already_at_target(self, zone_id: str, zone_name: str, target_temp: float) -> bool:
         """Return True when the zone is already within 0.5°C of the target."""
         zone_data = self._get_zone_state(zone_id)
@@ -311,7 +458,7 @@ class AdaptivePreheatManager:
     def _zone_data_newer_than(self, epoch: datetime | None) -> bool:
         """Return True once a zone fetch newer than the given epoch has landed."""
         current = self._coordinator.last_zone_fetch_ts() if self._coordinator is not None else None
-        return current is not None and (epoch is None or current > epoch)
+        return fresher_than(current, epoch)
 
     def _give_up_if_spent(self, zone_id: str) -> None:
         """Drop the mark of a zone that used all its tries, with one WARNING."""
@@ -337,13 +484,26 @@ class AdaptivePreheatManager:
 
     async def _attempt_preheat(self, zone_id: str) -> None:
         """Set a heating overlay so the zone reaches its next-block target on time."""
+        # Nothing between here and the write suspends, so one check covers a start queued before an unload.
+        if not self._enabled:
+            return
         zone_info = self._zone_info.get(zone_id)
         if not zone_info:
             return
 
         zone_name = zone_info["name"]
 
+        preheat_mode = "active"
+        if self._zone_config_manager:
+            preheat_mode = self._zone_config_manager.get_zone_config(zone_id).get("adaptive_preheat", "off")
+        if preheat_mode not in ("active", "passive"):
+            self._retry_overlay.pop(zone_id, None)
+            _LOGGER.debug("Adaptive Preheat: %s mode is %s, not starting a preheat", zone_name, preheat_mode)
+            return
+
         mark = self._retry_overlay.pop(zone_id, None)
+        if self._is_turned_off_in_app(zone_id, zone_name):
+            return
         signature = self._overlay_signature(zone_id)
         if mark is not None and signature != mark.overlay:
             _LOGGER.info(
@@ -363,11 +523,16 @@ class AdaptivePreheatManager:
         # Defence-in-depth: preheat must not fire while the home is
         # AWAY, even if a stale preheat_now signal slipped through.
         if self._is_home_away():
-            _LOGGER.info(
+            _LOGGER.debug(
                 "Adaptive Preheat: %s skipped, home is in away mode",
                 zone_name,
             )
             return
+
+        ends_at = self._active_overlays.get(zone_id, {}).get("ends_at")
+        if ends_at is not None and ends_at <= dt_util.utcnow():
+            del self._active_overlays[zone_id]
+            _LOGGER.debug("Adaptive Preheat: %s previous preheat window is over, dropping its record", zone_name)
 
         if zone_id in self._active_overlays:
             _LOGGER.debug(
@@ -376,11 +541,6 @@ class AdaptivePreheatManager:
                 zone_name,
             )
             return
-
-        preheat_mode = "active"
-        if self._zone_config_manager:
-            zone_cfg = self._zone_config_manager.get_zone_config(zone_id)
-            preheat_mode = zone_cfg.get("adaptive_preheat", "off")
 
         if preheat_mode == "passive" and self._should_suppress_passive(zone_id, zone_name):
             return
@@ -427,15 +587,26 @@ class AdaptivePreheatManager:
             return ""
         return ", will retry after Tado's next zone update"
 
+    def _preheat_now_state(self, zone_id: str) -> State | None:
+        """Return the zone's preheat_now entity state, or None when it has no entity."""
+        entity_id = self._zone_info.get(zone_id, {}).get("preheat_now_entity")
+        return self._hass.states.get(entity_id) if entity_id else None
+
     def _is_preheat_now_off(self, zone_id: str) -> bool:
         """Return True when the zone's preheat_now entity exists and is no longer on."""
-        state = self._hass.states.get(self._zone_info[zone_id]["preheat_now_entity"])
+        state = self._preheat_now_state(zone_id)
         return state is not None and state.state != "on"
+
+    def _count_put(self, zone_id: str, outcome: str) -> None:
+        """Count one preheat PUT that went out, by zone."""
+        if self._coordinator is not None:
+            self._coordinator.mechanism_counters.count(MECH_PREHEAT_PUT, f"{zone_id}:{outcome}", calls=1)
 
     async def _set_preheat_overlay(
         self, zone_id: str, zone_name: str, target_temp: float, *, capture_state: bool = False,
     ) -> None:
         """Send the heating overlay to Tado and record it for later cleanup."""
+        put_counted = False
         try:
             client = self._api_client
             if client is None:
@@ -452,13 +623,22 @@ class AdaptivePreheatManager:
             }
             termination = build_timer_termination(overlay="next_time_block")
 
+            now_state = self._preheat_now_state(zone_id)
+            was_on = now_state is not None and now_state.state == "on"
             success = await client.set_zone_overlay(zone_id, setting, termination)
+            # A False reply cannot tell a refusal from no token or URL (no request sent), so spend is slightly overstated then.
+            self._count_put(zone_id, "accepted" if success else "rejected")
+            put_counted = True
 
             if success:
+                # Counts as a write to the zone, so a pending HomeKit write is dropped, not resent over the preheat.
+                if self._coordinator is not None and self._coordinator.state_reconciler is not None:
+                    self._coordinator.state_reconciler.record_local_write(zone_id)
                 self._retry_overlay.pop(zone_id, None)
                 self._active_overlays[zone_id] = {
                     "target_temp": target_temp,
                     "triggered_at": dt_util.utcnow(),
+                    "ends_at": self._window_end(zone_id),
                     "termination": "TADO_MODE",
                 }
                 _LOGGER.debug(
@@ -468,8 +648,8 @@ class AdaptivePreheatManager:
                 # Captured on success like the other overlay writers, so a rejected write leaves no snapshot behind.
                 if capture_state and self._coordinator is not None:
                     await self._coordinator.async_capture_state(zone_id, "climate_heating", "preheat")
-                # The window can end while the write is in flight; its OFF event found nothing to drop.
-                if self._is_preheat_now_off(zone_id):
+                # Only a window that was ON when the write began can end mid-write; a timer start has the sensor OFF and keeps its record for the ON flip.
+                if was_on and self._is_preheat_now_off(zone_id):
                     await self._check_clear_overlay(zone_id)
             else:
                 _LOGGER.warning(
@@ -477,7 +657,9 @@ class AdaptivePreheatManager:
                     zone_name, self._retry_note(zone_id),
                 )
 
-        except (TadoAuthError, TadoRateLimitError) as err:
+        except (TadoAuthError, TadoRateLimitError, TadoBlockedError) as err:
+            if not put_counted:
+                self._count_put(zone_id, "error")
             if self._coordinator is not None:
                 handle_background_write_error(
                     err, self._coordinator.config_entry, self._hass, self._coordinator,
@@ -485,6 +667,8 @@ class AdaptivePreheatManager:
                     f"starting recovery{self._retry_note(zone_id)}",
                 )
         except Exception:
+            if not put_counted:
+                self._count_put(zone_id, "error")
             # A failed write must not end the task silently; the armed mark keeps the retry.
             _LOGGER.exception(
                 "Adaptive Preheat: %s overlay write raised an exception%s",
@@ -521,11 +705,34 @@ class AdaptivePreheatManager:
             zone_name,
         )
 
+    async def _wait_for_starts_at_unload(self) -> None:
+        """Wait for running starts; cancel any still running after the bound, with one WARNING."""
+        tasks = set(self._start_tasks)
+        if not tasks:
+            return
+        _done, pending = await asyncio.wait(tasks, timeout=_UNLOAD_DRAIN_SECONDS)
+        if not pending:
+            return
+        _LOGGER.warning(
+            "Adaptive Preheat: a start for zone(s) %s was still running %s s after unload, cancelling it",
+            ", ".join(sorted(self._zone_info.get(z, {}).get("name", z) for z in self._starting)) or "unknown",
+            _UNLOAD_DRAIN_SECONDS,
+        )
+        for task in pending:
+            task.cancel()
+        await asyncio.wait(pending)
+
     async def async_unload(self) -> None:
-        """Cancel state listeners during integration unload."""
+        """Cancel state listeners and wait a bounded time for starts still running."""
+        self._enabled = False
         for cancel in self._state_listeners:
             cancel()
         self._state_listeners.clear()
+        for zone_id in list(self._zone_unsubs):
+            self._unwatch_zone(zone_id)
+        for zone_id in list(self._start_handles):
+            self._cancel_start(zone_id)
         self._retry_overlay.clear()
+        await self._wait_for_starts_at_unload()
 
         _LOGGER.debug("Adaptive Preheat: unloaded")

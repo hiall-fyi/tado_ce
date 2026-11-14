@@ -23,9 +23,9 @@ from .const import (
     _RATE_LIMIT_MAX_S,
     _RATE_LIMIT_MIN_S,
     DOMAIN,
-    QUOTA_BOOTSTRAP_CALLS,
 )
 from .helpers import parse_iso_datetime, predicted_next_reset
+from .quota_levels import QuotaLevels
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -59,20 +59,20 @@ def calculate_seconds_until_reset(last_reset_utc: str | None) -> int | None:
         return None
     try:
         last_reset = parse_iso_datetime(last_reset_utc)
-        next_reset = last_reset + timedelta(hours=24)
         now_utc = dt_util.utcnow()
-        while next_reset <= now_utc:
-            next_reset += timedelta(hours=24)
+        # Whole days since the snapshot, plus one: a reset exactly at now counts as passed
+        periods = max((now_utc - last_reset) // timedelta(hours=24) + 1, 1)
+        next_reset = last_reset + timedelta(hours=24) * periods
         result = int((next_reset - now_utc).total_seconds())
         return result if result > 0 else None
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, OverflowError):
         return None
 
 
 def should_block_manual_action(
-    ratelimit_data: dict[str, Any], config_manager: ConfigurationManager,
+    ratelimit_data: dict[str, Any], config_manager: ConfigurationManager, cost: int = 1,
 ) -> tuple[bool, str]:
-    """Return (should_block, user_facing_reason): gates manual actions at the bootstrap reserve.
+    """Return (should_block, user_facing_reason): gates a manual action of `cost` calls at the bootstrap reserve.
 
     The bootstrap reserve is the absolute minimum quota needed for
     the integration to auto-recover after the next API reset. When
@@ -80,7 +80,8 @@ def should_block_manual_action(
     user-initiated ones, is blocked so the recovery sync still has
     calls to spend.
     """
-    if not config_manager.get_quota_reserve_enabled():
+    levels = QuotaLevels.build(ratelimit_data, config_manager)
+    if not levels.reserve_enabled:
         _LOGGER.debug(
             "Rate Limit: quota reserve protection disabled, letting "
             "manual actions through",
@@ -88,17 +89,7 @@ def should_block_manual_action(
         return False, ""
 
     last_reset_utc = ratelimit_data.get("last_reset_utc")
-    if last_reset_utc:
-        next_reset = predicted_next_reset(last_reset_utc)
-        if next_reset is None:
-            _LOGGER.debug(
-                "Rate Limit: could not parse last_reset_utc (%r), "
-                "treating reset time as unknown",
-                last_reset_utc,
-            )
-        elif dt_util.utcnow() >= next_reset:
-            return False, ""
-    else:
+    if not last_reset_utc:
         # No reset time known yet (fresh install / stale snapshot),
         # so let manual actions through so the first API response
         # bootstraps the rate-limit state.
@@ -107,15 +98,21 @@ def should_block_manual_action(
             "actions through to bootstrap rate-limit data",
         )
         return False, ""
+    if predicted_next_reset(last_reset_utc) is None:
+        _LOGGER.debug(
+            "Rate Limit: could not parse last_reset_utc (%r), "
+            "treating reset time as unknown",
+            last_reset_utc,
+        )
 
-    remaining = ratelimit_data.get("remaining", 100)
+    remaining = ratelimit_data.get("remaining")
 
     _LOGGER.debug(
         "Rate Limit: bootstrap check, remaining=%s, threshold=%s",
-        remaining, QUOTA_BOOTSTRAP_CALLS,
+        remaining, levels.manual_floor,
     )
 
-    if remaining <= QUOTA_BOOTSTRAP_CALLS:
+    if levels.manual_holds(ratelimit_data, cost, dt_util.utcnow()):
         _rs = ratelimit_data.get("reset_seconds")
         reset_seconds = _rs if _rs is not None else 0
 
@@ -143,15 +140,20 @@ def should_block_manual_action(
 async def async_check_bootstrap_reserve(
     hass: HomeAssistant,
     coordinator: TadoDataUpdateCoordinator | None = None,
+    cost: int = 1,
 ) -> tuple[bool, str]:
-    """Service-handler convenience wrapper around `should_block_manual_action`.
+    """Return (should_block, reason) for a manual action of `cost` calls; see `async_check_reserve_with_snapshot`."""
+    blocked, reason, _snapshot = await async_check_reserve_with_snapshot(hass, coordinator, cost)
+    return blocked, reason
 
-    Loads the rate-limit snapshot from the coordinator's data loader
-    (off the event loop), then defers the policy decision to
-    `should_block_manual_action`. Returns False when the coordinator
-    is missing: service handlers that bypass it have no quota
-    context to gate on.
-    """
+
+async def async_check_reserve_with_snapshot(
+    hass: HomeAssistant,
+    coordinator: TadoDataUpdateCoordinator | None = None,
+    cost: int = 1,
+) -> tuple[bool, str, dict[str, Any] | None]:
+    """Load the rate-limit snapshot off the loop and gate on it; no coordinator or no snapshot lets the action through."""
+    ratelimit_data: dict[str, Any] | None = None
     try:
         if coordinator is not None:
             config_manager = coordinator.config_manager
@@ -163,19 +165,20 @@ async def async_check_bootstrap_reserve(
                 "Rate Limit: bootstrap check called without coordinator, "
                 "skipping",
             )
-            return False, ""
+            return False, "", None
 
         if not ratelimit_data:
-            return False, ""
+            return False, "", ratelimit_data
 
-        return should_block_manual_action(ratelimit_data, config_manager)
+        blocked, reason = should_block_manual_action(ratelimit_data, config_manager, cost)
+        return blocked, reason, ratelimit_data
     except (OSError, ValueError, KeyError, TypeError) as e:
         _LOGGER.debug(
             "Rate Limit: bootstrap check raised an exception (%s), "
             "letting the action through to be safe",
             e,
         )
-        return False, ""
+        return False, "", None
 
 
 async def async_show_api_limit_notification(hass: HomeAssistant, message: str) -> None:
@@ -195,6 +198,7 @@ async def async_check_bootstrap_reserve_or_raise(
     hass: HomeAssistant,
     entity_name: str = "",
     coordinator: TadoDataUpdateCoordinator = None,  # type: ignore[assignment]
+    cost: int = 1,
 ) -> None:
     """Block a manual action with `HomeAssistantError` when quota is at the reserve.
 
@@ -204,7 +208,7 @@ async def async_check_bootstrap_reserve_or_raise(
     """
     from homeassistant.exceptions import HomeAssistantError
 
-    should_block, reason = await async_check_bootstrap_reserve(hass, coordinator=coordinator)
+    should_block, reason = await async_check_bootstrap_reserve(hass, coordinator=coordinator, cost=cost)
     if should_block:
         log_name = f" for {entity_name}" if entity_name else ""
         _LOGGER.warning(
@@ -303,7 +307,7 @@ async def async_detect_reset_from_history(hass: HomeAssistant, home_id: str | No
     with.
     """
     try:
-        from homeassistant.components.recorder import get_instance  # type: ignore[attr-defined]
+        from homeassistant.components.recorder import get_instance
         from homeassistant.components.recorder.history import get_significant_states
 
         end_time = dt_util.utcnow()

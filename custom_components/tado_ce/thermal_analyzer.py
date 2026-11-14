@@ -233,7 +233,8 @@ class ThermalAnalyzer:
         Measures how much the heating rate decreases as temperature
         approaches the setpoint. Used to predict overshoot.
 
-        Returned as a percentage (0-100). Interpretation:
+        Returned as a percentage (0-200). Interpretation:
+        - above 100: Heating speeds up near the setpoint (unusual), may overshoot
         - 100: No deceleration, will likely overshoot
         - 50: 50% deceleration, controlled approach
         - 0: Complete stop before setpoint (rare)
@@ -242,7 +243,7 @@ class ThermalAnalyzer:
             cycles: List of completed heating cycles
 
         Returns:
-            Approach factor as percentage (0-100), or None if insufficient data
+            Approach factor as percentage (0-200), or None if insufficient data
         """
         # Filter to only valid heating cycles
         valid_cycles = [
