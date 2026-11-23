@@ -128,6 +128,9 @@ class WindowController:
         self._reassert: set[str] = set()
         # Failed restore attempts per room, so a restore that can never work is given up.
         self._restore_failures: dict[str, int] = {}
+        # Rooms whose failure is already counted since the last retry fired, so passes started by sensor or
+        # settings changes don't use up the attempts early: one count per retry window.
+        self._failure_counted: set[str] = set()
         self._lock = asyncio.Lock()
         self._stopped = False
         self._started = False
@@ -199,6 +202,7 @@ class WindowController:
         self._triggered.discard(zone_id)
         self._reassert.discard(zone_id)
         self._restore_failures.pop(zone_id, None)
+        self._failure_counted.discard(zone_id)
         if zone_id in self._state.held or zone_id in self._state.overridden:
             self._state.held.discard(zone_id)
             self._state.overridden.discard(zone_id)
@@ -400,8 +404,9 @@ class WindowController:
                 await self._async_switch_off(zone, holders_of(zone, view))
             for zone in sorted(to_restore):
                 await self._async_restore(zone)
-            # After the restores: a room that came back needs no second OFF.
-            for zone in sorted(self._reassert & self._state.held):
+            # After the restores: a room due a restore is never switched off again, even when its restore failed
+            # and it is still held; its windows are closed, and the retry restores it.
+            for zone in sorted((self._reassert & self._state.held) - to_restore):
                 await self._async_reassert_off(zone)
 
     async def _async_switch_off(self, zone: str, holders: list[str]) -> None:
@@ -488,7 +493,10 @@ class WindowController:
             )
         except Exception as err:
             # WHY broad: the restore can fail with any client error; it is retried, then given up, never raised.
-            failures = self._restore_failures.get(zone, 0) + 1
+            failures = self._restore_failures.get(zone, 0)
+            if zone not in self._failure_counted:
+                failures += 1
+                self._failure_counted.add(zone)
             if failures >= _RESTORE_MAX_ATTEMPTS:
                 _LOGGER.warning(
                     "Window control: could not switch %s back on after %d tries (%s), giving up; set it by hand",
@@ -516,6 +524,7 @@ class WindowController:
         self._state.held.discard(zone)
         self._reassert.discard(zone)
         self._restore_failures.pop(zone, None)
+        self._failure_counted.discard(zone)
         self._save()
 
     def _arm_retry(self) -> None:
@@ -525,6 +534,7 @@ class WindowController:
         @callback
         def _retry(_now: Any) -> None:
             self._retry_timer = None
+            self._failure_counted.clear()
             self._schedule_apply("retrying a failed write")
 
         self._retry_timer = async_call_later(self._hass, _RESTORE_RETRY_SECONDS, _retry)

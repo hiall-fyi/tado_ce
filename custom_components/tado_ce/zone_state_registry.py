@@ -63,6 +63,7 @@ ZONE_STATE_OWNED: Final[dict[str, str]] = {
     "WindowController._delay_timers": "window_control",
     "WindowController._reassert": "window_control",
     "WindowController._restore_failures": "window_control",
+    "WindowController._failure_counted": "window_control",
     "StateReconciler._prev_sources": "state_reconciler",
     "StateReconciler._write_counts": "state_reconciler",
     "StateRestoreManager._captured": "state_restore",
