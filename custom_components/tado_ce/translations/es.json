@@ -1127,6 +1127,9 @@
       },
       "quota_reserve": {
         "name": "Reserva de cuota"
+      },
+      "window_control": {
+        "name": "Control de ventanas"
       }
     },
     "water_heater": {
@@ -1399,6 +1402,19 @@
         "linear": "Línea recta",
         "exponential": "Curvado"
       }
+    },
+    "window_action": {
+      "options": {
+        "none": "No hacer nada",
+        "room": "Apagar esta habitación",
+        "house": "Apagar todas las habitaciones"
+      }
+    },
+    "window_resume_mode": {
+      "options": {
+        "own": "Cuando se cierran las ventanas que las apagaron",
+        "all": "Solo cuando todas las ventanas de la casa están cerradas"
+      }
     }
   },
   "exceptions": {
@@ -1663,7 +1679,9 @@
               "use_external_humidity": "Anular el sensor de humedad de Tado",
               "external_humidity_sensor": "Sensor de humedad externo",
               "svc_mode": "Modo de Smart Valve Control",
-              "svc_offset_min_change": "Cambio mínimo de Offset Sync"
+              "svc_offset_min_change": "Cambio mínimo de Offset Sync",
+              "window_sensor": "Sensores de ventana",
+              "window_action": "Acción de ventana"
             },
             "data_description": {
               "use_external_temp": "Actívelo para usar su propio sensor de temperatura en lugar del integrado de Tado. Si lo desactiva y guarda, se elimina el sensor elegido y tendrá que volver a elegirlo.",
@@ -1671,7 +1689,9 @@
               "use_external_humidity": "Actívelo para usar su propio sensor de humedad en lugar del integrado de Tado. Si lo desactiva y guarda, se elimina el sensor elegido y tendrá que volver a elegirlo.",
               "external_humidity_sensor": "El sensor que se usa en lugar de la lectura de humedad integrada de Tado. Active el interruptor de arriba para usarlo.",
               "svc_mode": "Utilice su sensor externo para mejorar la precisión del TRV. Aparece una vez que se guarda un sensor de temperatura externo para esta zona. Offset Sync (recomendado) corrige discretamente la lectura de temperatura del TRV y se pausa fuera del horario diurno definido en Ajustes avanzados. Funciona junto con Tado y alarga la duración de la batería del TRV. Valve Target anula directamente el punto de consigna del TRV. Es más agresivo, así que utilícelo solo cuando Offset Sync no sea suficiente.",
-              "svc_offset_min_change": "Offset Sync solo escribe un nuevo Offset en el termostato cuando cambiaría al menos esta cantidad (0,5–3,0 °C, por defecto 0,5). Valores más altos suponen menos escrituras y mejor duración de la batería, pero la temperatura en la aplicación de Tado es menos exacta. Aparece después de guardar con Offset Sync seleccionado."
+              "svc_offset_min_change": "Offset Sync solo escribe un nuevo Offset en el termostato cuando cambiaría al menos esta cantidad (0,5–3,0 °C, por defecto 0,5). Valores más altos suponen menos escrituras y mejor duración de la batería, pero la temperatura en la aplicación de Tado es menos exacta. Aparece después de guardar con Offset Sync seleccionado.",
+              "window_sensor": "Sensores de contacto de ventana o puerta opcionales; elija tantos como tenga la habitación. Offset Sync mantiene su Offset mientras alguno esté abierto (la detección de ventana abierta de Tado también lo pausa), y la Acción de ventana los usa para apagar la calefacción.",
+              "window_action": "Qué ocurre cuando una ventana de aquí sigue abierta más allá del retardo de Ajustes avanzados → Control de ventanas. El interruptor Control de ventanas del hub lo desactiva para todas las habitaciones a la vez."
             }
           },
           "overlay_section": {
@@ -1915,6 +1935,19 @@
               "use_outdoor_temp_entity": "Desactívelo para dejar de utilizar su propio sensor exterior. Al guardar, se borra la entidad seleccionada. El riesgo de moho pasará entonces a basarse en la temperatura ambiente, y la «Compensación meteorológica» utilizará los datos meteorológicos de Tado si la opción «Datos meteorológicos» está activada.",
               "outdoor_temp_entity": "Sensor que proporciona la temperatura exterior (por ejemplo, weather.home o un sensor local)",
               "boiler_flow_temp_entity": "Su propio sensor de temperatura de impulsión de la caldera (por ejemplo ebusd, OpenTherm Gateway o myVaillant), que se usa cuando Tado no informa de una temperatura de impulsión. Alimenta el sensor Temperatura de impulsión de la caldera y la alerta de impulsión de la caldera. No controla la compensación meteorológica, que necesita el Internet Bridge."
+            }
+          },
+          "window_control": {
+            "name": "Control de ventanas",
+            "data": {
+              "window_off_delay_seconds": "Retardo antes de apagar",
+              "window_resume_mode": "Volver a encender las habitaciones",
+              "window_settle_minutes": "Pausa de Offset Sync tras cerrar"
+            },
+            "data_description": {
+              "window_off_delay_seconds": "Cuánto tiempo debe estar abierta una ventana antes de apagar sus habitaciones (0–3600 s, por defecto 60), para que pasar por la puerta del balcón no encienda y apague la calefacción. Se aplica a las habitaciones cuya Acción de ventana no es No hacer nada.",
+              "window_resume_mode": "Cuándo vuelven a lo que hacían antes las habitaciones apagadas por una ventana abierta.",
+              "window_settle_minutes": "Cuánto tiempo mantiene Offset Sync su Offset después de cerrarse la última ventana de una habitación, mientras el sensor externo y el termostato se recuperan del aire frío (0–180 min, por defecto 30)."
             }
           }
         }

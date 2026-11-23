@@ -507,7 +507,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         feature_group="heating_circuit",  # cleaned up when the toggle is turned off
     ),
     # ===================================================================
-    # Switches (switch.py): 3 entries (early_start, child_lock, quota_reserve)
+    # Switches (switch.py): 4 entries (early_start, child_lock, quota_reserve, window_control)
     # ===================================================================
     "switch_early_start": EntityMeta(
         translation_key="early_start",
@@ -528,6 +528,12 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         unique_id_suffix="quota_reserve_enabled",  # option_key used as suffix
         entity_category="config",
         icon=None,  # dynamic: mdi:shield-check / mdi:shield-off
+    ),
+    "switch_window_control": EntityMeta(
+        translation_key="window_control",
+        unique_id_suffix="window_control_enabled",  # option_key used as suffix
+        entity_category="config",
+        icon=None,  # dynamic: mdi:window-open-variant / mdi:window-closed-variant
     ),
     # ===================================================================
     # Climate (climate_heating.py, climate_ac.py): 2 entries

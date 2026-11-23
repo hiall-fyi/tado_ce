@@ -1127,6 +1127,9 @@
       },
       "quota_reserve": {
         "name": "Reserva de quotas"
+      },
+      "window_control": {
+        "name": "Controlo de janelas"
       }
     },
     "water_heater": {
@@ -1399,6 +1402,19 @@
         "linear": "Linha reta",
         "exponential": "Curvado"
       }
+    },
+    "window_action": {
+      "options": {
+        "none": "Não fazer nada",
+        "room": "Desligar esta divisão",
+        "house": "Desligar todas as divisões"
+      }
+    },
+    "window_resume_mode": {
+      "options": {
+        "own": "Quando as janelas que as desligaram estão fechadas",
+        "all": "Só quando todas as janelas da casa estão fechadas"
+      }
     }
   },
   "exceptions": {
@@ -1663,7 +1679,9 @@
               "use_external_humidity": "Substituir o sensor de humidade do Tado",
               "external_humidity_sensor": "Sensor de humidade externo",
               "svc_mode": "Modo Smart Valve Control",
-              "svc_offset_min_change": "Alteração mínima do Offset Sync"
+              "svc_offset_min_change": "Alteração mínima do Offset Sync",
+              "window_sensor": "Sensores de janela",
+              "window_action": "Ação da janela"
             },
             "data_description": {
               "use_external_temp": "Ative para usar o seu próprio sensor de temperatura em vez do integrado do Tado. Se o desativar e guardar, o sensor escolhido é removido e terá de o escolher de novo.",
@@ -1671,7 +1689,9 @@
               "use_external_humidity": "Ative para usar o seu próprio sensor de humidade em vez do integrado do Tado. Se o desativar e guardar, o sensor escolhido é removido e terá de o escolher de novo.",
               "external_humidity_sensor": "O sensor a usar em vez da leitura de humidade integrada do Tado. Ative o botão acima para o usar.",
               "svc_mode": "Use o seu sensor externo para melhorar a precisão da TRV. Aparece depois de haver um sensor de temperatura externo guardado para esta zona. O Offset Sync (recomendado) corrige discretamente a leitura de temperatura da TRV e fica em pausa fora do horário diurno definido nas Definições avançadas. Funciona em conjunto com o Tado, com melhor duração da bateria da TRV. O Valve Target substitui diretamente o ponto de regulação da TRV. É mais agressivo, por isso use-o apenas quando o Offset Sync não for suficiente.",
-              "svc_offset_min_change": "O Offset Sync só escreve um novo Offset no termóstato quando o Offset mudaria pelo menos este valor (0,5–3,0 °C, predefinição 0,5). Valores mais altos significam menos escritas e melhor duração da bateria, mas a temperatura na aplicação Tado fica menos exata. Aparece depois de guardar com o Offset Sync selecionado."
+              "svc_offset_min_change": "O Offset Sync só escreve um novo Offset no termóstato quando o Offset mudaria pelo menos este valor (0,5–3,0 °C, predefinição 0,5). Valores mais altos significam menos escritas e melhor duração da bateria, mas a temperatura na aplicação Tado fica menos exata. Aparece depois de guardar com o Offset Sync selecionado.",
+              "window_sensor": "Sensores de contacto de janela ou porta opcionais; escolha tantos quantos a divisão tiver. O Offset Sync mantém o Offset enquanto algum estiver aberto (a deteção de janela aberta do próprio Tado também o pausa), e a Ação da janela usa-os para desligar o aquecimento.",
+              "window_action": "O que acontece quando uma janela aqui fica aberta para além do atraso definido em Definições avançadas → Controlo de janelas. O interruptor Controlo de janelas do hub desativa isto para todas as divisões de uma vez."
             }
           },
           "overlay_section": {
@@ -1915,6 +1935,19 @@
               "use_outdoor_temp_entity": "Desative esta opção para deixar de utilizar o seu próprio sensor exterior. Ao guardar, a entidade selecionada é eliminada. O risco de bolor passa então a basear-se na temperatura ambiente, e a Compensação Meteorológica utiliza os dados meteorológicos da Tado, caso a opção «Dados Meteorológicos» esteja ativada.",
               "outdoor_temp_entity": "Sensor que fornece a temperatura exterior (por exemplo, o «weather.home» ou um sensor local)",
               "boiler_flow_temp_entity": "O seu próprio sensor de temperatura de ida da caldeira (por exemplo ebusd, OpenTherm Gateway ou myVaillant), usado quando o Tado não comunica uma temperatura de ida. Alimenta o sensor Temperatura de ida da caldeira e o alerta de temperatura de ida da caldeira. Não controla a Compensação meteorológica, que requer a Internet Bridge."
+            }
+          },
+          "window_control": {
+            "name": "Controlo de janelas",
+            "data": {
+              "window_off_delay_seconds": "Atraso antes de desligar",
+              "window_resume_mode": "Voltar a ligar as divisões",
+              "window_settle_minutes": "Pausa do Offset Sync após fechar"
+            },
+            "data_description": {
+              "window_off_delay_seconds": "Quanto tempo uma janela tem de ficar aberta antes de desligar as suas divisões (0–3600 s, predefinição 60), para que passar pela porta da varanda não ligue e desligue o aquecimento. Aplica-se às divisões cuja Ação da janela não é Não fazer nada.",
+              "window_resume_mode": "Quando as divisões desligadas por uma janela aberta voltam ao que faziam antes.",
+              "window_settle_minutes": "Quanto tempo o Offset Sync mantém o Offset depois de fechar a última janela de uma divisão, enquanto o sensor externo e o termóstato recuperam do ar frio (0–180 min, predefinição 30)."
             }
           }
         }

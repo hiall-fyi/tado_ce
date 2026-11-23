@@ -1127,6 +1127,9 @@
       },
       "quota_reserve": {
         "name": "Réserve de quotas"
+      },
+      "window_control": {
+        "name": "Contrôle des fenêtres"
       }
     },
     "water_heater": {
@@ -1399,6 +1402,19 @@
         "linear": "Ligne droite",
         "exponential": "Courbe"
       }
+    },
+    "window_action": {
+      "options": {
+        "none": "Ne rien faire",
+        "room": "Éteindre cette pièce",
+        "house": "Éteindre toutes les pièces"
+      }
+    },
+    "window_resume_mode": {
+      "options": {
+        "own": "Quand les fenêtres qui les ont éteintes sont fermées",
+        "all": "Seulement quand toutes les fenêtres de la maison sont fermées"
+      }
     }
   },
   "exceptions": {
@@ -1663,7 +1679,9 @@
               "use_external_humidity": "Remplacer le capteur d'humidité de Tado",
               "external_humidity_sensor": "Capteur d'humidité externe",
               "svc_mode": "Mode Smart Valve Control",
-              "svc_offset_min_change": "Variation minimale d'Offset Sync"
+              "svc_offset_min_change": "Variation minimale d'Offset Sync",
+              "window_sensor": "Capteurs de fenêtre",
+              "window_action": "Action fenêtre"
             },
             "data_description": {
               "use_external_temp": "Activez pour utiliser votre propre capteur de température à la place de celui intégré à Tado. Si vous le désactivez puis enregistrez, le capteur choisi est supprimé et vous devrez le sélectionner à nouveau.",
@@ -1671,7 +1689,9 @@
               "use_external_humidity": "Activez pour utiliser votre propre capteur d'humidité à la place de celui intégré à Tado. Si vous le désactivez puis enregistrez, le capteur choisi est supprimé et vous devrez le sélectionner à nouveau.",
               "external_humidity_sensor": "Le capteur à utiliser à la place de la mesure d'humidité intégrée de Tado. Activez l'option ci-dessus pour l'utiliser.",
               "svc_mode": "Utilisez votre capteur externe pour améliorer la précision des têtes thermostatiques (TRV). Ce choix apparaît une fois qu'un capteur de température externe est enregistré pour cette zone. Offset Sync (recommandé) corrige discrètement la mesure de température du TRV et se met en pause en dehors des heures de jour définies dans les Paramètres avancés. Il fonctionne en complément de Tado, avec une meilleure autonomie de la batterie du TRV. Valve Target remplace directement la consigne du TRV. C'est plus agressif : à n'utiliser que si Offset Sync ne suffit pas.",
-              "svc_offset_min_change": "Offset Sync n'écrit un nouvel Offset dans le thermostat que s'il varie d'au moins cette valeur (0,5–3,0 °C, par défaut 0,5). Des valeurs plus élevées signifient moins d'écritures et une meilleure autonomie de la batterie, mais la température affichée dans l'application Tado est moins précise. Apparaît après l'enregistrement avec Offset Sync sélectionné."
+              "svc_offset_min_change": "Offset Sync n'écrit un nouvel Offset dans le thermostat que s'il varie d'au moins cette valeur (0,5–3,0 °C, par défaut 0,5). Des valeurs plus élevées signifient moins d'écritures et une meilleure autonomie de la batterie, mais la température affichée dans l'application Tado est moins précise. Apparaît après l'enregistrement avec Offset Sync sélectionné.",
+              "window_sensor": "Capteurs d'ouverture de fenêtre ou de porte facultatifs ; choisissez-en autant que la pièce en compte. Offset Sync conserve son Offset tant que l'un d'eux est ouvert (la détection de fenêtre ouverte de Tado le met aussi en pause), et l'Action fenêtre s'en sert pour couper le chauffage.",
+              "window_action": "Ce qui se passe quand une fenêtre d'ici reste ouverte au-delà du délai défini dans Paramètres avancés → Contrôle des fenêtres. L'interrupteur Contrôle des fenêtres du hub le désactive pour toutes les pièces à la fois."
             }
           },
           "overlay_section": {
@@ -1915,6 +1935,19 @@
               "use_outdoor_temp_entity": "Désactivez cette option pour ne plus utiliser votre propre capteur extérieur. L'enregistrement supprime l'entité sélectionnée. Le risque de moisissure est alors calculé à partir de la température ambiante, et la compensation météorologique utilise les données météorologiques de Tado si l'option « Données météorologiques » est activée.",
               "outdoor_temp_entity": "Capteur indiquant la température extérieure (par exemple, weather.home ou un capteur local)",
               "boiler_flow_temp_entity": "Votre propre capteur de température de départ de la chaudière (par exemple ebusd, OpenTherm Gateway ou myVaillant), utilisé lorsque Tado ne communique pas de température de départ. Alimente le capteur Température de départ de la chaudière et l'alerte de température de départ. Il ne pilote pas la compensation météorologique, qui nécessite l'Internet Bridge."
+            }
+          },
+          "window_control": {
+            "name": "Contrôle des fenêtres",
+            "data": {
+              "window_off_delay_seconds": "Délai avant extinction",
+              "window_resume_mode": "Rallumer les pièces",
+              "window_settle_minutes": "Maintien d'Offset Sync après fermeture"
+            },
+            "data_description": {
+              "window_off_delay_seconds": "Durée pendant laquelle une fenêtre doit rester ouverte avant d'éteindre ses pièces (0–3600 s, 60 par défaut), pour qu'un passage par la porte du balcon ne coupe pas le chauffage. S'applique aux pièces dont l'Action fenêtre n'est pas Ne rien faire.",
+              "window_resume_mode": "Quand les pièces éteintes à cause d'une fenêtre ouverte reprennent ce qu'elles faisaient avant.",
+              "window_settle_minutes": "Durée pendant laquelle Offset Sync conserve son Offset après la fermeture de la dernière fenêtre d'une pièce, le temps que le capteur externe et le thermostat se remettent de l'air froid (0–180 min, 30 par défaut)."
             }
           }
         }

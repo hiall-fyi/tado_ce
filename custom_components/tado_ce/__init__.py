@@ -271,6 +271,20 @@ async def _async_finalize_entry(
     if not hass.services.has_service(DOMAIN, SERVICE_SET_CLIMATE_TIMER):
         await _async_register_services(hass)
 
+    # After the platforms (it drives the climate entities) and the services (it restores through one).
+    from .window_controller import WindowController
+
+    window_controller = WindowController(hass, coordinator)
+    try:
+        await window_controller.async_start()
+    except Exception:
+        # WHY broad: window control is optional; a failure here must not stop the integration loading.
+        _LOGGER.warning("Setup: window control could not start, open windows won't switch rooms off", exc_info=True)
+        window_controller.stop()
+    else:
+        coordinator.window_controller = window_controller
+        entry.async_on_unload(window_controller.stop)
+
     _last_options_snapshot[entry.entry_id] = dict(entry.options)
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
 
@@ -479,7 +493,11 @@ _last_options_snapshot: dict[str, dict[str, Any]] = {}
 
 # Keys that take effect at runtime via config_manager real-time reads.
 # Changes to ONLY these keys skip the full integration reload.
-_RUNTIME_ONLY_KEYS: frozenset[str] = frozenset({"quota_reserve_enabled"})
+_RUNTIME_ONLY_KEYS: frozenset[str] = frozenset({
+    "quota_reserve_enabled",
+    # Window control reads these live and decides again when they change.
+    "window_control_enabled", "window_off_delay_seconds", "window_resume_mode", "window_settle_minutes",
+})
 
 
 async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:

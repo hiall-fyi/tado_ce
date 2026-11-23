@@ -1864,6 +1864,7 @@ desired_offset = external_sensor − (TRV_reported_temp − current_offset)
 - Keeps correcting the device offset even while a zone is off, or your whole system is off for the season. It only recalibrates what temperature the TRV reports to Tado, so the app stays accurate for whenever heating resumes. The write goes to the TRV's temperature-offset setting, so it doesn't turn heating on or change your schedule, but a TRV can still react to a new offset with a short valve-motor movement, which is why corrections are held overnight (see below). A TRV updating its display during an off season is this working as intended (v4.4.0+)
 - Each correction depends on the TRV itself reporting a fresh reading. If a zone's been off long enough that the TRV stops reporting anything new, corrections pause rather than compute against a stale number. Resumes automatically the moment the TRV reports something different, which doesn't require heating to restart first (v4.5.0+)
 - Holds off a due correction outside your day window, so it can't move a valve overnight. Uses the same day/night hours **Smart Polling** already follows (Advanced Settings → Polling), not a separate setting; set day and night to the same hour to turn this off. This applies to every held correction regardless of size, small or large, so an offset that's drifted a long way (after a battery swap or re-pairing, for example) waits for your day window just like a routine nudge would. Only affects Offset Sync's own device-offset write, never Smart Valve Control's temperature control (v4.5.0+)
+- Holds the current offset while a window is open and for a while after it closes (**Advanced Settings → Window Control → Offset Sync hold after a window closes**, default 30 minutes), so the cold air reaching the external sensor and the TRV at different rates doesn't move the offset and start the boiler. It follows Tado's own open-window detection and, optionally, any number of window or door contact sensors set under **External Sensors → Window Sensors**; it holds while any of them is open. The climate entity's `window_hold` attribute reads `window_open` or `window_settling` while it holds (v5.0.0+)
 
 **Offset Sync + the Tado app:**
 The Tado app will show your external sensor's temperature as the room temperature. Schedules, geofencing, and Tado's own heating logic all use this corrected reading. You don't need to change anything in the Tado app.
@@ -2131,6 +2132,38 @@ Controller state (active/idle/backed-off, last valve target, desired target, ove
 | TRV precision | HomeKit rounds to 0.1°C; cloud API accepts 0.01°C |
 
 ---
+
+## Window Control
+
+Switches the heating off while a window is open and puts each room back to what it was doing once the window is closed (v5.0.0+). Heating rooms only.
+
+**Set up:**
+1. **Zone Configuration → (room) → External Sensors → Window Sensors**: pick the room's window or door contact sensors, as many as it has.
+2. **Window Action** in the same place:
+
+| Window Action | An open window here… |
+|---|---|
+| Do nothing (default) | switches nothing off (Offset Sync still holds its offset) |
+| Turn off this room | switches this room off |
+| Turn off every room | switches every heating room off |
+
+3. **Advanced Settings → Window Control:**
+
+| Setting | Default | What it does |
+|---|---|---|
+| Delay before switching off | 60 s (0–3600) | A window must stay open this long first, so walking through a balcony door does nothing |
+| Switch rooms back on | When the windows that turned them off are closed | Or *Only when every window in the house is closed* |
+| Offset Sync hold after a window closes | 30 min (0–180) | How long Offset Sync keeps its offset after the last window in a room closes |
+
+**Example:** the Wohnzimmer is set to *Turn off every room* and you open its window. After the delay every heating room switches off. With *When the windows that turned them off are closed*, they come back once the Wohnzimmer windows are closed, even if a bedroom window is still open. The exception is a room another open window is holding, such as a bedroom set to *Turn off this room* with its own window open, which stays off until that window closes too. With *Only when every window in the house is closed*, they come back once no window anywhere is open.
+
+**How rooms are switched off and back on:** Tado CE notes what the room was doing (its schedule, or a manual temperature with its timer) and switches it off the way the card's Off does, over HomeKit when connected (no cloud call) or through the cloud otherwise (1 call per room). Putting it back uses `tado_ce.restore_previous_state` (1 cloud call per room) and returns it to exactly what it noted; if Tado can't be reached it tries again every 5 minutes, and after an hour of failures it gives up and leaves the room for you to set. A room already off when the window opens is left alone.
+
+**Changing a room yourself:** if you set a held room to heat (in Home Assistant, the Tado app or on the thermostat), Tado CE leaves it as you set it and won't switch it off again until the windows that held it have all closed. A held room that goes back to its schedule is switched off again: the Off follows the room's overlay mode, so a timer or *until the next time block* ends it on its own while the window is still open.
+
+**Restarts:** the rooms held off are saved. After a restart, a window that is still open holds its rooms straight away without waiting out the delay again, and rooms whose windows closed meanwhile are put back.
+
+**Seeing it:** the room's climate entity has `window_off` (true while held) and `window_off_by` (the rooms whose open windows hold it; empty while *Only when every window…* waits on another room). The **Window Control** hub switch turns the feature off for every room at once and puts back any room it holds; Window Actions stay saved for when you switch it on again.
 
 ## Optional Features
 

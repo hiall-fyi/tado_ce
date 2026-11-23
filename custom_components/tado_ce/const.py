@@ -265,6 +265,8 @@ DEFAULT_ZONE_CONFIG = {
     "surface_temp_offset": 0.0,  # -5.0 to +5.0°C offset for mold risk calculation
     "svc_mode": "off",  # off / valve_target / offset_sync (Heating only)
     "svc_offset_min_change": 0.5,  # 0.5-3.0°C, minimum offset change before writing (Offset Sync)
+    "window_sensor": [],  # HA binary_sensor entity_ids (a str from older saves); Offset Sync holds while any is open
+    "window_action": "none",  # none / room / house: what an open window here turns off (Heating only)
 }
 
 # Plausible Celsius range for an external temperature reading; anything outside is a bad sensor
@@ -368,6 +370,29 @@ SVC_OFFSET_MAX_STEP: Final[float] = 1.0  # °C
 # Offset Sync: readings within this of each other count as unchanged (API
 # precision is 0.1°C).
 SVC_OFFSET_TRV_EPSILON: Final[float] = 0.05  # °C
+
+# Offset Sync: how long the offset stays held after a window closes, while the
+# external sensor and the TRV recover from the cold air at different rates.
+# The default for the hub's window_settle_minutes option.
+SVC_WINDOW_SETTLE_SECONDS: Final[int] = 1800
+WINDOW_SETTLE_MINUTES_DEFAULT: Final[int] = SVC_WINDOW_SETTLE_SECONDS // 60
+WINDOW_SETTLE_MINUTES_MIN: Final[int] = 0
+WINDOW_SETTLE_MINUTES_MAX: Final[int] = 180
+
+# Window control: turn heating off while a window is open.
+WINDOW_ACTION_NONE: Final[str] = "none"
+WINDOW_ACTION_ROOM: Final[str] = "room"
+WINDOW_ACTION_HOUSE: Final[str] = "house"
+WINDOW_ACTIONS: Final[tuple[str, ...]] = (WINDOW_ACTION_NONE, WINDOW_ACTION_ROOM, WINDOW_ACTION_HOUSE)
+# own: a room comes back on once the windows that turned it off are closed; all: once no window is open anywhere.
+WINDOW_RESUME_OWN: Final[str] = "own"
+WINDOW_RESUME_ALL: Final[str] = "all"
+WINDOW_RESUME_MODES: Final[tuple[str, ...]] = (WINDOW_RESUME_OWN, WINDOW_RESUME_ALL)
+WINDOW_OFF_DELAY_SECONDS_DEFAULT: Final[int] = 60
+WINDOW_OFF_DELAY_SECONDS_MIN: Final[int] = 0
+WINDOW_OFF_DELAY_SECONDS_MAX: Final[int] = 3600
+# State Restore capture source for a room this feature switched off.
+WINDOW_OFF_CAPTURE_SOURCE: Final[str] = "window_off"
 
 # =============================================================================
 # API Write Optimization Constants

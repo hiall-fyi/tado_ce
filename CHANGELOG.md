@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+### Added
+
+- **Offset Sync holds the offset while a window is open.** Opening a window cooled the external sensor and the TRV at different rates, so Offset Sync wrote a new offset, Tado saw the room drop below target and started the boiler. Offset Sync now keeps the offset it last wrote while a window is open and for a while after it closes, then carries on. It follows Tado's own open-window detection and any window or door contact sensors you pick, as many as the room has: **Zone Configuration → External Sensors → Window Sensors** (any heating room). The hold lasts while any of them is open and ends once the last one has been closed for **Offset Sync hold after a window closes** (**Advanced Settings → Window Control**, 0–180 minutes, default 30). The climate entity's new `window_hold` attribute reads `window_open` or `window_settling` while it holds. Valve Target is unchanged.
+- **Open windows can switch the heating off.** Each heating room gets a **Window Action** under **Zone Configuration → External Sensors**: *Do nothing* (the default, so nothing changes until you pick one), *Turn off this room*, or *Turn off every room*. A window has to stay open for **Delay before switching off** (default 60 seconds, 0–3600) before anything happens. **Switch rooms back on** picks when they come back: once the windows that turned them off are closed, or only once every window in the house is closed. Both are under **Advanced Settings → Window Control**. A room is switched off the way the card's Off does it (over HomeKit when connected) after Tado CE notes what it was doing, and comes back to exactly that, a schedule or a manual setting, through `tado_ce.restore_previous_state`. A room you set to heat by hand while it is held off is left as you set it. If the room's overlay mode ends the Off on its own (a timer, or until the next time block) while the window is still open, the room is switched off again instead of heating. Rooms held off stay held across a restart. The climate entity shows `window_off` and `window_off_by` (the rooms whose windows hold it), and the new **Window Control** hub switch turns the feature off for every room at once, putting held rooms back. Heating rooms only; Tado's own open-window detection keeps doing what it did.
+
 ## [5.0.0-beta.1] - 2026-11-14
 
 What is different from 4.6.0, most important first. Update Home Assistant to 2026.11 or newer before you install it.

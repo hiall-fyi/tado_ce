@@ -460,6 +460,51 @@ class ConfigurationManager:
             MAX_HOMEKIT_CLOUD_SYNC_MINUTES,
         )
 
+    # ------------------------------------------------------------------
+    # Window control
+    # ------------------------------------------------------------------
+
+    def get_window_control_enabled(self) -> bool:
+        """Whether open windows may switch rooms off (the hub switch); rooms still opt in one by one."""
+        return bool(self._get_option("window_control_enabled", True))
+
+    def get_window_off_delay_seconds(self) -> int:
+        """Seconds a window must stay open before its rooms are switched off (0-3600, default 60)."""
+        from .const import (
+            WINDOW_OFF_DELAY_SECONDS_DEFAULT,
+            WINDOW_OFF_DELAY_SECONDS_MAX,
+            WINDOW_OFF_DELAY_SECONDS_MIN,
+        )
+
+        return self._get_int_option(
+            "window_off_delay_seconds",
+            WINDOW_OFF_DELAY_SECONDS_DEFAULT,
+            WINDOW_OFF_DELAY_SECONDS_MIN,
+            WINDOW_OFF_DELAY_SECONDS_MAX,
+        )
+
+    def get_window_resume_mode(self) -> str:
+        """When switched-off rooms come back on: "own" (their triggering windows closed) or "all" (no window open)."""
+        from .const import WINDOW_RESUME_MODES, WINDOW_RESUME_OWN
+
+        value = self._get_option("window_resume_mode", WINDOW_RESUME_OWN)
+        return value if value in WINDOW_RESUME_MODES else WINDOW_RESUME_OWN
+
+    def get_window_settle_minutes(self) -> int:
+        """Minutes Offset Sync keeps its offset after the last window closes (0-180, default 30)."""
+        from .const import (
+            WINDOW_SETTLE_MINUTES_DEFAULT,
+            WINDOW_SETTLE_MINUTES_MAX,
+            WINDOW_SETTLE_MINUTES_MIN,
+        )
+
+        return self._get_int_option(
+            "window_settle_minutes",
+            WINDOW_SETTLE_MINUTES_DEFAULT,
+            WINDOW_SETTLE_MINUTES_MIN,
+            WINDOW_SETTLE_MINUTES_MAX,
+        )
+
     def get_all_config(self) -> dict[str, Any]:
         """Return the commonly-used config values as a single dict (a subset, not every getter)."""
         return {
