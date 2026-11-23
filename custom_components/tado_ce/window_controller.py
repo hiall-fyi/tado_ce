@@ -24,7 +24,6 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.components.climate import HVACMode
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import CoreState, callback
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import async_get_platforms
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
@@ -39,6 +38,8 @@ from .const import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Coroutine
+
     from homeassistant.core import CALLBACK_TYPE, Event, EventStateChangedData, HomeAssistant
 
     from .coordinator import TadoDataUpdateCoordinator
@@ -46,10 +47,10 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 _STORE = "window_control"
-# A failed restore (Tado unreachable, quota reserve) is tried again after this long.
+# A failed write (Tado unreachable, quota reserve) is tried again after this long.
 _RESTORE_RETRY_SECONDS = 300
-# Climate states that mean someone switched a held room back on.
-_ON_STATES = frozenset({HVACMode.HEAT, HVACMode.AUTO})
+# A room whose restore keeps failing is let go after this many tries (an hour at the retry interval).
+_RESTORE_MAX_ATTEMPTS = 12
 
 
 @dataclass(frozen=True)
@@ -123,6 +124,10 @@ class WindowController:
         self._climate_unsub: CALLBACK_TYPE | None = None
         # Rooms with a write of ours in flight, so its state change isn't read as a person's.
         self._own_write: set[str] = set()
+        # Held rooms back on their schedule because our OFF overlay ended (timer / next time block): switch off again.
+        self._reassert: set[str] = set()
+        # Failed restore attempts per room, so a restore that can never work is given up.
+        self._restore_failures: dict[str, int] = {}
         self._lock = asyncio.Lock()
         self._stopped = False
         self._started = False
@@ -162,6 +167,12 @@ class WindowController:
         self._started = True
         # A window open across a restart already waited out its delay before it, so it holds right away.
         self._triggered = {z for z in self._open_zones() if self._action(z) != WINDOW_ACTION_NONE}
+        # A held room whose OFF overlay ran out while Home Assistant was down is back on its schedule.
+        for zone in self._state.held:
+            entity_id = self._climate_entity_id(zone)
+            state = self._hass.states.get(entity_id) if entity_id else None
+            if state is not None and state.state == HVACMode.AUTO:
+                self._reassert.add(zone)
         self._schedule_apply("start")
 
     def stop(self) -> None:
@@ -177,6 +188,22 @@ class WindowController:
         for timer in self._delay_timers.values():
             timer()
         self._delay_timers.clear()
+
+    def drop_zone(self, zone_id: str) -> bool:
+        """Forget everything about a removed or reassigned zone (zone_state_registry owner); True if anything was held."""
+        dropped = zone_id in self._state.held or zone_id in self._state.overridden
+        if (timer := self._delay_timers.pop(zone_id, None)) is not None:
+            timer()
+            dropped = True
+        dropped |= zone_id in self._triggered or zone_id in self._restore_failures
+        self._triggered.discard(zone_id)
+        self._reassert.discard(zone_id)
+        self._restore_failures.pop(zone_id, None)
+        if zone_id in self._state.held or zone_id in self._state.overridden:
+            self._state.held.discard(zone_id)
+            self._state.overridden.discard(zone_id)
+            self._save()
+        return dropped
 
     # ------------------------------------------------------------------
     # Inputs
@@ -257,10 +284,16 @@ class WindowController:
             self._schedule_apply("settings changed")
 
     @callback
-    def _on_sensor_change(self, _event: Event[EventStateChangedData] | None) -> None:
+    def _on_sensor_change(self, event: Event[EventStateChangedData] | None) -> None:
         """Start or cancel each room's off delay, then decide."""
         if self._stopped or not self._started:
             return
+        if event is not None:
+            old_state = event.data.get("old_state")
+            new_state = event.data.get("new_state")
+            # An attribute-only update says nothing new about the window.
+            if old_state is not None and new_state is not None and old_state.state == new_state.state:
+                return
         open_zones = self._open_zones()
         delay = self._config.get_window_off_delay_seconds()
 
@@ -297,13 +330,25 @@ class WindowController:
 
     @callback
     def _on_climate_change(self, event: Event[EventStateChangedData]) -> None:
-        """A held room switched back on by someone else is theirs now: stop holding it, don't restore over it."""
+        """A held room set to heat by someone else is theirs now; a held room back on its schedule gets switched off again."""
         new_state = event.data.get("new_state")
-        if new_state is None or new_state.state not in _ON_STATES:
+        if new_state is None or new_state.state not in (HVACMode.HEAT, HVACMode.AUTO):
             return
         zone = self._zone_for_climate(event.data.get("entity_id", ""))
         if zone is None or zone not in self._state.held or zone in self._own_write:
             return
+        if new_state.state == HVACMode.AUTO:
+            # The OFF overlay follows the room's overlay mode, so a timer or "until next time block" ends it and
+            # Tado goes back to the schedule. That is not a person's choice: switch it off again.
+            if zone not in self._reassert:
+                self._reassert.add(zone)
+                _LOGGER.info(
+                    "Window control: %s went back to its schedule while held off, switching it off again",
+                    self._zone_name(zone),
+                )
+                self._schedule_apply("off overlay ended")
+            return
+        self._reassert.discard(zone)
         self._state.held.discard(zone)
         self._state.overridden.add(zone)
         self._save()
@@ -311,16 +356,20 @@ class WindowController:
             "Window control: %s was switched back on by hand while its window was open, leaving it as set",
             self._zone_name(zone),
         )
-        self._hass.async_create_task(self._async_drop_capture(zone))
+        self._create_task(self._async_drop_capture(zone), "drop capture")
         self._refresh_entity(zone)
 
     # ------------------------------------------------------------------
     # Decide and act
     # ------------------------------------------------------------------
 
+    def _create_task(self, coro: Coroutine[Any, Any, None], name: str) -> None:
+        """Run a task owned by the config entry: unload waits for it, so a write never ends half recorded."""
+        self._coordinator.config_entry.async_create_task(self._hass, coro, f"tado_ce window control {name}")
+
     def _schedule_apply(self, reason: str) -> None:
         if not self._stopped:
-            self._hass.async_create_task(self._async_apply(reason))
+            self._create_task(self._async_apply(reason), "apply")
 
     async def _async_apply(self, reason: str) -> None:
         async with self._lock:
@@ -340,16 +389,20 @@ class WindowController:
                 enabled=self._config.get_window_control_enabled(),
                 resume_mode=self._config.get_window_resume_mode(),
             )
-            if not to_off and not to_restore:
+            self._reassert &= self._state.held
+            if not to_off and not to_restore and not self._reassert:
                 return
             _LOGGER.debug(
-                "Window control: %s, switching off %s, restoring %s",
-                reason, sorted(to_off), sorted(to_restore),
+                "Window control: %s, switching off %s, restoring %s, switching off again %s",
+                reason, sorted(to_off), sorted(to_restore), sorted(self._reassert - to_restore),
             )
             for zone in sorted(to_off):
                 await self._async_switch_off(zone, holders_of(zone, view))
             for zone in sorted(to_restore):
                 await self._async_restore(zone)
+            # After the restores: a room that came back needs no second OFF.
+            for zone in sorted(self._reassert & self._state.held):
+                await self._async_reassert_off(zone)
 
     async def _async_switch_off(self, zone: str, holders: list[str]) -> None:
         entity = self._climate_entity(zone)
@@ -360,11 +413,13 @@ class WindowController:
             _LOGGER.debug("Window control: %s is already off, nothing to hold", self._zone_name(zone))
             return
 
-        await self._coordinator.async_capture_state(zone, entity.entity_type, WINDOW_OFF_CAPTURE_SOURCE)
         self._own_write.add(zone)
         try:
+            await self._coordinator.async_capture_state(zone, entity.entity_type, WINDOW_OFF_CAPTURE_SOURCE)
             await entity.async_set_hvac_mode(HVACMode.OFF)
-        except HomeAssistantError as err:
+        except Exception as err:
+            # WHY broad: the write can fail with any client error (timeout, aiohttp, quota); one room failing
+            # must not stop the rest of the pass or leave our capture behind.
             _LOGGER.warning(
                 "Window control: could not switch %s off (%s), will try again on the next window change",
                 self._zone_name(zone), err,
@@ -388,12 +443,42 @@ class WindowController:
         )
         self._refresh_entity(zone)
 
+    async def _async_reassert_off(self, zone: str) -> None:
+        """Switch a held room off again after its OFF overlay ended; the capture from the first OFF is kept."""
+        entity = self._climate_entity(zone)
+        if entity is None or entity.hvac_mode == HVACMode.OFF:
+            self._reassert.discard(zone)
+            return
+
+        self._own_write.add(zone)
+        try:
+            await entity.async_set_hvac_mode(HVACMode.OFF)
+        except Exception as err:
+            # WHY broad: as in _async_switch_off, any client error; the room stays held and is tried again.
+            _LOGGER.warning(
+                "Window control: could not switch %s off again (%s), trying again in %s minutes",
+                self._zone_name(zone), err, _RESTORE_RETRY_SECONDS // 60,
+            )
+            self._arm_retry()
+            return
+        finally:
+            self._own_write.discard(zone)
+
+        if entity.hvac_mode != HVACMode.OFF:
+            _LOGGER.warning(
+                "Window control: switching %s off again did not take, trying again in %s minutes",
+                self._zone_name(zone), _RESTORE_RETRY_SECONDS // 60,
+            )
+            self._arm_retry()
+            return
+        self._reassert.discard(zone)
+        self._refresh_entity(zone)
+
     async def _async_restore(self, zone: str) -> None:
         entity_id = self._climate_entity_id(zone)
         if entity_id is None:
             _LOGGER.warning("Window control: no climate entity for zone %s, cannot restore it", zone)
-            self._state.held.discard(zone)
-            self._save()
+            self._forget_held(zone)
             return
 
         self._own_write.add(zone)
@@ -401,7 +486,18 @@ class WindowController:
             await self._hass.services.async_call(
                 DOMAIN, SERVICE_RESTORE_PREVIOUS_STATE, {"entity_id": entity_id}, blocking=True,
             )
-        except HomeAssistantError as err:
+        except Exception as err:
+            # WHY broad: the restore can fail with any client error; it is retried, then given up, never raised.
+            failures = self._restore_failures.get(zone, 0) + 1
+            if failures >= _RESTORE_MAX_ATTEMPTS:
+                _LOGGER.warning(
+                    "Window control: could not switch %s back on after %d tries (%s), giving up; set it by hand",
+                    self._zone_name(zone), failures, err,
+                )
+                self._forget_held(zone)
+                await self._async_drop_capture(zone)
+                return
+            self._restore_failures[zone] = failures
             _LOGGER.warning(
                 "Window control: could not switch %s back on (%s), trying again in %s minutes",
                 self._zone_name(zone), err, _RESTORE_RETRY_SECONDS // 60,
@@ -411,10 +507,16 @@ class WindowController:
         finally:
             self._own_write.discard(zone)
 
-        self._state.held.discard(zone)
-        self._save()
+        self._forget_held(zone)
         _LOGGER.info("Window control: windows closed, put %s back as it was", self._zone_name(zone))
         self._refresh_entity(zone)
+
+    def _forget_held(self, zone: str) -> None:
+        """Stop holding a room and save."""
+        self._state.held.discard(zone)
+        self._reassert.discard(zone)
+        self._restore_failures.pop(zone, None)
+        self._save()
 
     def _arm_retry(self) -> None:
         if self._retry_timer is not None or self._stopped:
@@ -423,7 +525,7 @@ class WindowController:
         @callback
         def _retry(_now: Any) -> None:
             self._retry_timer = None
-            self._schedule_apply("retrying a restore")
+            self._schedule_apply("retrying a failed write")
 
         self._retry_timer = async_call_later(self._hass, _RESTORE_RETRY_SECONDS, _retry)
 

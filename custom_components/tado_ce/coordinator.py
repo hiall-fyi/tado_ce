@@ -2602,6 +2602,10 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.zone_state.register("homekit_mapping", lambda z, r: self._drop_zone_homekit_mapping(z, r))
         self.zone_state.register("state_reconciler", lambda z, r: self._drop_zone_reconciler(z, r))
         self.zone_state.register("state_restore", lambda z, r: self._drop_zone_state_restore(z, r))
+        # The controller starts after the platforms, so this looks it up at drop time.
+        self.zone_state.register(
+            "window_control", lambda z, r: self.window_controller.drop_zone(z) if self.window_controller else False,
+        )
         # After controllers: a running Offset Sync controller could re-write the clamp after it is cleared.
         self.zone_state.register("entity_data", lambda z, r: self._drop_zone_entity_data(z, r))
         self.zone_state.register("offset_clamps", lambda z, r: self._drop_zone_offset_clamps(z, r))
