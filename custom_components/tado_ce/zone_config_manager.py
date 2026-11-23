@@ -220,6 +220,22 @@ class ZoneConfigManager:
 
         return _remove_listener
 
+    def get_window_sensors(self, zone_id: str) -> list[str]:
+        """Return the zone's window / door sensor entity ids; a single id saved as a string still counts."""
+        raw = self.get_zone_value(zone_id, "window_sensor", [])
+        if isinstance(raw, str):
+            raw = [raw]
+        if not isinstance(raw, (list, tuple)):
+            return []
+        return [str(eid).strip() for eid in raw if isinstance(eid, str) and eid.strip()]
+
+    def get_window_action(self, zone_id: str) -> str:
+        """Return what an open window in this zone switches off: "none", "room" or "house"."""
+        from .const import WINDOW_ACTION_NONE, WINDOW_ACTIONS
+
+        value = self.get_zone_value(zone_id, "window_action", WINDOW_ACTION_NONE)
+        return value if value in WINDOW_ACTIONS else WINDOW_ACTION_NONE
+
     def get_effective_window_type(self, zone_id: str, config_manager: ConfigurationManager) -> str:
         """Resolve the zone's window type: explicit per-zone override, else the live global setting.
 

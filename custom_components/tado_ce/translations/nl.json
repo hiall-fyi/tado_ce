@@ -1127,6 +1127,9 @@
       },
       "quota_reserve": {
         "name": "Quotareserve"
+      },
+      "window_control": {
+        "name": "Raambediening"
       }
     },
     "water_heater": {
@@ -1399,6 +1402,19 @@
         "linear": "Rechte lijn",
         "exponential": "Gebogen"
       }
+    },
+    "window_action": {
+      "options": {
+        "none": "Niets doen",
+        "room": "Deze kamer uitschakelen",
+        "house": "Alle kamers uitschakelen"
+      }
+    },
+    "window_resume_mode": {
+      "options": {
+        "own": "Als de ramen die ze uitschakelden dicht zijn",
+        "all": "Pas als alle ramen in huis dicht zijn"
+      }
     }
   },
   "exceptions": {
@@ -1663,7 +1679,9 @@
               "use_external_humidity": "De luchtvochtigheidssensor van Tado overschrijven",
               "external_humidity_sensor": "Externe luchtvochtigheidssensor",
               "svc_mode": "Smart Valve Control-modus",
-              "svc_offset_min_change": "Minimale wijziging Offset Sync"
+              "svc_offset_min_change": "Minimale wijziging Offset Sync",
+              "window_sensor": "Raamsensoren",
+              "window_action": "Raamactie"
             },
             "data_description": {
               "use_external_temp": "Schakel in om uw eigen temperatuursensor te gebruiken in plaats van de ingebouwde sensor van Tado. Uitschakelen en opslaan verwijdert de gekozen sensor, dus u moet deze opnieuw kiezen.",
@@ -1671,7 +1689,9 @@
               "use_external_humidity": "Schakel in om uw eigen luchtvochtigheidssensor te gebruiken in plaats van de ingebouwde sensor van Tado. Uitschakelen en opslaan verwijdert de gekozen sensor, dus u moet deze opnieuw kiezen.",
               "external_humidity_sensor": "De sensor die wordt gebruikt in plaats van de ingebouwde luchtvochtigheidsmeting van Tado. Schakel de schakelaar hierboven in om hem te gebruiken.",
               "svc_mode": "Gebruik uw externe sensor om de nauwkeurigheid van de TRV te verbeteren. Dit verschijnt zodra voor deze zone een externe temperatuursensor is opgeslagen. Offset Sync (aanbevolen) corrigeert onopvallend de temperatuurmeting van de TRV en pauzeert buiten de daguren die in Geavanceerde instellingen zijn ingesteld. Het werkt samen met Tado, met een betere batterijduur van de TRV. Valve Target overschrijft direct het instelpunt van de TRV. Het is ingrijpender, dus gebruik het alleen als Offset Sync niet genoeg is.",
-              "svc_offset_min_change": "Offset Sync schrijft alleen een nieuwe offset naar de thermostaat wanneer die ten minste zoveel zou veranderen (0,5–3,0 °C, standaard 0,5). Hogere waarden betekenen minder schrijfacties en een betere batterijduur, maar de temperatuur in de Tado-app is minder nauwkeurig. Verschijnt nadat u hebt opgeslagen met Offset Sync geselecteerd."
+              "svc_offset_min_change": "Offset Sync schrijft alleen een nieuwe offset naar de thermostaat wanneer die ten minste zoveel zou veranderen (0,5–3,0 °C, standaard 0,5). Hogere waarden betekenen minder schrijfacties en een betere batterijduur, maar de temperatuur in de Tado-app is minder nauwkeurig. Verschijnt nadat u hebt opgeslagen met Offset Sync geselecteerd.",
+              "window_sensor": "Optionele raam- of deurcontactsensoren; kies er zoveel als de kamer heeft. Offset Sync houdt de offset vast zolang er één open is (Tado's eigen open-raamdetectie pauzeert het ook), en de Raamactie gebruikt ze om de verwarming uit te schakelen.",
+              "window_action": "Wat er gebeurt als een raam hier langer open blijft dan de vertraging onder Geavanceerde instellingen → Raambediening. De schakelaar Raambediening op de hub zet dit voor alle kamers tegelijk uit."
             }
           },
           "overlay_section": {
@@ -1915,6 +1935,19 @@
               "use_outdoor_temp_entity": "Schakel uit om uw eigen buitensensor niet meer te gebruiken. Opslaan wist de gekozen entiteit. Het schimmelrisico valt dan terug op de kamertemperatuur en Weerscompensatie gebruikt de weergegevens van Tado als Weergegevens is ingeschakeld.",
               "outdoor_temp_entity": "Sensor die de buitentemperatuur weergeeft (bijvoorbeeld weather.home of een lokale sensor)",
               "boiler_flow_temp_entity": "Uw eigen sensor voor de aanvoertemperatuur van de ketel (bijvoorbeeld ebusd, OpenTherm Gateway of myVaillant), gebruikt wanneer Tado geen aanvoertemperatuur meldt. Voedt de sensor Aanvoertemperatuur van de ketel en de waarschuwing voor de ketelaanvoer. Stuurt Weerscompensatie niet aan; die heeft de Internet Bridge nodig."
+            }
+          },
+          "window_control": {
+            "name": "Raambediening",
+            "data": {
+              "window_off_delay_seconds": "Vertraging voor uitschakelen",
+              "window_resume_mode": "Kamers weer inschakelen",
+              "window_settle_minutes": "Offset Sync vasthouden na sluiten"
+            },
+            "data_description": {
+              "window_off_delay_seconds": "Hoe lang een raam open moet blijven voordat de kamers worden uitgeschakeld (0–3600 s, standaard 60), zodat even door de balkondeur lopen de verwarming niet laat schakelen. Geldt voor kamers waarvan de Raamactie niet Niets doen is.",
+              "window_resume_mode": "Wanneer kamers die voor een open raam zijn uitgeschakeld teruggaan naar wat ze eerder deden.",
+              "window_settle_minutes": "Hoe lang Offset Sync de offset vasthoudt nadat het laatste raam in een kamer is gesloten, terwijl de externe sensor en de thermostaat herstellen van de koude lucht (0–180 min, standaard 30)."
             }
           }
         }

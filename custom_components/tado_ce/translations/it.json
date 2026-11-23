@@ -1127,6 +1127,9 @@
       },
       "quota_reserve": {
         "name": "Riserva di quota"
+      },
+      "window_control": {
+        "name": "Controllo finestre"
       }
     },
     "water_heater": {
@@ -1399,6 +1402,19 @@
         "linear": "Linea retta",
         "exponential": "Curvo"
       }
+    },
+    "window_action": {
+      "options": {
+        "none": "Non fare nulla",
+        "room": "Spegni questa stanza",
+        "house": "Spegni tutte le stanze"
+      }
+    },
+    "window_resume_mode": {
+      "options": {
+        "own": "Quando le finestre che le hanno spente sono chiuse",
+        "all": "Solo quando tutte le finestre della casa sono chiuse"
+      }
     }
   },
   "exceptions": {
@@ -1663,7 +1679,9 @@
               "use_external_humidity": "Sostituisci il sensore di umidità di Tado",
               "external_humidity_sensor": "Sensore di umidità esterno",
               "svc_mode": "Modalità Smart Valve Control",
-              "svc_offset_min_change": "Variazione minima di Offset Sync"
+              "svc_offset_min_change": "Variazione minima di Offset Sync",
+              "window_sensor": "Sensori finestra",
+              "window_action": "Azione finestra"
             },
             "data_description": {
               "use_external_temp": "Attivi per usare il suo sensore di temperatura al posto di quello integrato di Tado. Disattivandolo e salvando si rimuove il sensore scelto, quindi dovrà sceglierlo di nuovo.",
@@ -1671,7 +1689,9 @@
               "use_external_humidity": "Attivi per usare il suo sensore di umidità al posto di quello integrato di Tado. Disattivandolo e salvando si rimuove il sensore scelto, quindi dovrà sceglierlo di nuovo.",
               "external_humidity_sensor": "Il sensore da usare al posto della lettura di umidità integrata di Tado. Attivi l'interruttore qui sopra per usarlo.",
               "svc_mode": "Usa il sensore esterno per migliorare la precisione del TRV. Compare quando per questa zona è stato salvato un sensore di temperatura esterno. Offset Sync (consigliato) corregge in modo discreto la lettura di temperatura del TRV e si ferma fuori dalle ore diurne impostate in Impostazioni avanzate. Funziona insieme a Tado, con una migliore durata della batteria del TRV. Valve Target sostituisce direttamente il setpoint del TRV. È più aggressivo, quindi lo usi solo quando Offset Sync non basta.",
-              "svc_offset_min_change": "Offset Sync scrive un nuovo offset nel termostato solo quando cambierebbe di almeno questo valore (0,5–3,0 °C, predefinito 0,5). Valori più alti significano meno scritture e migliore durata della batteria, ma la temperatura nell'app Tado è meno esatta. Compare dopo il salvataggio con Offset Sync selezionato."
+              "svc_offset_min_change": "Offset Sync scrive un nuovo offset nel termostato solo quando cambierebbe di almeno questo valore (0,5–3,0 °C, predefinito 0,5). Valori più alti significano meno scritture e migliore durata della batteria, ma la temperatura nell'app Tado è meno esatta. Compare dopo il salvataggio con Offset Sync selezionato.",
+              "window_sensor": "Sensori di contatto per finestra o porta facoltativi; scegline quanti ne ha la stanza. Offset Sync mantiene l'offset finché uno di essi è aperto (anche il rilevamento finestra aperta di Tado lo mette in pausa), e l'Azione finestra li usa per spegnere il riscaldamento.",
+              "window_action": "Cosa succede quando una finestra qui resta aperta oltre il ritardo impostato in Impostazioni avanzate → Controllo finestre. L'interruttore Controllo finestre dell'hub lo disattiva per tutte le stanze in una volta."
             }
           },
           "overlay_section": {
@@ -1915,6 +1935,19 @@
               "use_outdoor_temp_entity": "Disattivi per smettere di usare il suo sensore esterno. Salvando, l'entità selezionata viene cancellata. Il rischio di muffa torna quindi a dipendere dalla temperatura ambiente e la compensazione meteo usa i dati meteo di Tado, se Dati meteo è attivo.",
               "outdoor_temp_entity": "Sensore che fornisce la temperatura esterna (ad esempio weather.home o un sensore locale)",
               "boiler_flow_temp_entity": "Il suo sensore di temperatura di mandata della caldaia (ad esempio ebusd, OpenTherm Gateway o myVaillant), usato quando Tado non comunica una temperatura di mandata. Alimenta il sensore Temperatura di mandata della caldaia e l'avviso sulla mandata. Non pilota la compensazione meteo, che richiede Internet Bridge."
+            }
+          },
+          "window_control": {
+            "name": "Controllo finestre",
+            "data": {
+              "window_off_delay_seconds": "Ritardo prima dello spegnimento",
+              "window_resume_mode": "Riaccendere le stanze",
+              "window_settle_minutes": "Pausa di Offset Sync dopo la chiusura"
+            },
+            "data_description": {
+              "window_off_delay_seconds": "Per quanto una finestra deve restare aperta prima che le sue stanze vengano spente (0–3600 s, predefinito 60), così passare dalla porta del balcone non accende e spegne il riscaldamento. Vale per le stanze la cui Azione finestra non è Non fare nulla.",
+              "window_resume_mode": "Quando le stanze spente per una finestra aperta tornano a quello che facevano prima.",
+              "window_settle_minutes": "Per quanto Offset Sync mantiene l'offset dopo la chiusura dell'ultima finestra di una stanza, mentre il sensore esterno e il termostato si riprendono dall'aria fredda (0–180 min, predefinito 30)."
             }
           }
         }

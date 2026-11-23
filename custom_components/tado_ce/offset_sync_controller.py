@@ -10,6 +10,8 @@ import time
 from typing import TYPE_CHECKING, Any
 
 import aiohttp
+from homeassistant.core import callback
+from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 
 from .const import (
     DEVICE_OFFSET_MAX,
@@ -22,7 +24,7 @@ from .const import (
 )
 
 if TYPE_CHECKING:
-    from homeassistant.core import CALLBACK_TYPE, HomeAssistant
+    from homeassistant.core import CALLBACK_TYPE, Event, EventStateChangedData, HomeAssistant
 
     from .coordinator import TadoDataUpdateCoordinator
 
@@ -53,6 +55,11 @@ class OffsetSyncRuntime:
     # inside_temperature at the last write; a newer epoch alone doesn't prove this zone's reading refreshed.
     inside_temp_at_last_write: float | None = None
     unsub_external_sensors: list[CALLBACK_TYPE] = field(default_factory=list)
+    # Window hold: open now, and when it last closed (monotonic). In memory only, a restart re-reads both.
+    window_open: bool = False
+    window_closed_at: float | None = None
+    # Pending re-evaluation once the post-close settle period ends.
+    unsub_settle_timer: CALLBACK_TYPE | None = None
     # Set by _stop() (deactivate or discard) so late sensor callbacks and queued debounces do nothing.
     deactivated: bool = False
     # Set by discard(): nothing may be saved for this controller, it failed to start or its zone id changed hands.
@@ -235,6 +242,72 @@ class OffsetSyncController:
         """Return True outside the configured day window, reusing Smart Polling's hours rather than a dedicated setting."""
         return not is_daytime(self._coordinator.config_manager)
 
+    def _window_open_now(self, zone_data: dict[str, Any]) -> bool:
+        """Return True when any of the zone's contact sensors, or Tado itself, says a window is open."""
+        if zone_data.get("openWindow") or zone_data.get("openWindowDetected"):
+            return True
+        for sensor in self._zcm.get_window_sensors(self._zone_id):
+            state = self._hass.states.get(sensor)
+            # An unavailable or unknown contact sensor says nothing about the window, so it never holds the offset.
+            if state is not None and state.state == "on":
+                return True
+        return False
+
+    def window_hold_reason(self, zone_data: dict[str, Any]) -> str | None:
+        """Return "window_open", "window_settling" or None, recording open / close transitions."""
+        runtime = self._runtime
+        if self._window_open_now(zone_data):
+            if not runtime.window_open:
+                runtime.window_open = True
+                runtime.window_closed_at = None
+                self._cancel_settle_timer()
+                _LOGGER.info(
+                    "Offset Sync: zone %s window is open, holding the offset until it has been closed for %s minutes",
+                    self._zone_id, self._settle_seconds() // 60,
+                )
+            return "window_open"
+
+        if runtime.window_open:
+            runtime.window_open = False
+            runtime.window_closed_at = time.monotonic()
+            self._schedule_settle_evaluation()
+
+        closed_at = runtime.window_closed_at
+        if closed_at is None:
+            return None
+        if time.monotonic() - closed_at < self._settle_seconds():
+            return "window_settling"
+
+        runtime.window_closed_at = None
+        _LOGGER.info("Offset Sync: zone %s window has been closed long enough, resuming offset sync", self._zone_id)
+        return None
+
+    def _settle_seconds(self) -> int:
+        """How long the offset stays held after the last window closes, from the hub's Window settle time."""
+        return self._coordinator.config_manager.get_window_settle_minutes() * 60
+
+    def _schedule_settle_evaluation(self) -> None:
+        """Re-evaluate once the settle period ends, so sync resumes without waiting for a sensor change."""
+        self._cancel_settle_timer()
+
+        @callback
+        def _settled(_now: datetime) -> None:
+            self._runtime.unsub_settle_timer = None
+            if self._runtime.deactivated:
+                return
+            self._hass.async_create_task(self.async_evaluate())
+
+        # One second past the period so the evaluation is not still inside it.
+        self._runtime.unsub_settle_timer = async_call_later(
+            self._hass, self._settle_seconds() + 1, _settled,
+        )
+
+    def _cancel_settle_timer(self) -> None:
+        """Cancel a pending post-close re-evaluation."""
+        if self._runtime.unsub_settle_timer is not None:
+            self._runtime.unsub_settle_timer()
+            self._runtime.unsub_settle_timer = None
+
     def on_external_offset_write(self) -> None:
         """Pause sync for one rate-limit window after an external offset write."""
         self._runtime.paused_until_ts = time.monotonic() + _EXTERNAL_WRITE_PAUSE
@@ -334,6 +407,17 @@ class OffsetSyncController:
         zone_setting = zone_data.get("setting") or {}
         power = zone_setting.get("power", "OFF")
         target = (zone_setting.get("temperature") or {}).get("celsius")
+
+        # WHY: with a window open the external sensor and the TRV cool at different rates; chasing that gap
+        # lowers the temperature Tado sees and fires the boiler, so the last offset is held instead.
+        hold = self.window_hold_reason(zone_data)
+        if hold is not None:
+            self._log_decision(
+                trigger, outcome=f"skip_{hold}",
+                power=power, target=target, trv=inside_temperature,
+                last_written=self._runtime.last_written_offset,
+            )
+            return
 
         external_temp = read_external_sensor(
             self._hass, self._zcm, self._zone_id, "external_temp_sensor",
@@ -648,6 +732,11 @@ class OffsetSyncController:
             self._on_external_sensor_change,
             include_humidity=False,
         )
+        window_sensors = self._zcm.get_window_sensors(self._zone_id)
+        if window_sensors:
+            unsubs.append(
+                async_track_state_change_event(self._hass, window_sensors, self._on_window_sensor_change),
+            )
         self._runtime.unsub_external_sensors = unsubs
 
         last = self._runtime.last_written_offset
@@ -662,6 +751,7 @@ class OffsetSyncController:
         self._runtime.deactivated = True
         self._action_debouncer.cancel(f"offset_sync_{self._zone_id}")
 
+        self._cancel_settle_timer()
         for unsub in self._runtime.unsub_external_sensors:
             unsub()
         self._runtime.unsub_external_sensors.clear()
@@ -813,6 +903,18 @@ class OffsetSyncController:
             ),
         )
 
+    @callback
+    def _on_window_sensor_change(self, event: Event[EventStateChangedData]) -> None:
+        """Evaluate right away when the contact sensor opens or closes, so the hold starts before the next poll."""
+        if self._runtime.deactivated:
+            return
+        old_state = event.data.get("old_state")
+        new_state = event.data.get("new_state")
+        if new_state is None or (old_state is not None and old_state.state == new_state.state):
+            return
+        self._last_trigger = "window"
+        self._hass.async_create_task(self.async_evaluate())
+
     # ------------------------------------------------------------------
     # Attributes
     # ------------------------------------------------------------------
@@ -828,4 +930,14 @@ class OffsetSyncController:
         return {
             "valve_control_active": active,
             "valve_control_mode": "offset_sync",
+            "window_hold": self._current_window_hold(),
         }
+
+    def _current_window_hold(self) -> str | None:
+        """Report the window hold without recording a transition (attributes are read outside evaluation)."""
+        if self._runtime.window_open:
+            return "window_open"
+        closed_at = self._runtime.window_closed_at
+        if closed_at is not None and time.monotonic() - closed_at < self._settle_seconds():
+            return "window_settling"
+        return None

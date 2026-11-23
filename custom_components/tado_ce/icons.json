@@ -283,6 +283,13 @@
           "on": "mdi:shield-check",
           "off": "mdi:shield-off"
         }
+      },
+      "window_control": {
+        "default": "mdi:window-open-variant",
+        "state": {
+          "on": "mdi:window-open-variant",
+          "off": "mdi:window-closed-variant"
+        }
       }
     }
   }

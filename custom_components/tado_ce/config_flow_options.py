@@ -62,6 +62,16 @@ from .const import (
     SURFACE_TEMP_OFFSET_STEP,
     SVC_OFFSET_MIN_CHANGE_MAX,
     SVC_OFFSET_MIN_CHANGE_MIN,
+    WINDOW_ACTION_NONE,
+    WINDOW_ACTIONS,
+    WINDOW_OFF_DELAY_SECONDS_DEFAULT,
+    WINDOW_OFF_DELAY_SECONDS_MAX,
+    WINDOW_OFF_DELAY_SECONDS_MIN,
+    WINDOW_RESUME_MODES,
+    WINDOW_RESUME_OWN,
+    WINDOW_SETTLE_MINUTES_DEFAULT,
+    WINDOW_SETTLE_MINUTES_MAX,
+    WINDOW_SETTLE_MINUTES_MIN,
     TIMER_DURATION_MAX,
     TIMER_DURATION_MIN,
     TIMER_DURATION_OPTIONS,
@@ -442,6 +452,37 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                 {"collapsed": True},
             )
 
+        # --- Window Control (always visible; rooms opt in under Zone Configuration) ---
+        sections[vol.Required("window_control")] = data_entry_flow.section(
+            vol.Schema(
+                {
+                    vol.Optional(
+                        "window_off_delay_seconds",
+                        default=opt("window_off_delay_seconds", WINDOW_OFF_DELAY_SECONDS_DEFAULT),
+                    ): NumberSelector(NumberSelectorConfig(
+                        min=WINDOW_OFF_DELAY_SECONDS_MIN, max=WINDOW_OFF_DELAY_SECONDS_MAX, step=5,
+                        mode=NumberSelectorMode.BOX, unit_of_measurement="s",
+                    )),
+                    vol.Optional(
+                        "window_resume_mode",
+                        default=_pick_option(opt("window_resume_mode", WINDOW_RESUME_OWN), WINDOW_RESUME_MODES, WINDOW_RESUME_OWN),
+                    ): SelectSelector(SelectSelectorConfig(
+                        options=list(WINDOW_RESUME_MODES),
+                        translation_key="window_resume_mode",
+                        mode=SelectSelectorMode.DROPDOWN,
+                    )),
+                    vol.Optional(
+                        "window_settle_minutes",
+                        default=opt("window_settle_minutes", WINDOW_SETTLE_MINUTES_DEFAULT),
+                    ): NumberSelector(NumberSelectorConfig(
+                        min=WINDOW_SETTLE_MINUTES_MIN, max=WINDOW_SETTLE_MINUTES_MAX, step=1,
+                        mode=NumberSelectorMode.BOX, unit_of_measurement="min",
+                    )),
+                },
+            ),
+            {"collapsed": True},
+        )
+
         # --- Comfort & Safety (always visible) ---
         sections[vol.Required("comfort_safety")] = data_entry_flow.section(
             vol.Schema(
@@ -622,6 +663,15 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         self._process_smart_comfort(user_input, processed_input)
         self._process_external_data_sources(user_input, processed_input)
         self._process_polling_api(user_input, processed_input, errors)
+
+        # Flatten window_control section (NumberSelector hands back floats; the getters want whole numbers)
+        if "window_control" in user_input:
+            section = user_input["window_control"]
+            for key in ("window_off_delay_seconds", "window_settle_minutes"):
+                if section.get(key) is not None:
+                    processed_input[key] = int(section[key])
+            if section.get("window_resume_mode") in WINDOW_RESUME_MODES:
+                processed_input["window_resume_mode"] = section["window_resume_mode"]
 
         # Flatten comfort_safety section
         if "comfort_safety" in user_input:
@@ -1153,6 +1203,13 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                     SVC_OFFSET_MIN_CHANGE_MIN,
                     min(raw_min_change, SVC_OFFSET_MIN_CHANGE_MAX),
                 )
+            # Heating zones always show the field, so a cleared selector arrives absent: absent means cleared.
+            if is_heating:
+                picked = s.get("window_sensor") or []
+                if isinstance(picked, str):
+                    picked = [picked]
+                all_values["window_sensor"] = [str(eid).strip() for eid in picked if str(eid).strip()]
+                all_values["window_action"] = _pick_option(s.get("window_action"), WINDOW_ACTIONS, WINDOW_ACTION_NONE)
 
         if "overlay_section" in user_input:
             s = user_input["overlay_section"]
@@ -1304,6 +1361,8 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         cur_humidity_sensor = config.get("external_humidity_sensor", "")
         cur_svc_mode = config.get("svc_mode", "off")
         cur_svc_offset_min_change = config.get("svc_offset_min_change", 0.5)
+        cur_window_sensors = zone_config_manager.get_window_sensors(zone_id)
+        cur_window_action = zone_config_manager.get_window_action(zone_id)
         cur_use_ext_temp = bool(cur_temp_sensor)
         cur_use_ext_humidity = bool(cur_humidity_sensor)
         cur_overlay = _pick_option(
@@ -1344,6 +1403,25 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                         unit_of_measurement="°C",
                     ),
                 )
+
+        # Window sensors feed Offset Sync's hold and window control; heating zones only, like both of those.
+        window_fields: dict[Any, Any] = {}
+        if zone_type == "HEATING":
+            window_fields[vol.Optional(
+                "window_sensor",
+                description={"suggested_value": cur_window_sensors} if cur_window_sensors else None,
+            )] = EntitySelector(
+                EntitySelectorConfig(
+                    domain="binary_sensor", device_class=["window", "door", "opening"], multiple=True,
+                ),
+            )
+            window_fields[vol.Optional("window_action", default=cur_window_action)] = SelectSelector(
+                SelectSelectorConfig(
+                    options=list(WINDOW_ACTIONS),
+                    translation_key="window_action",
+                    mode=SelectSelectorMode.DROPDOWN,
+                ),
+            )
 
         # Built separately like svc_fields; heating zones only (AC and hot water never take HomeKit overlay writes).
         route_fields: dict[Any, Any] = {}
@@ -1472,6 +1550,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                                     ),
                                 ),
                                 **svc_fields,
+                                **window_fields,
                             },
                         ),
                         {"collapsed": True},

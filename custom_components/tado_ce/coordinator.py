@@ -147,6 +147,7 @@ if TYPE_CHECKING:
     from .state_reconciler import StateReconciler
     from .state_restore_manager import CapturedState, StateRestoreManager
     from .valve_controller import SmartValveController
+    from .window_controller import WindowController
     from .zone_config_manager import ZoneConfigManager
     from .zone_state_registry import ZoneDropReason
 
@@ -391,6 +392,9 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Offset Sync: per-zone device offset controllers
         self.offset_sync_controllers: dict[str, OffsetSyncController] = {}
+
+        # Window control: switches rooms off while a window is open (one per home, started after the platforms).
+        self.window_controller: WindowController | None = None
 
         # Per-zone locks serialise controller lifecycle changes.
         self._zone_transition_locks: dict[str, asyncio.Lock] = {}
@@ -3178,12 +3182,13 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _on_zone_config_change(self, zone_id: str, key: str, value: Any) -> None:
         """Activate / deactivate per-zone controllers when the user changes config.
 
-        Reacts to `svc_mode` and `external_temp_sensor` key changes.
+        Reacts to `svc_mode`, `external_temp_sensor` and `window_sensor` key
+        changes; a new window sensor needs a restart so Offset Sync subscribes to it.
         All dict mutation runs inside a per-zone lock via the inner
         `_transition()` task so two rapid callbacks serialise instead
         of racing on pop / install.
         """
-        if key not in ("svc_mode", "external_temp_sensor"):
+        if key not in ("svc_mode", "external_temp_sensor", "window_sensor"):
             return
 
         from .const import SVC_MODE_OFFSET_SYNC, SVC_MODE_VALVE_TARGET

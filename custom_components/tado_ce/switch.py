@@ -116,6 +116,10 @@ async def async_setup_entry(
         TadoHubToggleSwitch(
             coordinator, home_id, "switch_quota_reserve", "quota_reserve_enabled", "mdi:shield-check", "mdi:shield-off",
         ),
+        TadoHubToggleSwitch(
+            coordinator, home_id, "switch_window_control", "window_control_enabled",
+            "mdi:window-open-variant", "mdi:window-closed-variant", default=True,
+        ),
     ]
     async_add_entities(hub_switches, True)
 
@@ -572,8 +576,11 @@ class TadoHubToggleSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
         option_key: str,
         icon_on: str,
         icon_off: str,
+        *,
+        default: bool = False,
     ) -> None:
         super().__init__(coordinator)
+        self._default = default
         _meta = ENTITY_REGISTRY[registry_key]
         self._option_key = option_key
         self._icon_on = icon_on
@@ -588,7 +595,7 @@ class TadoHubToggleSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
     def _read_option(self) -> bool:
         """Read current option value from config entry."""
         entry = self.coordinator.config_entry
-        result = entry.options.get(self._option_key, self._attr_is_on)
+        result = entry.options.get(self._option_key, self._default)
         return bool(result)
 
     @property

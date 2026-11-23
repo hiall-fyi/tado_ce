@@ -73,6 +73,7 @@ _ALL_STORES: dict[str, int] = {
     "zone_identity": 10,
     "zone_type_baseline": 10,
     "write_timing": 15,
+    "window_control": 2,
 }
 
 STORE_VERSION = 1

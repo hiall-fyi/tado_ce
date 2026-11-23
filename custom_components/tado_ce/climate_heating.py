@@ -325,6 +325,10 @@ class TadoClimate(TadoClimateBase):
             else:
                 attrs["valve_control_active"] = False
 
+        window_controller = self.coordinator.window_controller
+        if window_controller is not None:
+            attrs.update(window_controller.get_attributes(self._zone_id))
+
         return attrs
 
     def _update_sensor_data(self, zone_data: dict[str, Any]) -> tuple[float | None, str, float | None, str]:

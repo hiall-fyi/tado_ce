@@ -1127,6 +1127,9 @@
       },
       "quota_reserve": {
         "name": "Quota Reserve"
+      },
+      "window_control": {
+        "name": "Window Control"
       }
     },
     "water_heater": {
@@ -1398,6 +1401,19 @@
       "options": {
         "auto": "Automatic (HomeKit for 'Until you resume schedule')",
         "cloud": "Tado cloud"
+      }
+    },
+    "window_action": {
+      "options": {
+        "none": "Do nothing",
+        "room": "Turn off this room",
+        "house": "Turn off every room"
+      }
+    },
+    "window_resume_mode": {
+      "options": {
+        "own": "When the windows that turned them off are closed",
+        "all": "Only when every window in the house is closed"
       }
     }
   },
@@ -1834,6 +1850,19 @@
               "outdoor_temp_entity": "Sensor providing outdoor temperature (e.g., weather.home or a local sensor)",
               "boiler_flow_temp_entity": "Your own boiler flow-temperature sensor (for example ebusd, OpenTherm Gateway or myVaillant), used when Tado doesn't report a flow temperature. Feeds the Boiler Flow Temperature sensor and the boiler flow alert. It doesn't drive Weather Compensation, which needs the Internet Bridge."
             }
+          },
+          "window_control": {
+            "name": "Window Control",
+            "data": {
+              "window_off_delay_seconds": "Delay before switching off",
+              "window_resume_mode": "Switch rooms back on",
+              "window_settle_minutes": "Offset Sync hold after a window closes"
+            },
+            "data_description": {
+              "window_off_delay_seconds": "How long a window must stay open before its rooms are switched off (0–3600 s, default 60), so walking through a balcony door doesn't cycle the heating. Applies to rooms whose Window Action is not Do nothing.",
+              "window_resume_mode": "When rooms switched off for an open window come back on, to what they were doing before.",
+              "window_settle_minutes": "How long Offset Sync keeps its offset after the last window in a room closes, while the external sensor and the thermostat recover from the cold air (0–180 min, default 30)."
+            }
           }
         }
       },
@@ -1911,7 +1940,9 @@
               "use_external_humidity": "Override Tado's Humidity Sensor",
               "external_humidity_sensor": "External Humidity Sensor",
               "svc_mode": "Smart Valve Control Mode",
-              "svc_offset_min_change": "Offset Sync Minimum Change"
+              "svc_offset_min_change": "Offset Sync Minimum Change",
+              "window_sensor": "Window Sensors",
+              "window_action": "Window Action"
             },
             "data_description": {
               "use_external_temp": "Turn on to use your own temperature sensor instead of Tado's built-in one. Turning it off and saving removes the chosen sensor, so you'll need to pick it again.",
@@ -1919,7 +1950,9 @@
               "use_external_humidity": "Turn on to use your own humidity sensor instead of Tado's built-in one. Turning it off and saving removes the chosen sensor, so you'll need to pick it again.",
               "external_humidity_sensor": "The sensor to use instead of Tado's built-in humidity reading. Turn the toggle above on to use it.",
               "svc_mode": "Use your external sensor to improve TRV accuracy. This appears once an external temperature sensor is saved for this zone. Offset Sync (recommended) quietly corrects the TRV's temperature reading, and pauses outside the daytime hours set in Advanced Settings. It works alongside Tado, with better TRV battery life. Valve Target directly overrides the TRV setpoint. It is more aggressive, so use it only when Offset Sync isn't enough.",
-              "svc_offset_min_change": "Offset Sync only writes a new offset to the thermostat when it would change by at least this much (0.5–3.0°C, default 0.5). Higher values mean fewer writes and better battery life, but the temperature in the Tado app is less exact. Appears after you save with Offset Sync selected."
+              "svc_offset_min_change": "Offset Sync only writes a new offset to the thermostat when it would change by at least this much (0.5–3.0°C, default 0.5). Higher values mean fewer writes and better battery life, but the temperature in the Tado app is less exact. Appears after you save with Offset Sync selected.",
+              "window_sensor": "Optional window or door contact sensors; pick as many as the room has. Offset Sync keeps its offset while any of them is open (and Tado's own open-window detection also pauses it), and Window Action uses them to switch heating off.",
+              "window_action": "What happens when a window here stays open past the delay set under Advanced Settings → Window Control. The hub's Window Control switch turns this off for every room at once."
             }
           },
           "overlay_section": {
