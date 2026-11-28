@@ -44,10 +44,6 @@ CALL_TYPE_DEVICE_OFFSET_WRITE = 11
 CALL_TYPE_CHILD_LOCK = 12
 CALL_TYPE_HEATING_CIRCUITS = 13
 CALL_TYPE_GRAPHQL = 14
-CALL_TYPE_BRIDGE_API = 15
-
-# Version 2 records call types 9 to 15; version 1 stopped at 8.
-TRACKER_COVERAGE_VERSION = 2
 
 CALL_TYPE_NAMES = {
     CALL_TYPE_ZONE_STATES: "zoneStates",
@@ -64,10 +60,9 @@ CALL_TYPE_NAMES = {
     CALL_TYPE_CHILD_LOCK: "childLock",
     CALL_TYPE_HEATING_CIRCUITS: "heatingCircuits",
     CALL_TYPE_GRAPHQL: "graphql",
-    CALL_TYPE_BRIDGE_API: "bridgeApi",
 }
 
-# Every REST call to my.tado.com; GraphQL and bridge API calls are tracked but not quota
+# Every REST call to my.tado.com; GraphQL calls are tracked but not quota
 QUOTA_CALL_TYPES = frozenset(range(CALL_TYPE_ZONE_STATES, CALL_TYPE_HEATING_CIRCUITS + 1))
 
 

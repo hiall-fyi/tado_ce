@@ -1,4 +1,4 @@
-# Tado CE — Entity Reference (v5.0.0-beta.1)
+# Tado CE — Entity Reference (v5.0.0-beta.2)
 
 A catalogue of every entity Tado CE creates, with the exact `entity_id` you'll see in your install.
 
@@ -319,9 +319,9 @@ The Identify button (added v4.1.0-beta.3) lives on the zone device and uses the 
 
 | Function | CE? | Friendly Name | Fresh install entity_id |
 |---|---|---|---|
-| Zone schedule | ✓ | Schedule | `calendar.heating_schedule_schedule` |
+| Zone schedule | ✓ | Heating Schedule {zone name} | `calendar.heating_schedule_{zone name}` |
 
-The doubled-segment slug (`heating_schedule_schedule`) comes from the calendar device being named "Heating Schedule" plus a translation key of `schedule`. Cleanup is on the v5.0.0 list (see `ROADMAP.md`).
+Each calendar's name is the calendar device's name, "Heating Schedule", plus the room's name. An install that already had the calendars keeps the entity IDs it has (`calendar.heating_schedule_schedule`, then `_2`, `_3` and so on); only the friendly names changed.
 
 ---
 

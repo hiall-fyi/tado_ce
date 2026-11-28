@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -20,9 +20,10 @@ from .thermal_analyzer import ThermalAnalyzer
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
-    from .heating_models import HeatingCycle, HeatingCycleConfig
+    from .heating_models import HeatingCycleConfig
 
 _LOGGER = logging.getLogger(__name__)
+RESUME_MAX_GAP = timedelta(minutes=30)
 
 
 
@@ -39,7 +40,7 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
         super().__init__(
             hass,
             _LOGGER,
-            name=f"heating_cycle_{home_id}",
+            name=f"heating_cycle_{mask_home_id(home_id)}",
             update_interval=None,
         )
         self._home_id = home_id
@@ -61,7 +62,7 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
         return self._zone_data
 
     async def async_setup(self) -> None:
-        """Load storage, resume any active cycles, and prime per-zone metrics."""
+        """Load storage, resume the cycles with a recent reading, close the others, and prime per-zone metrics."""
         _LOGGER.debug(
             "Heating Cycle: setting up cycle tracker for home %s",
             mask_home_id(self._home_id),
@@ -70,13 +71,23 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
         await self._storage.async_load()
 
         active_cycles = await self._storage.get_active_cycles()
-        if active_cycles:
-            _LOGGER.debug(
-                "Heating Cycle: resuming %d active cycle(s) from storage",
-                len(active_cycles),
-            )
 
         for zone_id, cycle in active_cycles.items():
+            last_reading = cycle.temperature_readings[-1].time if cycle.temperature_readings else cycle.start_time
+            if dt_util.utcnow() - last_reading > RESUME_MAX_GAP:
+                cycle.interrupted = True
+                cycle.interrupt_reason = "restart_gap"
+                cycle.end_time = dt_util.utcnow()
+                await self._storage.save_cycle(
+                    zone_id, cycle,
+                    window_days=self._config.rolling_window_days,
+                )
+                _LOGGER.debug(
+                    "Heating Cycle: zone %s cycle not resumed, last reading %s is older than the restart limit",
+                    zone_id,
+                    last_reading.isoformat(),
+                )
+                continue
             detector = self._get_or_create_detector(zone_id)
             detector.resume_cycle(cycle)
             _LOGGER.debug(
@@ -108,8 +119,10 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
         timestamp: datetime | None = None,
         *,
         source: str = "entity",
+        track_cycle: bool = True,
+        heating: bool | None = None,
     ) -> None:
-        """Atomically apply a setpoint + temperature update for one zone (single lock prevents interleaving)."""
+        """Apply a setpoint + temperature update for one zone under one lock; track_cycle=False only refreshes the cached snapshot, heating adds this tick's evidence to the active cycle."""
         if timestamp is None:
             timestamp = dt_util.utcnow()
 
@@ -128,9 +141,13 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
 
         self.async_set_updated_data(self._zone_data)
 
+        if not track_cycle:
+            return
+
         async with self._lock:
             detector = self._get_or_create_detector(zone_id)
 
+            previous = detector.get_active_cycle()
             cycle_started = detector.check_setpoint_change(target_temp, timestamp, current_temp)
 
             if cycle_started:
@@ -139,8 +156,15 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
                     "(target=%.1f°C, current=%.1f°C)",
                     zone_id, target_temp, current_temp,
                 )
+                if previous is not None and previous.interrupted:
+                    await self._storage.save_cycle(
+                        zone_id, previous,
+                        window_days=self._config.rolling_window_days,
+                    )
 
             detector.on_temperature_update(current_temp, timestamp)
+            detector.note_heating(heating)
+            active_before = detector.get_active_cycle()
 
             completed_cycle = detector.check_cycle_complete()
             if completed_cycle:
@@ -153,6 +177,15 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
                     zone_id,
                 )
                 await self._async_update_zone_data(zone_id)
+            else:
+                running = detector.get_active_cycle()
+                if running is not None:
+                    await self._storage.save_cycle(
+                        zone_id, running,
+                        window_days=self._config.rolling_window_days,
+                    )
+                elif active_before is not None:
+                    await self._storage.discard_active_cycle(zone_id)
 
     @callback
     def clear_zone_state(self, zone_id: str, *, source: str | None = None) -> None:
@@ -181,16 +214,27 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
         """Time out any active cycles whose completion criteria stalled."""
         async with self._lock:
             for zone_id, detector in self._detectors.items():
-                if detector.check_cycle_timeout():
+                running = detector.get_active_cycle()
+                if running is not None and detector.check_cycle_timeout():
                     _LOGGER.debug(
                         "Heating Cycle: zone %s cycle timed out",
                         zone_id,
                     )
+                    await self._storage.save_cycle(
+                        zone_id, running,
+                        window_days=self._config.rolling_window_days,
+                    )
                     await self._async_update_zone_data(zone_id)
 
     async def _async_update_zone_data(self, zone_id: str) -> None:
-        """Recompute first-order + second-order metrics for one zone."""
+        """Recompute first-order + second-order metrics for one zone, and drop the record when no completed cycle is in the window."""
         cycles = await self._storage.get_cycles(zone_id, self._config.rolling_window_days)
+
+        # No completed cycle in the window: no record, so the sensors read it like a zone that never had one.
+        if not cycles:
+            self._zone_data.pop(zone_id, None)
+            self.async_set_updated_data(self._zone_data)
+            return
 
         metrics = self._analyzer.analyze_cycles(cycles)
 
@@ -239,17 +283,6 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
     def get_zone_state(self, zone_id: str) -> dict[str, Any] | None:
         """Return cached current/target temperature snapshot: lets sensors read sync without blocking on storage."""
         return self._zone_states.get(zone_id)
-
-    async def get_cycles(self, zone_id: str) -> list[HeatingCycle]:
-        """Return completed cycles for one zone inside the rolling window."""
-        return await self._storage.get_cycles(zone_id, self._config.rolling_window_days)
-
-    def get_active_cycle(self, zone_id: str) -> HeatingCycle | None:
-        """Return the currently-running cycle for one zone, if any."""
-        detector = self._detectors.get(zone_id)
-        if detector:
-            return detector.get_active_cycle()
-        return None
 
     def estimate_preheat_time(
         self,

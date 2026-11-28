@@ -270,7 +270,6 @@ class TadoMoldRiskPercentageSensor(TadoZoneSensor):
         _meta = ENTITY_REGISTRY["sensor_mold_risk_pct"]
         self._attr_translation_key = _meta.translation_key
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
-        self._attr_icon = _meta.icon
         self._attr_entity_category = get_entity_category(_meta)
         self._attr_device_class = SensorDeviceClass.HUMIDITY
         self._attr_native_unit_of_measurement = "%"
@@ -634,7 +633,6 @@ class TadoSurfaceTemperatureSensor(TadoZoneSensor):
         _meta = ENTITY_REGISTRY["sensor_surface_temp"]
         self._attr_translation_key = _meta.translation_key
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
-        self._attr_icon = _meta.icon
         self._attr_entity_category = get_entity_category(_meta)
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
@@ -767,7 +765,6 @@ class TadoDewPointSensor(TadoZoneSensor):
         _meta = ENTITY_REGISTRY["sensor_dew_point"]
         self._attr_translation_key = _meta.translation_key
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
-        self._attr_icon = _meta.icon
         self._attr_entity_category = get_entity_category(_meta)
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
@@ -837,7 +834,6 @@ class TadoAbsoluteHumiditySensor(TadoZoneSensor):
         _meta = ENTITY_REGISTRY["sensor_absolute_humidity"]
         self._attr_translation_key = _meta.translation_key
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
-        self._attr_icon = _meta.icon
         self._attr_entity_category = get_entity_category(_meta)
         self._attr_device_class = SensorDeviceClass.ABSOLUTE_HUMIDITY
         self._attr_native_unit_of_measurement = UnitOfDensity.GRAMS_PER_CUBIC_METER

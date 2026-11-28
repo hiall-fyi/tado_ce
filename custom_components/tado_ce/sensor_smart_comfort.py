@@ -22,6 +22,7 @@ from .format_helpers import (
 from .format_helpers import (
     format_confidence as _format_confidence,
 )
+from .helpers import resolve_home_presence
 from .insights_presenter import (
     calculate_historical_deviation_recommendation,
 )
@@ -169,7 +170,6 @@ class TadoNextScheduleTimeSensor(TadoZoneSensor):
         _meta = ENTITY_REGISTRY["sensor_next_schedule"]
         self._attr_translation_key = _meta.translation_key
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
-        self._attr_icon = _meta.icon
         self._attr_entity_category = get_entity_category(_meta)
 
         # Attributes
@@ -636,8 +636,8 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
                 return
 
             # Suppress preheat when home is in AWAY mode
-            home_state = (self.coordinator.data or {}).get("home_state")
-            if home_state and home_state.get("presence") != "HOME":
+            resolved = resolve_home_presence(self.coordinator.data, self.coordinator.last_zone_fetch_ts())
+            if resolved and resolved[0] != "HOME":
                 self._set_simple_status(
                     "Away", confidence="away_mode",
                     summary="Preheat suppressed: home is in away mode",

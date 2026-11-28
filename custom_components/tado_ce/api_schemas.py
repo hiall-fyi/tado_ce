@@ -39,6 +39,7 @@ DEVICE_OFFSET = ResponseSchema(
 ZONE_CAPABILITIES = ResponseSchema("capabilities", _ANY_OBJECT)
 HEATING_CIRCUITS = ResponseSchema("heatingCircuits", _LIST_OF_OBJECTS)
 ZONE_CONTROL = ResponseSchema("zoneControl", _ANY_OBJECT)
+EARLY_START = ResponseSchema("earlyStart", _object(enabled=bool))
 ACTIVE_TIMETABLE = ResponseSchema("activeTimetable", _object(id=_ID))
 TIMETABLE_BLOCKS = ResponseSchema("timetableBlocks", _LIST_OF_OBJECTS)
 

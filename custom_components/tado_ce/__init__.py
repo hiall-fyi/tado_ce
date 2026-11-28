@@ -16,15 +16,14 @@ from .const import (
     DATA_DIR,
     DOMAIN,
     EVENT_READY,
-    SERVICE_NAMES,
-    SERVICE_SET_CLIMATE_TIMER,
 )
 from .coordinator import TadoDataUpdateCoordinator
 from .data_loader import DataLoader
 from .device_manager import _hub_identifier, clear_cached_hub_device_id
 from .entry_lifecycle import async_teardown_entry, new_homekit_holder, new_setup_handles
-from .exceptions import TadoAuthError, TadoBlockedError
+from .exceptions import TadoBlockedError
 from .helpers import get_entity_zone_identity, get_entity_zone_ids, mask_home_id
+from .log_scrub import install_log_scrub
 from .migration import (
     async_migrate_entry as async_migrate_entry,
 )
@@ -39,6 +38,8 @@ if TYPE_CHECKING:
     from .coordinator import TadoConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
+# One handler on the package logger runs before the root handlers, so it scrubs every child module's records in place.
+install_log_scrub(__name__)
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -93,10 +94,6 @@ async def _async_init_data_layer(
         components = await async_create_entry_components(
             hass, entry, config_manager, home_id, data_loader=data_loader,
         )
-    except TadoAuthError as err:
-        raise ConfigEntryNotReady(
-            "Authentication failed during setup; check credentials",
-        ) from err
     except TadoBlockedError as err:
         raise ConfigEntryNotReady(
             "Tado is blocking requests during setup; will retry",
@@ -180,7 +177,6 @@ async def _async_wire_and_start_coordinator(
     # Compensation has a usable trace from the first poll.
     loaded_history = await coordinator.data_loader.async_load_outdoor_temp_history()
     coordinator._outdoor_temp_history = loaded_history
-    coordinator._outdoor_temp_loaded = True
     _LOGGER.debug(
         "Setup: outdoor temp history loaded: %d reading(s)",
         len(loaded_history),
@@ -267,9 +263,6 @@ async def _async_finalize_entry(
     coordinator.entity_zone_identity = get_entity_zone_identity(coordinator.data)
     await hass.config_entries.async_forward_entry_setups(entry, platforms_to_load)
     coordinator.loaded_platforms = frozenset(platforms_to_load)
-
-    if not hass.services.has_service(DOMAIN, SERVICE_SET_CLIMATE_TIMER):
-        await _async_register_services(hass)
 
     _last_options_snapshot[entry.entry_id] = dict(entry.options)
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
@@ -400,9 +393,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: TadoConfigEntry) -> bool
 
         from .setup_entry_helpers import async_start_homekit
 
-        # On bridge reconnect we re-subscribe events and reset the
-        # write-health circuit breaker so the integration recovers
-        # cleanly from a transient bridge drop.
         async def _on_homekit_reconnect() -> None:
             await provider.async_refresh_accessories()
             await provider.async_subscribe_events()
@@ -411,7 +401,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: TadoConfigEntry) -> bool
             coordinator.reset_mapping_retry_budget()
             _LOGGER.info(
                 "Setup: HomeKit reconnect handled, events "
-                "re-subscribed, write-health circuit breaker reset",
+                "re-subscribed, write-health circuit breaker half-opened",
             )
 
         await async_start_homekit(coordinator, provider, homekit_client, _on_homekit_reconnect)
@@ -527,24 +517,16 @@ async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     except (KeyError, TypeError, ValueError) as e:
         _LOGGER.warning(
             "Reload: entity cleanup pass failed (%s), reload will "
-            "continue but disabled-feature entities may linger until "
-            "the next reload",
+            "continue but the entities of disabled features stay until "
+            "the feature is switched on and off again",
             e,
         )
 
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-def _unregister_all_services(hass: HomeAssistant) -> None:
-    """Drop every Tado CE service when the final config entry unloads."""
-    for service_name in SERVICE_NAMES:
-        if hass.services.has_service(DOMAIN, service_name):
-            hass.services.async_remove(DOMAIN, service_name)
-    _LOGGER.debug("Unload: dropped all Tado CE services")
-
-
 async def async_unload_entry(hass: HomeAssistant, entry: TadoConfigEntry) -> bool:
-    """Unload one Tado CE config entry's platforms and services; HA then runs the teardown registered at setup."""
+    """Unload one Tado CE config entry's platforms, then run the teardown that stops its timers and tasks and flushes its state."""
     _LOGGER.info("Unload: starting for entry %s", entry.entry_id)
 
     coordinator: TadoDataUpdateCoordinator | None = getattr(entry, "runtime_data", None)
@@ -559,17 +541,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: TadoConfigEntry) -> boo
     unload_ok = await hass.config_entries.async_unload_platforms(entry, platforms_to_unload)
 
     if not unload_ok:
-        # HA marks the entry FAILED_UNLOAD and refuses any later unload or reload, so everything keeps running until HA restarts; services and the options snapshot stay.
+        # HA marks the entry FAILED_UNLOAD and refuses any later unload or reload, so everything keeps running until HA restarts; the options snapshot stays.
         _LOGGER.warning("Unload: entry %s could not unload its platforms and stays loaded", entry.entry_id)
         return unload_ok
 
     # Awaited here so the next setup cannot start while teardown runs; HA's later unload callback then finds nothing left to do.
     if coordinator is not None:
         await async_teardown_entry(coordinator.setup_handles)
-
-    other_entries = [e for e in hass.config_entries.async_entries(DOMAIN) if e.entry_id != entry.entry_id]
-    if len(other_entries) == 0:
-        _unregister_all_services(hass)
 
     _last_options_snapshot.pop(entry.entry_id, None)
 

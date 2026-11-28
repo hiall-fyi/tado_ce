@@ -13,6 +13,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
+import aiohttp
 from homeassistant.components.climate import ATTR_HVAC_MODE
 from homeassistant.components.climate.const import (
     PRESET_AWAY,
@@ -38,7 +39,7 @@ from .climate_helpers import (
     update_offset_clamp,
     update_preset_mode,
 )
-from .const import OPEN_WINDOW_DEFAULT_TEMP
+from .const import FORCEABLE_FETCH_HOME_STATE, OPEN_WINDOW_DEFAULT_TEMP
 from .error_dispatch import dispatch_to_service_call
 from .exceptions import TadoAuthError, TadoBlockedError, TadoRateLimitError
 from .format_helpers import (
@@ -71,7 +72,7 @@ from .optimistic_helpers import (
     zone_owes_change,
 )
 from .ratelimit import async_check_bootstrap_reserve_or_raise as _check_bootstrap_reserve_or_raise
-from .schedule_helpers import get_current_schedule_target
+from .schedule_helpers import get_active_timetable, get_current_schedule_target
 from .write_optimizer import ActionGuard, held_data_unconfirmed
 from .zone_signals import ZoneView, owed_held_target, zone_power_is_on, zone_view, zone_view_target
 from .zone_write_ledger import IntentKind, IntentState, WriteIntent, ordered_zone_write
@@ -137,7 +138,7 @@ class TadoClimate(TadoClimateBase):
     ) -> HVACAction:
         """Calculate hvac_action for heating zone.
 
-        Priority: OFF mode > optimistic target_temp > expected action >
+        Priority: OFF mode > optimistic target_temp > expected action > bridge band (a HomeKit target newer than the poll) >
         heating_power > temperature-aware HEAT fallback > IDLE. The
         target_temp branch must run before _expected_hvac_action so a
         new optimistic update overrides a stale expected action.
@@ -162,11 +163,12 @@ class TadoClimate(TadoClimateBase):
         if self._expected_hvac_action is not None and not ignore_expected:
             return self._expected_hvac_action
 
-        # A bridge target newer than the cloud poll outdates heating_power, so judge by the band
+        # A bridge target newer than the cloud poll outdates heating_power, so an open valve counts only while the room is below the target
         if homekit_target_newer:
             target = self._attr_native_target_temperature
             current = self._attr_native_current_temperature
-            if target is not None and current is not None and target > current + 0.5:
+            heated = bool(self._heating_power and self._heating_power > 0)
+            if target is not None and current is not None and (target > current + 0.5 or (heated and target > current)):
                 return HVACAction.HEATING
             return HVACAction.IDLE
 
@@ -313,6 +315,9 @@ class TadoClimate(TadoClimateBase):
         )
         if scheduled_temp is not None:
             attrs["scheduled_target_temperature"] = scheduled_temp
+        active_timetable = get_active_timetable(self._zone_id, self.coordinator.data_loader)
+        if active_timetable is not None:
+            attrs["active_timetable"] = active_timetable
 
         # Smart Valve Control attributes
         controller = self.coordinator.valve_controllers.get(self._zone_id)
@@ -396,12 +401,14 @@ class TadoClimate(TadoClimateBase):
         )
 
     async def _async_feed_heating_cycle(self, target: float, current: float | None) -> None:
-        """Feed the heating-cycle coordinator, skipping when there is no room temperature."""
+        """Feed the heating-cycle coordinator with this tick's heating evidence, skipping when there is no room temperature."""
         heating_cycle_coordinator = self.coordinator.heating_cycle_coordinator
         if heating_cycle_coordinator is None or current is None:
             return
+        # Heating evidence of this tick: a cycle that ends with none is dropped.
+        heating = bool(self._heating_power and self._heating_power > 0) or self._attr_hvac_action == HVACAction.HEATING
         try:
-            await heating_cycle_coordinator.on_zone_update(self._zone_id, target, current)
+            await heating_cycle_coordinator.on_zone_update(self._zone_id, target, current, heating=heating)
         except (KeyError, TypeError, ValueError):
             _LOGGER.debug(
                 "Climate Heating: %s heating-cycle update failed, skipping this tick",
@@ -627,20 +634,26 @@ class TadoClimate(TadoClimateBase):
         self._attr_preset_mode = preset_mode
         self.async_write_ha_state()
 
+        from .api_client import raising_network_errors
+
         api_success = False
+        unknown_outcome = False
         typed_error: TadoAuthError | TadoRateLimitError | TadoBlockedError | None = None
         # Right before the try so the decrement in its finally always pairs with this increment.
         self._presets_in_flight += 1
         try:
-            async with asyncio.timeout(10):
-                api_success = await client.set_presence_lock(state)
+            with raising_network_errors():
+                async with asyncio.timeout(10):
+                    api_success = await client.set_presence_lock(state)
         except TimeoutError:
+            unknown_outcome = True
             _LOGGER.warning(
                 "Climate Heating: %s preset-mode call timed out after 10s",
                 self._zone_name,
             )
         except Exception as e:
             # Broad on purpose: any call failure reverts the preset and logs, and a typed rejection is dispatched after the revert.
+            unknown_outcome = isinstance(e, aiohttp.ClientError)
             _LOGGER.warning(
                 "Climate Heating: %s preset-mode call failed (%s)",
                 self._zone_name, e,
@@ -675,8 +688,11 @@ class TadoClimate(TadoClimateBase):
             if not self._presets_in_flight or self._attr_preset_mode == preset_mode:
                 self._attr_preset_mode = self._preset_baseline
                 self.async_write_ha_state()
+            if unknown_outcome:
+                self.coordinator.request_forced_fetch(FORCEABLE_FETCH_HOME_STATE)
+                await async_trigger_immediate_refresh(self.hass, self.entity_id, "write_unknown")
             if typed_error is not None:
-                dispatch_to_service_call(typed_error, self.coordinator.config_entry, self.hass, self.coordinator)
+                dispatch_to_service_call(typed_error, self.coordinator.config_entry, self.hass)
 
     async def _write_via_cloud(
         self,

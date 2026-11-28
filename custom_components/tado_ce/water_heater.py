@@ -378,10 +378,6 @@ class TadoWaterHeater(PerEntityAvailabilityMixin, ZoneEntityMixin, CoordinatorEn
                 },
             )
 
-    def set_operation_mode(self, operation_mode: str) -> None:
-        """Sync stub kept for back-compat; HA calls async_set_operation_mode directly."""
-        # Home Assistant handles async methods automatically
-
     def _get_timer_duration(self) -> int:
         """Get configured timer duration in minutes (default 60)."""
         try:

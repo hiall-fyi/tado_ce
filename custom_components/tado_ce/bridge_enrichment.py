@@ -10,7 +10,6 @@ from .bridge_discovery import FieldEnrichment, get_unique_id_suffix
 
 FIELD_ENRICHMENT: dict[str, FieldEnrichment] = {
     "state": FieldEnrichment(
-        icon="mdi:pipe-wrench",
         entity_category="diagnostic",
         translation_key="boiler_wiring_state",
         value_formatter="format_bridge_wiring_state",
@@ -20,7 +19,6 @@ FIELD_ENRICHMENT: dict[str, FieldEnrichment] = {
         device_class="temperature",
         state_class="measurement",
         unit_of_measurement="°C",
-        icon="mdi:thermometer-water",
         entity_category="diagnostic",
         translation_key="boiler_output_temperature",
         unique_id_suffix="boiler_output_temperature",
@@ -36,7 +34,6 @@ FIELD_ENRICHMENT: dict[str, FieldEnrichment] = {
         device_class="temperature",
         state_class="measurement",
         unit_of_measurement="°C",
-        icon="mdi:thermometer-water",
         entity_category="diagnostic",
         translation_key="boiler_flow_temperature",
         # Full word, never boiler_flow_temp: the short form is the cloud
@@ -54,14 +51,12 @@ FIELD_ENRICHMENT: dict[str, FieldEnrichment] = {
         device_class="temperature",
         state_class="measurement",
         unit_of_measurement="°C",
-        icon="mdi:thermometer-water",
         entity_category="diagnostic",
         translation_key="boiler_max_output_temperature",
         enabled_default=False,
         unique_id_suffix="boiler_max_output_temperature",
     ),
     "bridgeConnected": FieldEnrichment(
-        icon="mdi:lan-connect",
         entity_category="diagnostic",
         value_formatter="format_boolean_connected",
         # No entity is built from this path, see sensor.py's skip_paths: the
@@ -71,7 +66,6 @@ FIELD_ENRICHMENT: dict[str, FieldEnrichment] = {
         unique_id_suffix="boiler_bridge_connected",
     ),
     "hotWaterZonePresent": FieldEnrichment(
-        icon="mdi:water-boiler",
         entity_category="diagnostic",
         translation_key="boiler_hot_water_present",
         value_formatter="format_boolean_yes_no",
@@ -79,28 +73,24 @@ FIELD_ENRICHMENT: dict[str, FieldEnrichment] = {
         unique_id_suffix="boiler_hot_water_present",
     ),
     "deviceWiredToBoiler.type": FieldEnrichment(
-        icon="mdi:chip",
         entity_category="diagnostic",
         translation_key="boiler_device_type",
         enabled_default=False,
         unique_id_suffix="boiler_device_type",
     ),
     "deviceWiredToBoiler.serialNo": FieldEnrichment(
-        icon="mdi:identifier",
         entity_category="diagnostic",
         translation_key="boiler_device_serial",
         enabled_default=False,
         unique_id_suffix="boiler_device_serial",
     ),
     "deviceWiredToBoiler.thermInterfaceType": FieldEnrichment(
-        icon="mdi:connection",
         entity_category="diagnostic",
         translation_key="boiler_interface_type",
         enabled_default=False,
         unique_id_suffix="boiler_interface_type",
     ),
     "deviceWiredToBoiler.connected": FieldEnrichment(
-        icon="mdi:lan-connect",
         entity_category="diagnostic",
         translation_key="boiler_device_connected",
         value_formatter="format_boolean_connected",

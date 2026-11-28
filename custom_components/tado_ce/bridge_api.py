@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from http import HTTPStatus
 import logging
+import re
 from typing import TYPE_CHECKING
 
 import aiohttp
 
 from .const import MECH_BRIDGE_API_CALL
-from .exceptions import TadoBridgeApiError
+from .exceptions import TadoBridgeApiError, TadoBridgeUnreachableError
 from .helpers import async_retry_with_backoff, mask_serial
 
 if TYPE_CHECKING:
@@ -21,6 +22,8 @@ _BRIDGE_API_BASE = "https://my.tado.com/api/v2/homeByBridge"
 
 # HTTP timeout for Bridge API calls (10s: simple GET/PUT operations)
 _BRIDGE_API_TIMEOUT = aiohttp.ClientTimeout(total=10)
+
+_AUTH_KEY_QUERY_RE = re.compile(r"(authKey=)[^&'\"\s]*", re.IGNORECASE)
 
 # Temperature constraints (matches Tado app)
 MIN_FLOW_TEMP = 30.0
@@ -67,16 +70,12 @@ class TadoBridgeApiClient:
         if self._counters is not None:
             self._counters.count(MECH_BRIDGE_API_CALL, f"{method}:{int(resp.status)}", calls=1)
 
-    def _network_error(self, err: BaseException) -> TadoBridgeApiError:
+    def _network_error(self, err: BaseException) -> TadoBridgeUnreachableError:
         """Wrap a transport error with the auth key and serial removed from its text."""
-        text = str(err) or type(err).__name__
-        # An empty value would make str.replace rewrite every character
-        if self._auth_key:
-            text = text.replace(self._auth_key, "[AUTH_KEY]")
-        if self._bridge_serial:
-            text = text.replace(self._bridge_serial, mask_serial(self._bridge_serial))
+        text = _AUTH_KEY_QUERY_RE.sub(r"\1[AUTH_KEY]", str(err) or type(err).__name__)
+        text = text.replace(self._bridge_serial, mask_serial(self._bridge_serial))
         msg = "Bridge API network error: %s"
-        return TadoBridgeApiError(msg % text)
+        return TadoBridgeUnreachableError(msg % text)
 
     async def async_get_wiring_state(self) -> dict[str, object]:
         """Fetch the boiler wiring-installation state from the bridge."""
@@ -84,8 +83,7 @@ class TadoBridgeApiClient:
         params = {"authKey": self._auth_key}
         _LOGGER.debug(
             "Bridge: GET wiring state from %s",
-            url.replace(self._bridge_serial, mask_serial(self._bridge_serial))
-               .replace(self._auth_key, "[AUTH_KEY]"),
+            url.replace(self._bridge_serial, mask_serial(self._bridge_serial)),
         )
 
         async def _do_get() -> dict[str, object]:
@@ -99,7 +97,7 @@ class TadoBridgeApiClient:
                     result = await resp.json()
                 except (ValueError, aiohttp.ContentTypeError):
                     # A body that is not JSON is a bridge fault, not a retryable network error
-                    msg = "Bridge API GET wiring state returned a body that is not JSON: HTTP %s"
+                    msg = "Bridge API GET wiring state returned a body it could not read as JSON: HTTP %s"
                     raise TadoBridgeApiError(msg % resp.status) from None
                 if not isinstance(result, dict):
                     msg = "Bridge API GET wiring state returned an unusable body: HTTP %s"
@@ -122,8 +120,7 @@ class TadoBridgeApiClient:
         params = {"authKey": self._auth_key}
         _LOGGER.debug(
             "Bridge: GET max output temperature from %s",
-            url.replace(self._bridge_serial, mask_serial(self._bridge_serial))
-               .replace(self._auth_key, "[AUTH_KEY]"),
+            url.replace(self._bridge_serial, mask_serial(self._bridge_serial)),
         )
 
         async def _do_get() -> float:
@@ -136,7 +133,7 @@ class TadoBridgeApiClient:
                     body = await resp.json()
                 except (ValueError, aiohttp.ContentTypeError):
                     # A body that is not JSON is a bridge fault, not a retryable network error
-                    msg = "Bridge API GET max temp returned a body that is not JSON: HTTP %s"
+                    msg = "Bridge API GET max temp returned a body it could not read as JSON: HTTP %s"
                     raise TadoBridgeApiError(msg % resp.status) from None
                 value = body.get("boilerMaxOutputTemperatureInCelsius") if isinstance(body, dict) else None
                 if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -180,9 +177,11 @@ class TadoBridgeApiClient:
             raise wrapped from None
 
     async def async_validate_credentials(self) -> bool:
-        """Probe the bridge with a wiring-state read to confirm the auth key works."""
+        """Probe the bridge with a wiring-state read: False when it refuses the key, TadoBridgeUnreachableError when Tado cannot be reached."""
         try:
             await self.async_get_wiring_state()
+        except TadoBridgeUnreachableError:
+            raise
         except TadoBridgeApiError:
             return False
         return True

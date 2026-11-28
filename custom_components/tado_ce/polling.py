@@ -144,9 +144,8 @@ def _calculate_uniform_interval(ctx: _PollingContext) -> int:
     day / night distinction, and spreads the usable quota evenly.
     """
     effective_hours = ctx.reset_hours
-    night_calls_needed = 0
 
-    day_quota = max(0, ctx.usable_quota - night_calls_needed)
+    day_quota = max(0, ctx.usable_quota)
 
     if day_quota <= 0 or effective_hours <= 0:
         return MAX_POLLING_INTERVAL

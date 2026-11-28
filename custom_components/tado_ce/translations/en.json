@@ -144,7 +144,7 @@
     },
     "calendar": {
       "schedule": {
-        "name": "Schedule"
+        "name": "{zone_name}"
       }
     },
     "climate": {
@@ -335,6 +335,21 @@
           },
           "status": {
             "name": "Status"
+          },
+          "rate_limited_until": {
+            "name": "Rate limited until"
+          },
+          "cloud_health": {
+            "name": "Cloud health"
+          },
+          "weather_last_fetched_min_ago": {
+            "name": "Weather last fetched (minutes ago)"
+          },
+          "presence_last_fetched_min_ago": {
+            "name": "Presence last fetched (minutes ago)"
+          },
+          "mobile_devices_last_fetched_min_ago": {
+            "name": "Mobile devices last fetched (minutes ago)"
           }
         }
       },
@@ -1166,8 +1181,8 @@
         }
       }
     },
-    "set_schedule_temperature": {
-      "name": "Set Schedule Temperature",
+    "set_climate_schedule_temperature": {
+      "name": "Set Climate Schedule Temperature",
       "description": "Set a zone's target temperature from an automation, such as a holiday calendar, without Smart Valve Control treating it as a manual override. Smart Valve Control keeps working towards this target and resumes your normal schedule at the next block change.",
       "fields": {
         "temperature": {
@@ -1197,10 +1212,6 @@
           "description": "Target temperature in Celsius (optional, for solar water heater systems)."
         }
       }
-    },
-    "resume_schedule": {
-      "name": "Resume Schedule",
-      "description": "Delete any manual override and return to the automatic schedule."
     },
     "set_climate_temperature_offset": {
       "name": "Set Climate Temperature Offset",
@@ -1240,8 +1251,8 @@
         }
       }
     },
-    "set_away_configuration": {
-      "name": "Set Away Configuration",
+    "set_climate_away_configuration": {
+      "name": "Set Climate Away Configuration",
       "description": "Configure what temperature to use when everyone is away from home.",
       "fields": {
         "entity_id": {
@@ -1262,8 +1273,8 @@
         }
       }
     },
-    "get_temperature_offset": {
-      "name": "Get Temperature Offset",
+    "get_climate_temperature_offset": {
+      "name": "Get Climate Temperature Offset",
       "description": "Fetch the current temperature offset (calibration) for a Tado climate device. Returns the offset value for use in automations.",
       "fields": {
         "entity_id": {
@@ -1272,34 +1283,40 @@
         }
       }
     },
-    "activate_open_window": {
-      "name": "Activate Open Window (Auto-Assist)",
-      "description": "Confirm an open window that Tado has already detected, same as tapping the icon in the Tado app. Only works when Tado's built-in detection has flagged an open window event. For triggering open window mode from external sensors, use 'Set Open Window Mode' instead."
+    "activate_climate_open_window": {
+      "name": "Activate Climate Open Window (Auto-Assist)",
+      "description": "Confirm an open window that Tado has already detected, same as tapping the icon in the Tado app. Only works when Tado's built-in detection has flagged an open window event. For triggering open window mode from external sensors, use 'Set Climate Open Window Mode' instead."
     },
-    "deactivate_open_window": {
-      "name": "Deactivate Open Window",
-      "description": "Cancel an open window that Tado detected itself, or one you confirmed with 'Activate Open Window', and resume normal heating/cooling. This does not clear 'Set Open Window Mode'. That mode writes a frost overlay, so clear it with 'Resume Schedule' or 'Restore Previous State' instead."
+    "deactivate_climate_open_window": {
+      "name": "Deactivate Climate Open Window",
+      "description": "Cancel an open window that Tado detected itself, or one you confirmed with 'Activate Climate Open Window', and resume normal heating/cooling. This does not clear 'Set Climate Open Window Mode'. That mode writes a frost overlay, so clear it with 'Resume Climate Schedule' or 'Restore Climate Previous State' instead."
     },
-    "set_open_window_mode": {
-      "name": "Set Open Window Mode",
-      "description": "Trigger open window mode from external sensors (Zigbee, Z-Wave contact sensors, etc.). Sets the zone to frost protection temperature, with no Tado detection required. Duration defaults to the zone's Open Window Detection timeout setting, or 15 minutes if not configured.",
+    "set_climate_open_window_mode": {
+      "name": "Set Climate Open Window Mode",
+      "description": "Trigger open window mode from external sensors (Zigbee, Z-Wave contact sensors, etc.). Sets the zone to frost protection temperature, with no Tado detection required. Time period defaults to the zone's Open Window Detection timeout setting, or 15 minutes if not configured.",
       "fields": {
-        "duration": {
-          "name": "Duration",
-          "description": "How long to keep open window mode active, in seconds (60–3600). Use 0 for indefinite duration until manual resume. Defaults to the zone's Tado Open Window Detection timeout."
-        },
-        "capture_state": {
-          "name": "Capture State",
-          "description": "Capture the current zone state before applying open window mode, allowing restoration later via the Restore Previous State service. Enabled by default."
+        "time_period": {
+          "name": "Time period",
+          "description": "How long to keep open window mode active, as hours:minutes:seconds (00:01:00 to 01:00:00). Use 00:00:00 for until you resume the zone. Defaults to the zone's Tado Open Window Detection timeout."
         }
       }
     },
-    "restore_previous_state": {
-      "name": "Restore Previous State",
-      "description": "Restore a zone to its state before the last overlay operation. If no captured state exists, falls back to resuming the schedule."
+    "set_climate_active_timetable": {
+      "name": "Set Climate Active Timetable",
+      "description": "Switch which timetable (1 day, 3 day or 7 day) a heating or AC zone follows. The zone's schedule is reloaded from Tado afterwards if it was already loaded.",
+      "fields": {
+        "entity_id": {
+          "name": "Entity",
+          "description": "The climate entities whose timetable to switch."
+        },
+        "timetable": {
+          "name": "Timetable",
+          "description": "The timetable to make active."
+        }
+      }
     },
-    "turn_off_all_zones": {
-      "name": "Turn Off All Rooms",
+    "turn_off_all_climate_zones": {
+      "name": "Turn Off All Climate Rooms",
       "description": "Place every climate zone (heating + AC) into a manual OFF overlay. Mirrors the Tado app's 'Turn OFF all rooms' button. Schedules stay suppressed until you manually resume each zone."
     },
     "refresh": {
@@ -1315,9 +1332,32 @@
     "get_flow_temperature_settings": {
       "name": "Read Flow Temperature Setting",
       "description": "Reads the maximum flow temperature setting that Tado stores for an OpenTherm heating system. Nothing is changed. It uses one API call and returns a status plus the setting as Tado sends it, with serial numbers shortened. A home without an OpenTherm system returns \"not applicable\"."
+    },
+    "resume_climate_schedule": {
+      "name": "Resume Climate Schedule",
+      "description": "Delete any manual override on a heating or air conditioning room and return to the automatic schedule."
+    },
+    "resume_water_heater_schedule": {
+      "name": "Resume Water Heater Schedule",
+      "description": "Delete any manual override on the hot water zone and return to the automatic schedule."
+    },
+    "restore_climate_previous_state": {
+      "name": "Restore Climate Previous State",
+      "description": "Restore a heating or air conditioning room to its state before the last overlay operation. If no captured state exists, falls back to resuming the schedule."
+    },
+    "restore_water_heater_previous_state": {
+      "name": "Restore Water Heater Previous State",
+      "description": "Restore the hot water zone to its state before the last overlay operation. If no captured state exists, falls back to resuming the schedule."
     }
   },
   "selector": {
+    "active_timetable": {
+      "options": {
+        "one_day": "1 day",
+        "three_day": "3 day",
+        "seven_day": "7 day"
+      }
+    },
     "adaptive_preheat_mode": {
       "options": {
         "off": "Off",
@@ -1408,7 +1448,7 @@
     "entity_not_tado_ce": {
       "message": "Entity {entity_id} is not a Tado CE entity (platform={platform})"
     },
-    "entity_no_config_entry": {
+    "entity_config_entry_not_found": {
       "message": "Entity {entity_id} has no config entry association"
     },
     "entry_not_loaded": {
@@ -1435,14 +1475,11 @@
     "timer_set_failed": {
       "message": "Failed to set {duration}min timer for {zone_name}: {error}"
     },
-    "bridge_auth_failed": {
-      "message": "Invalid bridge serial or auth code"
-    },
     "offset_write_failed": {
       "message": "Could not set temperature offset for {entity_id}: all {device_count} device(s) failed to accept the write. Check that the devices are online and try again."
     },
-    "timer_set_failed_all": {
-      "message": "Timer could not be set on any of the {entity_count} zone(s). Reasons: {reasons}"
+    "timer_set_all_zones_failed": {
+      "message": "Timer could not be set. Reason: {reasons}"
     },
     "state_restore_failed": {
       "message": "State Restore failed for {entity_id}. The cloud rejected the call. The captured state was kept so you can try again."
@@ -1450,17 +1487,20 @@
     "resume_schedule_failed": {
       "message": "Resume Schedule failed for {entity_id}. The cloud rejected the call. Please try again."
     },
+    "set_active_timetable_failed": {
+      "message": "Set Climate Active Timetable failed for {entity_id}. The cloud did not confirm the new timetable, so the zone keeps its current one. Please try again."
+    },
     "turn_off_all_no_climate_zones": {
       "message": "No heating or AC zones found in this Tado home, so there is nothing to turn off."
     },
-    "turn_off_all_failed_all": {
+    "turn_off_all_zones_failed": {
       "message": "Failed to turn off any zone. Tado's cloud rejected every call this cycle. Reasons: {reasons}. Check the integration's API quota or try again."
     },
     "auth_required": {
       "message": "Tado authentication required. Please re-authenticate the integration."
     },
     "cloud_write_failed": {
-      "message": "Tado cloud write failed. The cloud rejected the request, please retry."
+      "message": "The change may not have reached Tado: it was rejected, or Tado did not answer in time. Check the zone in the Tado app before repeating it."
     },
     "rate_limited": {
       "message": "Tado API rate-limited. Try again in {retry_after_minutes} min."
@@ -1497,12 +1537,30 @@
     },
     "cloud_blocked": {
       "message": "Tado is blocking requests from this connection for now. Wait a few minutes and try again; no re-login is needed."
+    },
+    "no_matching_zones": {
+      "message": "No Tado CE zone matches the target for this service ({domains}). Pick at least one Tado CE zone."
+    },
+    "zone_not_available": {
+      "message": "{entity_id} is not available as a Tado CE zone right now. It may be disabled or still loading."
+    },
+    "cloud_read_failed": {
+      "message": "Tado's cloud did not return the data. Please try again."
+    },
+    "temperature_out_of_range": {
+      "message": "Value: {temperature} °C. Room: {entity_id}. Allowed range: {minimum} °C to {maximum} °C. Nothing was changed."
+    },
+    "feature_not_enabled": {
+      "message": "Nothing to refresh: the Tado CE setting behind \"{feature}\" is switched off."
+    },
+    "zone_without_device": {
+      "message": "{entity_id} has no Tado device that reports a temperature offset."
     }
   },
   "issues": {
     "auth_token_expired": {
-      "title": "Tado CE: Authentication expired",
-      "description": "The refresh token for home **{home_id}** has expired. Please reconfigure the integration to re-authenticate.\n\nGo to **Settings → Devices & Services → Tado CE → Reconfigure**."
+      "title": "Tado CE: Sign-in to Tado failed",
+      "description": "The saved sign-in for home **{home_id}** no longer works. It may have expired or been revoked, or Tado may have rejected it. Please reconfigure the integration to sign in again.\n\nGo to **Settings → Devices & Services → Tado CE → Reconfigure**."
     },
     "rate_limited": {
       "title": "Tado CE: Cloud rate-limited",
@@ -1514,7 +1572,15 @@
     },
     "battery_low": {
       "title": "Tado CE: low battery in {zone_name}",
-      "description": "Low battery reported by: {devices}.\n\n{advice}\n\nUntil the batteries are replaced the room may not heat as it should. The battery sensor of each device in Home Assistant shows the same reading. This notice clears itself once no device in the room reports a low battery."
+      "description": "Low battery reported by: {devices}.\n\nReplace the {battery_type} batteries within 1-2 weeks.\n\nUntil the batteries are replaced the room may not heat as it should. The battery sensor of each device in Home Assistant shows that device's own reading. This notice clears itself once the devices report a normal battery again."
+    },
+    "battery_critical": {
+      "title": "Tado CE: low battery in {zone_name}",
+      "description": "Critically low battery reported by: {devices}.\n\nReplace the {battery_type} batteries today, as the device may stop working.\n\nUntil the batteries are replaced the room may not heat as it should. The battery sensor of each device in Home Assistant shows that device's own reading. This notice clears itself once the devices report a normal battery again."
+    },
+    "battery_offline": {
+      "title": "Tado CE: low battery in {zone_name}",
+      "description": "Low battery reported by: {devices}.\n\nA device in this room has been offline since {offline_date} and its last battery reading was low or critical. Replace the {battery_type} batteries and check that the device reconnects.\n\nUntil the batteries are replaced the room may not heat as it should. The battery sensor of each device in Home Assistant shows that device's own reading. This notice clears itself once the devices report a normal battery again."
     },
     "homekit_pairing_invalid": {
       "title": "HomeKit pairing lost",
@@ -1599,6 +1665,7 @@
       "already_configured": "This Tado home is already set up in Tado CE.",
       "timeout": "Authorization expired. Please try again.",
       "no_homes": "No Tado homes found for this account.",
+      "wrong_home": "This Tado login doesn't include the home set up in Tado CE. Sign in with the account that owns that home, or use Reconfigure to switch to another home.",
       "reauth_successful": "Re-authentication successful! Your credentials have been refreshed.",
       "reconfigure_successful": "Done. Your new Tado login has been saved."
     },
@@ -1750,7 +1817,7 @@
               "wc_hysteresis": "Change Hysteresis"
             },
             "data_description": {
-              "wc_slope": "How steeply the flow temperature changes with the outdoor temperature (0.3–3.0). Colder than your Design Outdoor Temp the flow is Max Flow whatever the slope. Warmer than that, a higher slope gives a lower flow. Only used when the heating system preset above is Custom and the Heating Curve Shape is Straight line; otherwise it's calculated from your Max/Min Flow, Shutoff and Design Outdoor Temp values, or ignored when Curved is chosen.",
+              "wc_slope": "How steeply the flow temperature changes with the outdoor temperature (0.3–3.0). Colder than your Design Outdoor Temp the flow is Max Flow whatever the slope. Warmer than that, a higher slope gives a lower flow. Room Compensation can still lower it when the rooms that are heating are warmer than their targets. Only used when the heating system preset above is Custom and the Heating Curve Shape is Straight line; otherwise it's calculated from your Max/Min Flow, Shutoff and Design Outdoor Temp values, or ignored when Curved is chosen.",
               "wc_curve_shape": "Straight line is the default and what every preset uses. Curved only works with the Custom heating system and gives a little more flow in mild weather, while Maximum Flow Temperature is still reached at the Design Outdoor Temperature and Minimum at the Shutoff Temperature.",
               "wc_curve_k": "How much the curve bends when Curved is chosen (0.005 to 0.10). The default 0.02 suits radiators and convectors; underfloor heating barely bends, so Straight line is just as good there. A higher number gives more flow in mild weather, and above about 0.03 the bend goes further than the model it comes from supports, so compare with Straight line before keeping it.",
               "wc_design_outdoor_temp": "The coldest temperature you expect in your area (-30 to 10°C)",
@@ -1868,7 +1935,7 @@
       },
       "reset_confirm": {
         "title": "Confirm Reset",
-        "description": "This puts the settings you chose back to their defaults. Reset Everything also turns every feature off except the Internet Bridge, which stays on while its serial and auth code are kept. Turning a feature off removes the entities it created. Your Tado login and per-zone settings are kept, and so are the bridge serial and auth code unless you chose Internet Bridge."
+        "description": "This puts the settings you chose back to their defaults. Reset Everything also turns every feature off except the Internet Bridge, which stays on while its serial and auth code are kept. Turning a feature off removes the entities it created. Your Tado login and per-zone settings are kept, and so are the bridge serial and auth code unless you chose Internet Bridge. Choosing Internet Bridge also turns Weather Compensation off, because it needs the bridge."
       },
       "zone_config": {
         "title": "Zone Configuration",
@@ -1976,6 +2043,7 @@
       "bridge_credentials_required": "Enter both the serial number and the auth code.",
       "wc_requires_bridge": "Weather Compensation needs the Internet Bridge. Turn Weather Compensation off, or turn on Internet Bridge under Hardware Connections.",
       "bridge_auth_failed": "Invalid bridge serial or auth code. Please check and try again",
+      "bridge_unreachable": "Could not reach Tado to check the bridge details. Check that Home Assistant is online, then try again",
       "bridge_serial_invalid": "Only version 3 and later Internet Bridges (serial starting with IB) have the local API. This serial doesn't start with IB, so it may be an older bridge (GW prefix) or a typing mistake. Weather Compensation needs a bridge with the local API.",
       "wc_min_exceeds_max": "Minimum flow temperature cannot exceed maximum flow temperature",
       "homekit_wrong_pin": "The bridge refused the code. Either the 8-digit HomeKit setup code is wrong (check it on the bridge or in the Tado app), or another HomeKit controller (Homebridge, Apple Home, or Home Assistant's own HomeKit) is holding the bridge. Stop the other controller, then try again.",

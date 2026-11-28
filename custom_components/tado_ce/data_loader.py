@@ -59,6 +59,7 @@ _ALL_STORES: dict[str, int] = {
     "zone_capabilities_fp": 0,
     "heating_circuits": 0,
     "heating_circuit_control": 0,
+    "early_start": 0,
     # Auxiliary Data: debounced save
     "wc_state": 10,
     "bridge_health": 10,

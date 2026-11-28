@@ -183,32 +183,6 @@ class ZoneConfigManager:
         )
         return pruned
 
-    async def async_get_or_fetch_overlay_default(self, zone_id: str, api_client: Any) -> str:
-        """Return a zone's overlay_mode, fetching the Tado-app default if unset.
-
-        If the zone already has a stored overlay_mode (an explicit user
-        override OR a previously-cached fetch), it is returned without any
-        cloud call. Otherwise this reads the user's own per-zone default from
-        the cloud (`get_zone_default_overlay`) and caches it into zone_config,
-        so the next call short-circuits on the stored value. Falls back to
-        OVERLAY_MODE_DEFAULT (MANUAL) when the fetch is unavailable, and caches
-        that too. Note: the fetch is gated by the stored-value check, not an
-        in-method guard, so overlapping calls before the first cache-write can
-        each fetch once.
-        """
-        zone_id = str(zone_id)
-        if self.has_zone_override(zone_id, "overlay_mode"):
-            return str(self.get_zone_value(zone_id, "overlay_mode", OVERLAY_MODE_DEFAULT))
-
-        fetched = await api_client.get_zone_default_overlay(zone_id)
-        mode = fetched if fetched in ("MANUAL", "TADO_MODE", "TIMER") else OVERLAY_MODE_DEFAULT
-        await self.async_set_zone_value(zone_id, "overlay_mode", mode)
-        _LOGGER.debug(
-            "Zone Config: zone %s fresh overlay default resolved to %s "
-            "(server default %s)", zone_id, mode, fetched,
-        )
-        return str(mode)
-
     def add_listener(self, callback: Callable[[str, str, Any], None]) -> Callable[[], None]:
         """Subscribe `callback(zone_id, key, value)` to config changes, returns an unsubscribe."""
         self._listeners.append(callback)
@@ -224,7 +198,7 @@ class ZoneConfigManager:
         """Resolve the zone's window type: explicit per-zone override, else the live global setting.
 
         Never caches config_manager's value: Global Window Type is a user-editable
-        Advanced Settings option, unlike overlay_mode's fetch-once cloud default.
+        Advanced Settings option.
         """
         if self.has_zone_override(zone_id, "window_type"):
             window_type = str(self.get_zone_value(zone_id, "window_type", DEFAULT_WINDOW_TYPE))

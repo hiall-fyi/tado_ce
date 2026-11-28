@@ -27,7 +27,6 @@ CACHE_SAVE_INTERVAL_MINUTES = 15  # Save cache every 15 minutes
 
 # Smart Comfort thresholds
 TEMP_EPSILON = 0.05  # °C: minimum temperature difference to consider meaningful
-TEMP_NEAR_TARGET = 0.1  # °C: close enough to target temperature
 DEVIATION_NORMAL_THRESHOLD = 0.3  # °C: deviation below this is "Normal"
 MIN_RATE_THRESHOLD = 0.01  # °C/h: minimum meaningful heating/cooling rate
 DEDUP_TIME_WINDOW = 300  # seconds (5 min): skip duplicate readings within this window
@@ -208,9 +207,6 @@ class ZoneHistory:
         self.zone_name = zone_name
         self.readings: list[SmartComfortReading] = []
         self._history_days = history_days
-        self._last_heating_rate: float | None = None
-        self._last_cooling_rate: float | None = None
-        self._rate_updated_at: datetime | None = None
         # Baseline rates from long-term statistics (the third tier of the
         # 3-tier load strategy: cache → recorder → statistics).
         self._baseline_heating_rate: float | None = None
@@ -282,15 +278,11 @@ class ZoneHistory:
         rate = self._calculate_heating_rate_segments(heating_readings)
 
         if rate is not None and rate > MIN_RATE_THRESHOLD:
-            self._last_heating_rate = rate
-            self._rate_updated_at = dt_util.utcnow()
             return rate
 
         if len(heating_readings) == 0 and len(self.readings) >= MIN_DATA_POINTS:
             rate = self._calculate_heating_rate_segments(self.readings)
             if rate is not None and rate > MIN_RATE_THRESHOLD:
-                self._last_heating_rate = rate
-                self._rate_updated_at = dt_util.utcnow()
                 return rate
 
         if self._baseline_heating_rate is not None:
@@ -402,36 +394,6 @@ class ZoneHistory:
         slope = (n * sum_xy - sum_x * sum_y) / denominator
 
         return round(slope, 2)
-
-    def get_time_to_target(self, current_temp: float, target_temp: float, zone_type: str = "HEATING") -> int | None:
-        """Estimate minutes to reach target_temp, capped at 8 hours.
-
-        Returns 0 when already at target. Uses heating rate for HEATING
-        zones and cooling rate for AIR_CONDITIONING. Returns None when
-        no rate is available.
-        """
-        diff = target_temp - current_temp
-
-        if abs(diff) < TEMP_NEAR_TARGET:
-            return 0
-
-        if zone_type == "HEATING":
-            if diff <= 0:
-                return 0
-            rate = self.get_heating_rate()
-        else:
-            if diff >= 0:
-                return 0
-            rate = self.get_cooling_rate()
-
-        if rate is None or abs(rate) < MIN_RATE_THRESHOLD:
-            return None
-
-        hours = abs(diff) / abs(rate)
-        minutes = int(hours * 60)
-
-        return min(minutes, 480)
-
 
     def get_historical_comparison(
         self,
@@ -630,7 +592,7 @@ class SmartComfortManager:
                 )
                 return 0
 
-            if not isinstance(data, dict):
+            if not isinstance(data, dict) or not isinstance(data.get("zones") or {}, dict):
                 _LOGGER.warning(
                     "Smart Comfort: history cache had unexpected format, "
                     "ignoring and starting fresh",
@@ -643,7 +605,7 @@ class SmartComfortManager:
             for zone_id, zone_data in zones_data.items():
                 try:
                     zone = ZoneHistory.from_dict(zone_data)
-                except (KeyError, TypeError, ValueError):
+                except (KeyError, TypeError, ValueError, AttributeError):
                     _LOGGER.warning(
                         "Smart Comfort: skipping malformed cache record for zone %s",
                         zone_id,
@@ -754,20 +716,6 @@ class SmartComfortManager:
         if zone_id not in self._zones:
             return None
         return self._zones[zone_id].get_cooling_rate()
-
-
-
-    def get_time_to_target(
-        self,
-        zone_id: str,
-        current_temp: float,
-        target_temp: float,
-        zone_type: str = "HEATING",
-    ) -> int | None:
-        """Return estimated minutes to reach target_temp, or None when uncertain."""
-        if zone_id not in self._zones:
-            return None
-        return self._zones[zone_id].get_time_to_target(current_temp, target_temp, zone_type)
 
     def get_historical_comparison(
         self,

@@ -16,6 +16,7 @@ import re
 from typing import TYPE_CHECKING, Any
 
 from .const import DOMAIN
+from .helpers import mask_unique_id
 from .repair_helpers import (
     UNSUPPORTED_UPGRADE_PATH_ISSUE,
     async_create_issue,
@@ -148,16 +149,16 @@ def build_bridge_rekey_callback(
             _LOGGER.warning(
                 "Migration: cannot re-key %s to %s, an entity already uses the "
                 "new id, leaving it in place",
-                entry.unique_id,
-                new_unique_id,
+                mask_unique_id(entry.unique_id),
+                mask_unique_id(new_unique_id),
             )
             return None
 
         _LOGGER.info(
             "Migration: re-keying %s from %s to %s",
             entry.entity_id,
-            entry.unique_id,
-            new_unique_id,
+            mask_unique_id(entry.unique_id),
+            mask_unique_id(new_unique_id),
         )
         return {"new_unique_id": new_unique_id}
 
@@ -191,7 +192,7 @@ async def async_deduplicate_entries(
             "Migration: %d config entries share unique_id %r, "
             "running duplicate cleanup",
             len(my_group),
-            entry.unique_id,
+            mask_unique_id(entry.unique_id),
         )
         _LOGGER.debug(
             "Migration: entries in duplicate group: %s",
@@ -210,7 +211,7 @@ async def async_deduplicate_entries(
         _LOGGER.info(
             "Migration: keeping config entry %s as the canonical "
             "entry for unique_id %r",
-            keeper_entry_id, entry.unique_id,
+            keeper_entry_id, mask_unique_id(entry.unique_id),
         )
 
         if entry.entry_id != keeper_entry_id:
@@ -220,7 +221,7 @@ async def async_deduplicate_entries(
                 "removed by the keeper entry",
                 entry.entry_id,
                 entry.version,
-                entry.unique_id,
+                mask_unique_id(entry.unique_id),
             )
             return False
 
@@ -233,7 +234,7 @@ async def async_deduplicate_entries(
                 "entries for unique_id %r",
                 keeper_entry_id,
                 len(entries_by_version) - 1,
-                entry.unique_id,
+                mask_unique_id(entry.unique_id),
             )
 
             for old_entry in entries_by_version[1:]:
@@ -242,7 +243,7 @@ async def async_deduplicate_entries(
                     "(version %s, unique_id %r)",
                     old_entry.entry_id,
                     getattr(old_entry, "version", "unknown"),
-                    old_entry.unique_id,
+                    mask_unique_id(old_entry.unique_id),
                 )
                 try:
                     await hass.config_entries.async_remove(old_entry.entry_id)
@@ -266,7 +267,7 @@ async def async_deduplicate_entries(
                 _LOGGER.info(
                     "Migration: duplicate cleanup complete for "
                     "unique_id %r, keeper is %s",
-                    entry.unique_id,
+                    mask_unique_id(entry.unique_id),
                     keeper_entry_id,
                 )
     elif len(all_entries) > 1:

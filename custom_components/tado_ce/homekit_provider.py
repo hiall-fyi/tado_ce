@@ -50,6 +50,7 @@ _NO_KEY: _AccessoryKey = (-1, -1)
 # the signature of a stale iid cache after a bridge config-number bump.
 _HAP_RESOURCE_NOT_EXIST = -70409
 _NO_READ_ERROR = object()
+_READ_ERROR_WARN_SECONDS: Final = 3600
 # Target heating state 0x33: 0 is off, 1 is on; the auto and cool values give no power.
 _HOMEKIT_POWER_NAMES: Final = {0: "OFF", 1: "ON"}
 _CHAR_LABELS: Final = {
@@ -134,6 +135,8 @@ class HomeKitLocalProvider:
         self._cache: dict[str, dict[str, dict[_AccessoryKey | None, _CacheEntry]]] = {}
         self._ambiguous_zones: set[str] = set()
         self._read_error_logged: dict[tuple[int, int], int | None] = {}
+        # Next time a read error that keeps repeating warns, per characteristic (time.monotonic).
+        self._read_error_warn_at: dict[tuple[int, int], float] = {}
         self._no_mapped_accessory_warned = False
         # Kept here because the read loop restarts after each reconnect and would forget its back-off.
         self._loop_backoff_level = 0
@@ -143,6 +146,7 @@ class HomeKitLocalProvider:
         self._event_map: dict[tuple[int, int], tuple[str, str]] = {}
         self._cache_refresh_task: asyncio.Task[None] | None = None
         self._subscribe_lock = asyncio.Lock()
+        self._unsubscribe_count = 0
         self._reconnect_pulse_times: deque[float] = deque(maxlen=_SPIN_PULSE_THRESHOLD)
         self.put_rejection_listener: Callable[[str, int, int], None] | None = None
         self.change_listener: Callable[[str, datetime], None] | None = None
@@ -564,9 +568,16 @@ class HomeKitLocalProvider:
                 mapping[0], mapping[1], status, HOMEKIT_CACHE_REFRESH_SECONDS,
             )
 
+    def _subscribe_superseded(self, generation: int) -> bool:
+        """Return True when the subscribe that read `generation` must stop: unsubscribed since, or the client is closing."""
+        return self._unsubscribe_count != generation or self._client.is_closing
+
     async def async_subscribe_events(self) -> None:
         """Subscribe to characteristic events for every mapped zone."""
+        generation = self._unsubscribe_count
         async with self._subscribe_lock:
+            if self._subscribe_superseded(generation):
+                return
             if not self._client.is_connected or not self._client.pairing:
                 _LOGGER.debug(
                     "HomeKit: cannot subscribe, bridge is not connected, "
@@ -576,6 +587,8 @@ class HomeKitLocalProvider:
 
             if not self._accessories:
                 await self.async_refresh_accessories()
+                if self._subscribe_superseded(generation):
+                    return
 
             if not self._accessories:
                 # `async_list_accessories` swallows every bridge error and
@@ -638,6 +651,8 @@ class HomeKitLocalProvider:
             try:
                 subscribe_result = await self._client.pairing.subscribe(subscribe_chars)
             except Exception:
+                if self._subscribe_superseded(generation):
+                    return
                 # A bridge that drops between connect and subscribe must not
                 # propagate to the caller (setup, poll-retry, or reconnect
                 # callback) and crash it. Self-protect like the other
@@ -653,6 +668,8 @@ class HomeKitLocalProvider:
                 await self._client.async_reconnect()
                 return
 
+            if self._subscribe_superseded(generation):
+                return
             # The bridge accepted the subscription, so the rebuilt map is now
             # the live one.
             self._event_map = event_map
@@ -680,6 +697,8 @@ class HomeKitLocalProvider:
                 old.cancel()
                 # cleared first so the done callback sees a superseded task; wait() keeps a cancel of this task propagating
                 await asyncio.wait({old})
+            if self._subscribe_superseded(generation):
+                return
             self._start_cache_refresh_task()
 
     def _start_cache_refresh_task(self) -> None:
@@ -774,13 +793,7 @@ class HomeKitLocalProvider:
             self._client.async_schedule_spin_recovery()
 
     async def _periodic_cache_refresh(self) -> None:
-        """Periodically poll subscribed characteristics so stable values still age fresh.
-
-        The HomeKit bridge only pushes events on value change. Without
-        this poll, stable readings would go stale (> 5 min) and the
-        state reconciler would fall back to cloud. Triggers a reconnect
-        after `CACHE_REFRESH_FAILURE_THRESHOLD` consecutive failures.
-        """
+        """Poll the subscribed characteristics each round so stable values stay fresh, and reconnect after repeated failed rounds."""
         consecutive_failures = 0
         first_refresh = True
         while True:
@@ -809,16 +822,27 @@ class HomeKitLocalProvider:
                         status = data.get("status")
                         if status == _HAP_RESOURCE_NOT_EXIST:
                             stale_found += 1
-                        elif self._read_error_logged.get(key, _NO_READ_ERROR) != status:
-                            self._read_error_logged[key] = status
-                            _LOGGER.debug(
-                                "HomeKit: reading the %s of zone %s (accessory %d) failed, "
-                                "the bridge reported %s.",
-                                _CHAR_LABELS.get(char_type, char_type), zone_id, key[0],
-                                "no status" if status is None else f"error {status}",
-                            )
+                        else:
+                            now = time.monotonic()
+                            if self._read_error_logged.get(key, _NO_READ_ERROR) != status:
+                                self._read_error_logged[key] = status
+                                self._read_error_warn_at[key] = now + _READ_ERROR_WARN_SECONDS
+                                _LOGGER.debug(
+                                    "HomeKit: reading the %s of zone %s (accessory %d) failed, "
+                                    "the bridge reported %s.",
+                                    _CHAR_LABELS.get(char_type, char_type), zone_id, key[0],
+                                    "no status" if status is None else f"error {status}",
+                                )
+                            elif now >= self._read_error_warn_at[key]:
+                                self._read_error_warn_at[key] = now + _READ_ERROR_WARN_SECONDS
+                                _LOGGER.warning(
+                                    "HomeKit: reading the %s of zone %s (accessory %d) has been failing for at least an hour (%s)",
+                                    _CHAR_LABELS.get(char_type, char_type), zone_id, key[0],
+                                    "no status" if status is None else f"error {status}",
+                                )
                         continue
                     values_read += 1
+                    self._read_error_warn_at.pop(key, None)
                     if self._read_error_logged.pop(key, _NO_READ_ERROR) is not _NO_READ_ERROR:
                         _LOGGER.debug(
                             "HomeKit: zone %s accessory %d %s answers reads again",
@@ -908,7 +932,9 @@ class HomeKitLocalProvider:
 
     def unsubscribe_events(self) -> None:
         """Cancel the periodic refresh and disconnect the dispatcher."""
+        self._unsubscribe_count += 1
         self._read_error_logged.clear()
+        self._read_error_warn_at.clear()
         self._no_mapped_accessory_warned = False
         if self._cache_refresh_task is not None:
             self._cache_refresh_task.cancel()

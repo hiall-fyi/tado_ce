@@ -10,7 +10,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .heating_models import HeatingCycle
+from .heating_models import MIN_CYCLE_DURATION, HeatingCycle
 from .helpers import parse_iso_datetime
 
 if TYPE_CHECKING:
@@ -132,11 +132,18 @@ class HeatingCycleStorage:
         return True
 
     async def save_cycle(self, zone_id: str, cycle: HeatingCycle, *, window_days: int = 7) -> None:
-        """Save completed cycle for a zone."""
+        """Store a cycle for a zone, replacing the record with the same start time."""
         if zone_id not in self._data["zones"]:
             self._data["zones"][zone_id] = {"cycles": []}
 
-        self._data["zones"][zone_id]["cycles"].append(cycle.to_dict())
+        record = cycle.to_dict()
+        cycles = self._data["zones"][zone_id]["cycles"]
+        for index, existing in enumerate(cycles):
+            if isinstance(existing, dict) and existing.get("start_time") == record["start_time"]:
+                cycles[index] = record
+                break
+        else:
+            cycles.append(record)
 
         _LOGGER.debug(
             "Heating Storage: stored cycle for zone %s: %s → %s "
@@ -154,12 +161,22 @@ class HeatingCycleStorage:
         # Schedule debounced save
         self._schedule_save()
 
+    async def discard_active_cycle(self, zone_id: str) -> None:
+        """Drop the stored record of a zone's running cycle."""
+        zone = self._data["zones"].get(zone_id)
+        if zone is None:
+            return
+        kept = [c for c in zone["cycles"] if not (isinstance(c, dict) and not c.get("completed") and not c.get("interrupted"))]
+        if len(kept) != len(zone["cycles"]):
+            zone["cycles"] = kept
+            self._schedule_save()
+
     async def get_cycles(
         self,
         zone_id: str,
         window_days: int = 7,
     ) -> list[HeatingCycle]:
-        """Get cycles for a zone within rolling window."""
+        """Get cycles for a zone within rolling window, lasting at least the minimum cycle length."""
         if zone_id not in self._data["zones"]:
             return []
 
@@ -167,11 +184,12 @@ class HeatingCycleStorage:
         cycles_list = self._data["zones"][zone_id]["cycles"]
         cycles = []
         bad_indices: set[int] = set()
+        skipped = 0
 
         for idx, cycle_dict in enumerate(cycles_list):
             try:
                 cycle = HeatingCycle.from_dict(cycle_dict)
-            except (KeyError, TypeError, ValueError):
+            except (KeyError, TypeError, ValueError, AttributeError):
                 _LOGGER.warning(
                     "Heating Storage: dropping malformed cycle record for zone %s",
                     zone_id,
@@ -179,9 +197,18 @@ class HeatingCycleStorage:
                 )
                 bad_indices.add(idx)
                 continue
-            # Only include completed, non-interrupted cycles within window
+            # Only include completed, non-interrupted cycles within window, lasting at least the minimum cycle length
             if cycle.start_time >= cutoff and cycle.completed and not cycle.interrupted:
+                if cycle.end_time is not None and cycle.end_time - cycle.start_time < MIN_CYCLE_DURATION:
+                    skipped += 1
+                    continue
                 cycles.append(cycle)
+
+        if skipped:
+            _LOGGER.debug(
+                "Heating Storage: zone %s left out %d cycle(s) shorter than %d minutes",
+                zone_id, skipped, MIN_CYCLE_DURATION.total_seconds() / 60,
+            )
 
         if bad_indices:
             # Also drop from storage so an idle zone doesn't relog this forever.
@@ -204,7 +231,7 @@ class HeatingCycleStorage:
             for idx, cycle_dict in enumerate(cycles_list):
                 try:
                     cycle = HeatingCycle.from_dict(cycle_dict)
-                except (KeyError, TypeError, ValueError):
+                except (KeyError, TypeError, ValueError, AttributeError):
                     _LOGGER.warning(
                         "Heating Storage: dropping malformed cycle record for zone %s",
                         zone_id,
@@ -226,7 +253,7 @@ class HeatingCycleStorage:
 
         if active:
             _LOGGER.info(
-                "Heating Storage: resuming %d active cycle(s) after "
+                "Heating Storage: found %d active cycle(s) after "
                 "restart",
                 len(active),
             )

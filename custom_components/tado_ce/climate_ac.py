@@ -70,7 +70,7 @@ from .optimistic_helpers import (
     take_resend_target_temp,
 )
 from .ratelimit import async_check_bootstrap_reserve_or_raise as _check_bootstrap_reserve_or_raise
-from .schedule_helpers import get_current_schedule_target
+from .schedule_helpers import get_active_timetable, get_current_schedule_target
 from .write_optimizer import ActionGuard, held_data_unconfirmed
 from .zone_signals import zone_power_is_on, zone_view, zone_view_target
 from .zone_write_ledger import ordered_zone_write
@@ -430,7 +430,7 @@ class TadoACClimate(TadoClimateBase):
         self._expected_swing_mode: str | None = None
         self._expected_swing_horizontal_mode: str | None = None
 
-    def _calculate_hvac_action(self, hvac_mode: HVACMode | None = None, ac_power_on: bool | None = None) -> HVACAction:
+    def _calculate_hvac_action(self, hvac_mode: HVACMode | None = None, *, ac_power_on: bool | None = None) -> HVACAction:
         """Resolve hvac_action for the AC zone.
 
         Priority: explicit OFF mode → API-confirmed power-off → mode-driven
@@ -534,6 +534,9 @@ class TadoACClimate(TadoClimateBase):
         )
         if scheduled_temp is not None:
             attrs["scheduled_target_temperature"] = scheduled_temp
+        active_timetable = get_active_timetable(self._zone_id, self.coordinator.data_loader)
+        if active_timetable is not None:
+            attrs["active_timetable"] = active_timetable
         return attrs
 
     @callback

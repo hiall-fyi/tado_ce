@@ -4,7 +4,7 @@ Snapshots the schedule / overlay / mode that was in effect *before*
 an overlay operation (open-window mode, timer set, AC manual override
 etc.) so the user can restore it cleanly when they're done. Persists
 through HA Store, purges entries older than 24 h on load, and fires
-a restoration event when an overlay disappears between polls.
+a restoration event after an overlay is gone for two consecutive polls.
 """
 
 from __future__ import annotations
@@ -38,12 +38,8 @@ _STALE_THRESHOLD = timedelta(hours=24)
 STORE_VERSION = 1
 SAVE_DELAY = 5
 
-# Defensive gate against transient overlay-cleared events. The Tado
-# API can return a zone with overlay=null on a single poll during
-# quota-reset windows or partial responses; firing the restoration
-# event on a single observation produced false-positive triggers.
-# Requiring N consecutive polls before firing filters those out
-# without changing steady-state behaviour.
+# Consecutive overlay=null polls a zone needs before the restoration event fires,
+# so one partial or quota-reset response does not trigger it.
 CONSECUTIVE_CLEARED_THRESHOLD = 2
 
 
@@ -131,11 +127,11 @@ class StateRestoreManager:
         self._coordinator: TadoDataUpdateCoordinator | None = None
         self._captured: dict[str, CapturedState] = {}
         self._lock = asyncio.Lock()
-        # Tracks whether a zone had an overlay in the previous poll so
-        # `on_poll_update` can detect timer expiry (overlay → no overlay).
+        # Whether a zone is treated as having an overlay: set from each poll, seeded True for loaded
+        # captures, and kept True while the zone's expiry count runs, so `on_poll_update` can detect expiry; restore, clear and forget_zone pop it once no capture of the zone remains, and clear_all empties it.
         self._previous_overlay_states: dict[str, bool] = {}
-        # Consecutive overlay=null polls per zone (see CONSECUTIVE_CLEARED_THRESHOLD
-        # for why). Reset to 0 when an overlay re-appears or once the event fires.
+        # Consecutive overlay=null polls per zone (see CONSECUTIVE_CLEARED_THRESHOLD); dropped when the
+        # overlay re-appears, the event fires, or restore, clear, clear_all or forget_zone runs.
         self._consecutive_cleared: dict[str, int] = {}
         self._store: Store[dict[str, Any]] = Store(
             hass,
@@ -152,7 +148,7 @@ class StateRestoreManager:
     # ------------------------------------------------------------------
 
     async def async_setup(self) -> None:
-        """Restore captured states from the Store and drop entries older than 24 h."""
+        """Load captured states from the Store, drop entries older than 24 h and arm the overlay flag of each kept one."""
         try:
             raw: dict[str, Any] | list[Any] | None = await self._store.async_load()
         except (HomeAssistantError, OSError, json.JSONDecodeError) as e:
@@ -187,6 +183,8 @@ class StateRestoreManager:
                     # unexpected, but losing them is worse than keeping them.
                     pass
             self._captured[key] = state
+            # A restored capture is presumed to still have its overlay until a poll says otherwise.
+            self._previous_overlay_states[state.zone_id] = True
             loaded += 1
 
         if loaded or purged:
@@ -220,7 +218,7 @@ class StateRestoreManager:
         Returns True when a fresh snapshot was stored, False when an
         earlier capture was kept (the original pre-overlay state wins
         so a chain of overlay operations restores back to the
-        pre-chain state, not the previous overlay).
+        pre-chain state) or when there is no coordinator or zone data.
         """
         key = _make_store_key(zone_id, entity_type)
 
@@ -270,11 +268,13 @@ class StateRestoreManager:
         zone_id: str,
         entity_type: str,
     ) -> CapturedState | None:
-        """Consume and return the captured state for one zone, or None."""
+        """Consume and return the captured state for one zone, or None; also resets the zone's expiry tracking."""
         key = _make_store_key(zone_id, entity_type)
 
         async with self._lock:
             state = self._captured.pop(key, None)
+            # The next capture of this zone must not inherit a running expiry count, nor an armed overlay flag once no capture of the zone remains.
+            self._reset_overlay_tracking(zone_id)
             if state:
                 self._schedule_persist()
                 _LOGGER.debug("State Restore: consumed %s for restoration", key)
@@ -288,8 +288,7 @@ class StateRestoreManager:
                 del self._captured[k]
             if to_drop:
                 self._schedule_persist()
-            overlay = self._previous_overlay_states.pop(zone_id, None)
-            cleared = self._consecutive_cleared.pop(zone_id, None)
+            overlay, cleared = self._reset_overlay_tracking(zone_id)
         _LOGGER.debug("State Restore: forgot zone %s (%d capture(s))", zone_id, len(to_drop))
         # A False overlay flag is the steady state of every zone, so only a True one counts as held.
         return bool(to_drop) or bool(overlay) or cleared is not None
@@ -311,17 +310,28 @@ class StateRestoreManager:
             return self._captured.get(key)
 
     async def clear(self, zone_id: str, entity_type: str) -> None:
-        """Drop the captured state for one zone explicitly."""
+        """Drop the capture for one zone and entity type and reset the zone's expiry tracking."""
         key = _make_store_key(zone_id, entity_type)
         async with self._lock:
             if self._captured.pop(key, None):
                 self._schedule_persist()
                 _LOGGER.debug("State Restore: cleared %s", key)
+            # The next capture of this zone must not inherit a running expiry count, nor an armed overlay flag once no capture of the zone remains.
+            self._reset_overlay_tracking(zone_id)
 
+    def _reset_overlay_tracking(self, zone_id: str) -> tuple[bool | None, int | None]:
+        """Drop a zone's expiry count and, when no capture of it remains, its overlay flag; returns what was held."""
+        cleared = self._consecutive_cleared.pop(zone_id, None)
+        if any(c.zone_id == zone_id for c in self._captured.values()):
+            return None, cleared
+        return self._previous_overlay_states.pop(zone_id, None), cleared
 
     async def clear_all(self) -> None:
-        """Drop every captured state (e.g. when the home transitions Away → Home)."""
+        """Drop every captured state and all expiry tracking (e.g. when the home transitions Away → Home)."""
         async with self._lock:
+            # The next captures must not inherit a running expiry count or an armed overlay flag.
+            self._consecutive_cleared.clear()
+            self._previous_overlay_states.clear()
             if self._captured:
                 count = len(self._captured)
                 self._captured.clear()
@@ -332,24 +342,12 @@ class StateRestoreManager:
                     count,
                 )
 
-    def get_diagnostics_summary(self) -> list[dict[str, str]]:
-        """Return a privacy-safe summary of captured states for the diagnostics dump."""
-        return [
-            {
-                "zone_id": state.zone_id,
-                "entity_type": state.entity_type,
-                "captured_at": state.captured_at,
-                "source": state.source,
-            }
-            for state in self._captured.values()
-        ]
-
     # ------------------------------------------------------------------
     # Timer expiry detection (called from coordinator poll cycle)
     # ------------------------------------------------------------------
 
     def on_poll_update(self, coordinator_data: dict[str, Any]) -> None:
-        """Fire a restoration event when an overlay disappears between polls.
+        """Fire a restoration event after a zone's overlay is gone for two consecutive polls.
 
         Called from `coordinator._async_update_data` after each poll.
         An overlay vanishing means the timer expired or someone
@@ -409,7 +407,8 @@ class StateRestoreManager:
 
         for zone_id_str in zone_states:
             zd = zone_states[zone_id_str]
-            self._previous_overlay_states[zone_id_str] = bool(zd and zd.get("overlay"))
+            # Stay armed while the confirmation counter runs, else the flag drops after poll one and the threshold is unreachable.
+            self._previous_overlay_states[zone_id_str] = bool(zd and zd.get("overlay")) or zone_id_str in self._consecutive_cleared
 
     def _fire_restoration_event(
         self,

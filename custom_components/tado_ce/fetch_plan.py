@@ -16,7 +16,6 @@ from .const import (
     FORCEABLE_FETCH_WEATHER,
     MAX_SCHEDULE_FETCH_CALLS,
     OFFSET_DRIFT_REFRESH_SECONDS,
-    is_climate_zone,
 )
 
 if TYPE_CHECKING:
@@ -35,6 +34,7 @@ KIND_MOBILE_FULL = "mobile_full"
 KIND_DEVICES = "devices"
 KIND_OFFSETS_FULL = "offsets_full"
 KIND_CAPABILITIES = "capabilities"
+KIND_EARLY_START = "early_start"
 KIND_HEATING_CIRCUITS = "heating_circuits"
 KIND_CIRCUIT_CONTROL = "circuit_control"
 KIND_SVC_SCHEDULES = "svc_schedules"
@@ -241,6 +241,7 @@ class PlanInputs:
     forced_types: frozenset[str] = frozenset()
     zones_info: tuple[ZoneFact, ...] | None = None
     cached_capability_ids: frozenset[str] = frozenset()
+    cached_early_start_ids: frozenset[str] = frozenset()
     unlisted_zone_count: int = 0
     svc_zone_ids: frozenset[str] = frozenset()
     gaps: Mapping[str, GapRecord] = field(default_factory=dict)
@@ -360,6 +361,7 @@ def full_group_items(
         if cfg.offsets:
             items.append(grouped(KIND_OFFSETS_FULL, 0))
         items.append(grouped(KIND_CAPABILITIES, 0))
+        items.append(grouped(KIND_EARLY_START, 0))
         if cfg.heating_circuits:
             items += [grouped(KIND_HEATING_CIRCUITS, 0), grouped(KIND_CIRCUIT_CONTROL, 0)]
         if inputs.svc_zone_ids:
@@ -367,9 +369,11 @@ def full_group_items(
         return tuple(items), True
     # Counts come from the stored list and may be 0: the item says "run this step" against the list the sync fetches.
     if cfg.offsets:
-        items.append(grouped(KIND_OFFSETS_FULL, sum(1 for z in zones if is_climate_zone(z.type) and z.has_offset_serial)))
+        items.append(grouped(KIND_OFFSETS_FULL, sum(1 for z in zones if z.type == "HEATING" and z.has_offset_serial)))
     uncached = sum(1 for z in zones if z.type in CAPABILITY_ZONE_TYPES and z.id not in inputs.cached_capability_ids)
     items.append(grouped(KIND_CAPABILITIES, uncached + NEW_ZONE_FULL_SYNC_CALLS * inputs.unlisted_zone_count))
+    uncached_early = sum(1 for z in zones if z.type == "HEATING" and z.id not in inputs.cached_early_start_ids)
+    items.append(grouped(KIND_EARLY_START, uncached_early + inputs.unlisted_zone_count))
     if cfg.heating_circuits:
         items.append(grouped(KIND_HEATING_CIRCUITS, 1))
         items.append(grouped(KIND_CIRCUIT_CONTROL, sum(1 for z in zones if z.type == "HEATING")))
@@ -397,9 +401,11 @@ def steady_state_cost(
     user_has_custom_interval: bool,
     zones_info: tuple[ZoneFact, ...] | None = None,
     cached_capability_ids: frozenset[str] = frozenset(),
+    cached_early_start_ids: frozenset[str] = frozenset(),
     unlisted_zone_count: int = 0,
 ) -> SteadyStateCost:
-    """The floor-free per-poll and per-full-sync cost, priced by the same group builder the plan uses."""
+    """The floor-free per-poll and per-full-sync cost; the full-sync part is priced by the group builder the plan uses."""
+    # WHY: HomeKit polls inside the dial skip the zone fetch; pricing it on every poll cut a tight-quota HomeKit home from 94 to 82 of 100 calls in the replay rig with no safety gain.
     zone_fetch = 0 if homekit_connected and not user_has_custom_interval else 1
     frequent_mobile = config.mobile and config.mobile_frequent
     per_poll = zone_fetch + config.weather + config.home_state + frequent_mobile
@@ -409,7 +415,8 @@ def steady_state_cost(
         return SteadyStateCost(per_poll, FULL_SYNC_FIXED_CALLS + mobile_in_full)
     priced = PlanInputs(
         now=_PRICING_EPOCH, config=config, zones_info=zones,
-        cached_capability_ids=cached_capability_ids, unlisted_zone_count=unlisted_zone_count,
+        cached_capability_ids=cached_capability_ids, cached_early_start_ids=cached_early_start_ids,
+        unlisted_zone_count=unlisted_zone_count,
     )
     group, _ = full_group_items(priced, mobile_in_full=mobile_in_full, reason="steady")
     return SteadyStateCost(per_poll, sum(i.calls for i in group))
@@ -430,8 +437,8 @@ def post_items(inputs: PlanInputs, *, offsets_in_sync: bool) -> tuple[FetchItem,
     """The spends that follow the sync: drift refresh, forced capabilities, first-load offset reads."""
     items: list[FetchItem] = []
     zones = inputs.zones_info
-    has_climate = zones is not None and any(is_climate_zone(z.type) for z in zones)
-    if inputs.config.offsets and has_climate and not offsets_in_sync and _drift_due(inputs):
+    has_heating = zones is not None and any(z.type == "HEATING" for z in zones)
+    if inputs.config.offsets and has_heating and not offsets_in_sync and _drift_due(inputs):
         items.append(FetchItem(KIND_OFFSETS_DRIFT, 1, GATE_SOFT_LOW, "due", phase=PHASE_POST))
     if inputs.caps_changed and not gap_blocks(inputs.gaps.get(KIND_CAPABILITIES_FORCED), inputs.now):
         items.append(FetchItem(

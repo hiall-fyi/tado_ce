@@ -24,6 +24,7 @@ from .bridge_enrichment import bridge_cleanup_suffixes
 from .const import DOMAIN
 from .device_manager import _hub_identifier
 from .entity_registry import ENTITY_REGISTRY
+from .helpers import mask_unique_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -260,31 +261,29 @@ def cleanup_orphan_device(
     if device_entry:
         _LOGGER.info(
             "Entity Cleanup: removing orphan device %s (identifier %s)",
-            device_entry.name, identifier,
+            device_entry.name, mask_unique_id(identifier),
         )
         device_registry.async_remove_device(device_entry.id)
         return True
     return False
 
 
-def cleanup_orphan_devices(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-    coordinator: TadoDataUpdateCoordinator,
+def _remove_empty_devices(
+    hass: HomeAssistant, entry: ConfigEntry, keep_hub: str | None, *, only_identifier: str | None = None,
 ) -> int:
-    """Sweep every device with zero remaining entities (hub device always protected)."""
+    """Remove this entry's devices that have no entity left, keeping the hub device named by `keep_hub`; `only_identifier` names the one device to consider."""
     device_registry = dr.async_get(hass)
     entity_registry = er.async_get(hass)
-
-    # Hub device identifier: never remove
-    hub_identifier = _hub_identifier(str(coordinator.home_id))
 
     removed = 0
     for device_entry in list(device_registry.devices):
         if device_entry.config_entry_id != entry.entry_id:
             continue
 
-        if (DOMAIN, hub_identifier) in device_entry.identifiers:
+        if only_identifier is not None and (DOMAIN, only_identifier) not in device_entry.identifiers:
+            continue
+
+        if keep_hub is not None and (DOMAIN, keep_hub) in device_entry.identifiers:
             continue
 
         device_entities = er.async_entries_for_device(
@@ -301,6 +300,71 @@ def cleanup_orphan_devices(
             removed += 1
 
     return removed
+
+
+def cleanup_orphan_devices(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    coordinator: TadoDataUpdateCoordinator,
+) -> int:
+    """Sweep every device with zero remaining entities (hub device always protected)."""
+    # Hub device identifier: never remove
+    return _remove_empty_devices(hass, entry, _hub_identifier(str(coordinator.home_id)))
+
+
+def remove_home_registry_rows(hass: HomeAssistant, entry: ConfigEntry, old_home_id: str) -> tuple[int, int]:
+    """Remove one home's entities of this entry (unique id `tado_ce_<home>_...`), then the devices left without an entity; return (entities, devices) removed."""
+    entity_registry = er.async_get(hass)
+    prefix = f"tado_ce_{old_home_id}_"
+
+    removed_entity_ids = [
+        entity_id
+        for entity_id, entity_entry in _entry_entities(entity_registry, entry)
+        if entity_entry.unique_id.startswith(prefix)
+    ]
+    for entity_id in removed_entity_ids:
+        entity_registry.async_remove(entity_id)
+
+    devices = _remove_empty_devices(hass, entry, None)
+    _LOGGER.info(
+        "Entity Cleanup: removed %d entities and %d devices of the previous home",
+        len(removed_entity_ids), devices,
+    )
+    return len(removed_entity_ids), devices
+
+
+def remove_zone_registry_rows(
+    hass: HomeAssistant, entry: ConfigEntry, home_id: str, zone_id: str, live_serials: frozenset[str],
+) -> tuple[int, int]:
+    """Remove a removed room's entity rows of this entry, then its zone device when no entity is left on it; return (entities, devices) removed."""
+    entity_registry = er.async_get(hass)
+    identifier = f"tado_ce_{home_id}_zone_{zone_id}"
+    device_entry = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, identifier), entry.entry_id)
+    zone_prefix = f"tado_ce_{home_id}_zone_{zone_id}_"
+    circuit_id = f"tado_ce_{home_id}_{zone_id}_heating_circuit"
+    serial_prefix = f"tado_ce_{home_id}_device_"
+
+    removed_entity_ids = [
+        entity_id
+        for entity_id, entity_entry in _entry_entities(entity_registry, entry)
+        if entity_entry.unique_id.startswith(zone_prefix)
+        or entity_entry.unique_id == circuit_id
+        or (
+            entity_entry.unique_id.startswith(serial_prefix)
+            and device_entry is not None
+            and entity_entry.device_id == device_entry.id
+            and not any(f"_device_{serial}_" in entity_entry.unique_id for serial in live_serials)
+        )
+    ]
+    for entity_id in removed_entity_ids:
+        entity_registry.async_remove(entity_id)
+
+    devices = _remove_empty_devices(hass, entry, None, only_identifier=identifier) if device_entry is not None else 0
+    if removed_entity_ids or devices:
+        _LOGGER.info(
+            "Entity Cleanup: removed %d entities and %d devices of zone %s", len(removed_entity_ids), devices, zone_id,
+        )
+    return len(removed_entity_ids), devices
 
 
 # ---------------------------------------------------------------------------
@@ -374,11 +438,12 @@ def queue_cleanup_flags(
     if coordinator is not None:
         coordinator._pending_cleanup.setdefault(entry.entry_id, {}).update(cleanup_flags)
         return
-    # No coordinator to queue onto; log so this doesn't fail silently.
+    # Nothing to queue onto while the entry is not loaded; the warning is the only signal.
     _LOGGER.warning(
         "Options: disabled feature(s) %s while the integration wasn't "
-        "ready; their entities won't clean up until this feature is "
-        "toggled off again once the integration is running normally",
+        "loaded; their entities won't clean up on their own: switch the "
+        "feature on and off again once Tado CE has loaded, or remove the "
+        "entities by hand",
         ", ".join(sorted(cleanup_flags)),
     )
 
@@ -425,7 +490,7 @@ def _apply_cleanup_context(
         ):
             _LOGGER.debug(
                 "Entity Cleanup: removing entity %s (unique_id %s)",
-                entity_id, unique_id,
+                entity_id, mask_unique_id(unique_id),
             )
             entity_registry.async_remove(entity_id)
             removed += 1
@@ -443,7 +508,7 @@ def _apply_cleanup_context(
                 _LOGGER.debug(
                     "Entity Cleanup: removing zone entity %s "
                     "(unique_id %s)",
-                    entity_id, unique_id,
+                    entity_id, mask_unique_id(unique_id),
                 )
                 entity_registry.async_remove(entity_id)
                 removed += 1

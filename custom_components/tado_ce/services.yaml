@@ -31,7 +31,7 @@ set_climate_timer:
             - label: "Manual (until changed)"
               value: "manual"
 
-set_schedule_temperature:
+set_climate_schedule_temperature:
   target:
     entity:
       integration: tado_ce
@@ -84,23 +84,24 @@ set_water_heater_timer:
           step: 1
           unit_of_measurement: "°C"
 
-resume_schedule:
+resume_climate_schedule:
   target:
     entity:
       integration: tado_ce
-      domain:
-        - climate
-        - water_heater
+      domain: climate
+
+resume_water_heater_schedule:
+  target:
+    entity:
+      integration: tado_ce
+      domain: water_heater
 
 set_climate_temperature_offset:
+  target:
+    entity:
+      integration: tado_ce
+      domain: climate
   fields:
-    entity_id:
-      required: true
-      example: climate.tado_ce_lounge
-      selector:
-        entity:
-          integration: tado_ce
-          domain: climate
     offset:
       required: true
       example: 0.5
@@ -135,15 +136,12 @@ identify_device:
       selector:
         text:
 
-set_away_configuration:
+set_climate_away_configuration:
+  target:
+    entity:
+      integration: tado_ce
+      domain: climate
   fields:
-    entity_id:
-      required: true
-      example: climate.tado_ce_lounge
-      selector:
-        entity:
-          integration: tado_ce
-          domain: climate
     mode:
       required: true
       example: "auto"
@@ -174,61 +172,68 @@ set_away_configuration:
           max: 100
           step: 50
 
-get_temperature_offset:
-  fields:
-    entity_id:
-      required: true
-      example: climate.tado_ce_lounge
-      selector:
-        entity:
-          integration: tado_ce
-          domain: climate
+get_climate_temperature_offset:
+  target:
+    entity:
+      integration: tado_ce
+      domain: climate
 
 get_flow_temperature_settings:
 
-activate_open_window:
+activate_climate_open_window:
   target:
     entity:
       integration: tado_ce
       domain: climate
 
-deactivate_open_window:
+deactivate_climate_open_window:
   target:
     entity:
       integration: tado_ce
       domain: climate
 
-set_open_window_mode:
+set_climate_open_window_mode:
   target:
     entity:
       integration: tado_ce
       domain: climate
   fields:
-    duration:
+    time_period:
       required: false
-      example: 900
+      example: "00:30:00"
       selector:
-        number:
-          min: 60
-          max: 3600
-          step: 60
-          unit_of_measurement: "s"
-          mode: box
-    capture_state:
-      required: false
-      default: true
-      selector:
-        boolean:
+        time:
 
-restore_previous_state:
+set_climate_active_timetable:
   target:
     entity:
       integration: tado_ce
-      domain:
-        - climate
-        - water_heater
+      domain: climate
+  fields:
+    timetable:
+      required: true
+      example: "three_day"
+      selector:
+        select:
+          translation_key: active_timetable
+          options:
+            - one_day
+            - three_day
+            - seven_day
 
-turn_off_all_zones:
+restore_climate_previous_state:
+  target:
+    entity:
+      integration: tado_ce
+      domain: climate
+
+restore_water_heater_previous_state:
+  target:
+    entity:
+      integration: tado_ce
+      domain: water_heater
+
+turn_off_all_climate_zones:
 
 refresh:
   fields:

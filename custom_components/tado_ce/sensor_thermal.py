@@ -39,7 +39,6 @@ class TadoThermalInertiaSensor(CoordinatorEntity["HeatingCycleCoordinator"], Sen
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, home_id)
         self._attr_native_unit_of_measurement = "min"
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_icon = _meta.icon
         self._attr_entity_category = get_entity_category(_meta)
 
     @property
@@ -89,7 +88,6 @@ class TadoHeatingRateSensor(CoordinatorEntity["HeatingCycleCoordinator"], Sensor
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, home_id)
         self._attr_native_unit_of_measurement = "°C/h"
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_icon = _meta.icon
         self._attr_entity_category = get_entity_category(_meta)
 
     @property
@@ -139,7 +137,6 @@ class TadoPreheatTimeSensor(CoordinatorEntity["HeatingCycleCoordinator"], Sensor
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, home_id)
         self._attr_native_unit_of_measurement = "min"
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_icon = _meta.icon
         self._attr_entity_category = get_entity_category(_meta)
         self._current_temp: float | None = None
         self._target_temp: float | None = None
@@ -224,7 +221,6 @@ class TadoConfidenceSensor(CoordinatorEntity["HeatingCycleCoordinator"], SensorE
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, home_id)
         self._attr_native_unit_of_measurement = "%"
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_icon = _meta.icon
         self._attr_entity_category = get_entity_category(_meta)
 
     @property
@@ -284,7 +280,6 @@ class TadoHeatingAccelerationSensor(CoordinatorEntity["HeatingCycleCoordinator"]
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, home_id)
         self._attr_native_unit_of_measurement = "°C/h²"
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_icon = _meta.icon
         self._attr_entity_category = get_entity_category(_meta)
 
     @property
@@ -342,7 +337,6 @@ class TadoApproachFactorSensor(CoordinatorEntity["HeatingCycleCoordinator"], Sen
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, home_id)
         self._attr_native_unit_of_measurement = "%"
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_icon = _meta.icon
         self._attr_entity_category = get_entity_category(_meta)
 
     @property

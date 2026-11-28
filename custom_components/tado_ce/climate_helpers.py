@@ -11,8 +11,9 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import logging
+import time
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import CALLBACK_TYPE, Event, EventStateChangedData, callback
@@ -32,9 +33,11 @@ if TYPE_CHECKING:
 
 from .const import DOMAIN, is_valid_device_offset
 from .helpers import (
+    get_optimistic_window,
     mask_api_url,
     parse_percentage,
     parse_temperature_celsius,
+    resolve_home_presence,
 )
 from .optimistic_helpers import (
     _request_still_queued,
@@ -124,10 +127,9 @@ def update_preset_mode(coordinator: TadoDataUpdateCoordinator) -> str | None:
     from homeassistant.components.climate import PRESET_AWAY, PRESET_HOME
 
     try:
-        home_state = (coordinator.data or {}).get("home_state")
-        if home_state:
-            presence = home_state.get("presence", "HOME")
-            return PRESET_HOME if presence == "HOME" else PRESET_AWAY
+        resolved = resolve_home_presence(coordinator.data, coordinator.last_zone_fetch_ts())
+        if resolved:
+            return PRESET_HOME if resolved[0] == "HOME" else PRESET_AWAY
     except (KeyError, AttributeError):
         _LOGGER.debug(
             "Climate: could not derive preset mode from home state, "
@@ -165,7 +167,13 @@ async def inject_presence_state(
     else:
         resolved_presence = presence
 
-    home_state: dict[str, Any] = {"presenceLocked": locked}
+    now = time.time()
+    # The stamp lets the reader hand the answer back to Tado's zone data once the window is over.
+    home_state: dict[str, Any] = {
+        "presenceLocked": locked,
+        "injected_at": now,
+        "injected_until": now + get_optimistic_window(coordinator.hass, coordinator.config_entry.entry_id),
+    }
     if resolved_presence is not None:
         home_state["presence"] = resolved_presence
 
@@ -193,6 +201,14 @@ async def inject_heating_circuit(
     if coordinator.data is None:
         coordinator.data = {}
     coordinator.data["heating_circuit_control"] = control
+
+
+async def inject_early_start(coordinator: TadoDataUpdateCoordinator, zone_id: str, enabled: bool) -> None:
+    """Carry an accepted Early Start write into the loader cache, the Store and coordinator data."""
+    stored = await coordinator.data_loader.async_merge_store("early_start", {zone_id: {"enabled": enabled}})
+    if coordinator.data is None:
+        coordinator.data = {}
+    coordinator.data["early_start"] = stored
 
 
 async def inject_child_lock(
@@ -350,7 +366,7 @@ class RollbackPlan:
     own_power_off: bool | None = None
     wording: CloudWriteWording = CloudWriteWording()
     log: logging.Logger | None = None
-    failure: Callable[[Any], HomeAssistantError] = cloud_write_failed
+    failure: Callable[[Any], HomeAssistantError] = field(default=cloud_write_failed)
     # The sequence the caller's own stamp produced; None means the caller stamped nothing and the transaction arms.
     sequence: int | None = None
     # Run before the send when the entry point skipped the reserve gate for a HomeKit route; a refusal restores the card.
@@ -470,7 +486,7 @@ async def run_cloud_write(
     except (TadoAuthError, TadoRateLimitError, TadoBlockedError) as e:
         log.warning(plan.wording.refused, {**texts, "error": e})
         _fail_and_revert(entity, plan, intent, sequence, log)
-        dispatch_to_service_call(e, entity.coordinator.config_entry, entity.hass, entity.coordinator)
+        dispatch_to_service_call(e, entity.coordinator.config_entry, entity.hass)
     except aiohttp.ClientError as e:
         log.warning(plan.wording.network, {**texts, "error": mask_api_url(str(e) or type(e).__name__)})
         warned = True
@@ -697,23 +713,13 @@ def subscribe_external_sensors(
     return [unsub]
 
 
-def unsubscribe_external_sensors(unsub_list: list[CALLBACK_TYPE]) -> None:
-    """Invoke every unsubscribe callback and clear the list in place."""
-    for unsub in unsub_list:
-        unsub()
-    unsub_list.clear()
-
-
 def setup_climate_external_sensor_subscription(
     entity: Any,
     zone_id: str,
-    unsub_list: list[CALLBACK_TYPE],
     *,
     label: str = "",
 ) -> list[CALLBACK_TYPE]:
     """Subscribe a climate entity to external temperature + humidity sensor changes."""
-    unsubscribe_external_sensors(unsub_list)
-
     zcm = entity.coordinator.zone_config_manager
 
     @callback

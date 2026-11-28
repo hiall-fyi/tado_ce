@@ -27,7 +27,7 @@ from aiohomekit.exceptions import (
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .helpers import mask_home_id
+from .helpers import mask_home_id, mask_serial
 from .repair_helpers import (
     async_create_homekit_pairing_invalid_issue,
     async_dismiss_homekit_pairing_invalid_issue,
@@ -36,7 +36,6 @@ from .write_optimizer import _log_task_exception
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
 
     from homeassistant.config_entries import ConfigFlowResult
     from homeassistant.core import HomeAssistant
@@ -131,10 +130,9 @@ class HomeKitClient:
         self,
         hass: HomeAssistant,
         home_id: str,
-        pairing_path: Path | None = None,
         controller: Any | None = None,
     ) -> None:
-        """Initialise the client. `pairing_path` is accepted for legacy compatibility but ignored.
+        """Initialise the client.
 
         `controller` is an optional shared, already-started aiohomekit
         Controller. When supplied, this client uses it and never builds or
@@ -176,6 +174,11 @@ class HomeKitClient:
     def is_connected(self) -> bool:
         """Return True when the HomeKit pairing is currently connected."""
         return self._is_connected
+
+    @property
+    def is_closing(self) -> bool:
+        """Return True once this client has been told to close for good."""
+        return self._closing
 
     @property
     def pairing(self) -> Any | None:
@@ -270,6 +273,10 @@ class HomeKitClient:
             # talk to the bridge fails the connect, not the first
             # data read.
             await self._pairing.list_accessories_and_characteristics()
+            # A disconnect began while the probe ran, so this connect must not mark the client connected.
+            if self._closing:
+                await self._shutdown_invalid_pairing()
+                return False
             self._is_connected = True
             self._register_config_changed_listener()
             self._last_connected = dt_util.utcnow().isoformat()
@@ -315,6 +322,8 @@ class HomeKitClient:
     async def async_disconnect(self) -> None:
         """Disconnect, cancel any reconnect loop, and release the pairing."""
         self._closing = True
+        # Read as disconnected from the first await, so a subscribe that starts now connects nothing.
+        self._is_connected = False
         if self._reconnect_task and not self._reconnect_task.done():
             self._reconnect_task.cancel()
             try:
@@ -388,7 +397,8 @@ class HomeKitClient:
         if self._controller is not None and self._owns_controller:
             try:
                 await self._controller.async_stop()
-            except HomeKitException:
+            except Exception:
+                # Broad: teardown must finish even if the controller stop fails.
                 _LOGGER.debug(
                     "HomeKit: error stopping controller, proceeding",
                     exc_info=True,
@@ -527,7 +537,7 @@ class HomeKitClient:
                     bridge_hkid = desc.id
                     _LOGGER.info(
                         "HomeKit: found unpaired bridge %s on the network",
-                        bridge_hkid,
+                        mask_serial(bridge_hkid),
                     )
                     break
                 saw_paired_bridge = True
@@ -839,6 +849,15 @@ def _normalise_homekit_pin(raw: str) -> str | None:
     return None
 
 
+async def _cancel_pairing(flow: TadoCEOptionsFlow) -> ConfigFlowResult:
+    """Leave the pairing step without pairing: pending general edits are saved with HomeKit off, pending advanced edits are flushed."""
+    if flow._pending_general_options:
+        flow._pending_general_options["homekit_enabled"] = False
+        return await flow._advance_first_enable("homekit_pairing")
+    _flush_pending_advanced_options(flow)
+    return await flow.async_step_init()
+
+
 async def async_step_homekit_pairing(
     flow: TadoCEOptionsFlow,
     user_input: dict[str, Any] | None = None,
@@ -851,10 +870,13 @@ async def async_step_homekit_pairing(
 
     coordinator = getattr(flow.config_entry, "runtime_data", None)
     if coordinator is None:
-        # runtime_data is absent during a failed/retrying setup or right
-        # after unload (HA delattr's it on unload). Pairing needs a live
-        # coordinator for the bridgeless check and the post-pair mapping
-        # rebuild below, so there's no meaningful form to show without it.
+        # Pending edits live only in this flow: leave by the cancelled exit so they are saved, abort only when nothing is pending.
+        if flow._pending_general_options or flow._pending_advanced_options:
+            _LOGGER.warning(
+                "HomeKit: pairing skipped because the integration isn't loaded, "
+                "pending options were saved without pairing",
+            )
+            return await _cancel_pairing(flow)
         return flow.async_abort(reason="integration_not_ready")
 
     zones_info = coordinator.data.get("zones_info") or []
@@ -863,11 +885,7 @@ async def async_step_homekit_pairing(
         if user_input is not None:
             # Acknowledged: cancel pairing the same way an empty PIN does,
             # since there's no bridge for this home to pair with.
-            if flow._pending_general_options:
-                flow._pending_general_options["homekit_enabled"] = False
-                return await flow._advance_first_enable("homekit_pairing")
-            _flush_pending_advanced_options(flow)
-            return await flow.async_step_init()
+            return await _cancel_pairing(flow)
         return flow.async_show_form(
             step_id="homekit_pairing",
             data_schema=vol.Schema({}),
@@ -879,11 +897,7 @@ async def async_step_homekit_pairing(
         if not raw:
             # Empty PIN: cancel pairing and revert the homekit_enabled
             # flag so the options form reflects the actual state.
-            if flow._pending_general_options:
-                flow._pending_general_options["homekit_enabled"] = False
-                return await flow._advance_first_enable("homekit_pairing")
-            _flush_pending_advanced_options(flow)
-            return await flow.async_step_init()
+            return await _cancel_pairing(flow)
 
         pin = _normalise_homekit_pin(raw)
         if pin is None:
@@ -915,6 +929,7 @@ async def async_step_homekit_pairing(
                     )
                 finally:
                     await client.async_disconnect()
+                    await client.async_stop_controller()
 
                 if mapping.get("serial_to_zone"):
                     _LOGGER.info("HomeKit: pairing complete and mapping saved")
@@ -1007,11 +1022,14 @@ async def async_step_homekit_unpair(
                 flow.hass, home_id, controller=_shared_controller(flow),
             )
 
-            # Connect first so the unpair can also clear the bridge's
-            # side of the pairing, best-effort, falls through on
-            # failure.
-            await client.async_connect()
-            await client.async_unpair()
+            try:
+                # Connect first so the unpair can also clear the bridge's
+                # side of the pairing, best-effort, falls through on
+                # failure.
+                await client.async_connect()
+                await client.async_unpair()
+            finally:
+                await client.async_stop_controller()
 
             _LOGGER.info("HomeKit: unpair successful")
         except HomeKitException:
@@ -1030,18 +1048,15 @@ async def async_step_homekit_unpair(
 
         queue_cleanup_flags(flow.config_entry, flow.config_entry.options, new_options)
 
-        # Unpair itself is the recovery path for an offline bridge, and local
-        # credentials are already cleared above by this point, so a missing
-        # runtime_data here must not abort: only log that the entities won't
-        # be auto-cleaned up until the next successful reload.
+        # Unpair is the recovery path for an offline bridge, so a missing runtime_data must not abort; only warn.
         coordinator = getattr(flow.config_entry, "runtime_data", None)
         if coordinator is not None and hasattr(coordinator, "_pending_cleanup"):
             coordinator._pending_cleanup.setdefault(flow.config_entry.entry_id, {})["_cleanup_homekit"] = True
         elif coordinator is None:
             _LOGGER.warning(
                 "HomeKit: unpair completed but the integration isn't loaded, "
-                "so the HomeKit entities won't be cleaned up until the next "
-                "successful reload",
+                "so the HomeKit entities won't be cleaned up on their own; "
+                "remove them by hand",
             )
 
         return flow.async_create_entry(title="", data=new_options)

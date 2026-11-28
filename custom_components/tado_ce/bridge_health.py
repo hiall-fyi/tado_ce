@@ -31,7 +31,6 @@ class BridgeHealthState:
             ),
             "last_error": self.last_error,
             "last_response_time_ms": self.last_response_time_ms,
-            "is_connected": self.is_connected,
         }
 
     @classmethod
@@ -53,8 +52,6 @@ class BridgeHealthState:
             state.last_error = data["last_error"]  # type: ignore[assignment]
         if isinstance(data.get("last_response_time_ms"), (int, float)):
             state.last_response_time_ms = float(data["last_response_time_ms"])  # type: ignore[arg-type]
-        if isinstance(data.get("is_connected"), bool):
-            state.is_connected = data["is_connected"]  # type: ignore[assignment]
         return state
 
 

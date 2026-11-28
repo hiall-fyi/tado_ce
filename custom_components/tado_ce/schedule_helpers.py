@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, time, timedelta
+import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.util import dt as dt_util
 
+from .const import ACTIVE_TIMETABLE_IDS, DAY_TYPES, DOMAIN
+from .exceptions import TadoAuthError, TadoBlockedError, TadoRateLimitError
+
 if TYPE_CHECKING:
+    from .coordinator import TadoDataUpdateCoordinator
     from .data_loader import DataLoader
+
+_LOGGER = logging.getLogger(__name__)
 
 
 # Day type mapping for schedule parsing
@@ -129,3 +136,68 @@ def get_current_schedule_target(
         return None
 
     return _extract_block_celsius(current_block)
+
+
+def get_active_timetable(zone_id: str, data_loader: DataLoader | None) -> str | None:
+    """The zone's cached timetable type in lower case, or None when nothing usable is cached."""
+    if data_loader is None:
+        return None
+    schedule = data_loader.get_zone_schedule(zone_id)
+    if not isinstance(schedule, dict):
+        return None
+    timetable = schedule.get("type")
+    if isinstance(timetable, str) and timetable in ACTIVE_TIMETABLE_IDS:
+        return timetable.lower()
+    return None
+
+
+async def async_refresh_zone_schedule(
+    coordinator: TadoDataUpdateCoordinator,
+    zone_id: str,
+    zone_name: str,
+    *,
+    fallback_type: str | None = None,
+) -> bool:
+    """Fetch the zone's schedule into the cache and tell the calendar; with a fallback type a failed fetch still stores that type."""
+    schedule_data: dict[str, Any] | None = None
+    failure: Exception | None = None
+    try:
+        schedule_data = await coordinator.api_client.get_zone_schedule(zone_id)
+    except Exception as err:
+        # With no fallback the caller decides; with one, the entry below must be written before any error leaves.
+        if fallback_type is None:
+            raise
+        failure = err
+
+    if schedule_data:
+        entry = {
+            "name": zone_name,
+            "type": schedule_data.get("type", "ONE_DAY"),
+            "blocks": schedule_data.get("blocks") or {},
+            "failed_days": schedule_data.get("failed_days") or [],
+        }
+        await coordinator.data_loader.async_merge_store("schedules", {zone_id: entry})
+        _LOGGER.debug("Schedule: refreshed %s, cache updated", zone_name)
+        coordinator.hass.bus.async_fire(f"{DOMAIN}_schedule_updated", {"zone_id": zone_id, "zone_name": zone_name})
+        # Only the calendar hears the event; the climate attributes read the cache on their next state write.
+        coordinator.async_update_listeners()
+        return True
+
+    if fallback_type is None:
+        _LOGGER.warning(
+            "Schedule: fetch for %s returned no data, calendar will keep the previous schedule",
+            zone_name,
+        )
+        return False
+
+    _LOGGER.warning(
+        "Schedule: switched %s to %s but could not read its blocks (%s), press Refresh Schedule to load them",
+        zone_name, fallback_type, failure if failure is not None else "no data",
+    )
+    fallback = {"name": zone_name, "type": fallback_type, "blocks": {}, "failed_days": list(DAY_TYPES[fallback_type])}
+    await coordinator.data_loader.async_merge_store("schedules", {zone_id: fallback})
+    coordinator.hass.bus.async_fire(f"{DOMAIN}_schedule_updated", {"zone_id": zone_id, "zone_name": zone_name})
+    coordinator.async_update_listeners()
+    if isinstance(failure, TadoAuthError | TadoRateLimitError | TadoBlockedError):
+        raise failure
+    return False

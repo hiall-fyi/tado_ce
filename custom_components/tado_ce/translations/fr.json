@@ -144,7 +144,7 @@
     },
     "calendar": {
       "schedule": {
-        "name": "Programme"
+        "name": "{zone_name}"
       }
     },
     "climate": {
@@ -335,6 +335,21 @@
           },
           "status": {
             "name": "Statut"
+          },
+          "rate_limited_until": {
+            "name": "Limite de requêtes jusqu'à"
+          },
+          "cloud_health": {
+            "name": "État de santé du cloud"
+          },
+          "weather_last_fetched_min_ago": {
+            "name": "Météo : dernière récupération (il y a min)"
+          },
+          "presence_last_fetched_min_ago": {
+            "name": "Présence : dernière récupération (il y a min)"
+          },
+          "mobile_devices_last_fetched_min_ago": {
+            "name": "Appareils mobiles : dernière récupération (il y a min)"
           }
         }
       },
@@ -1180,10 +1195,6 @@
         }
       }
     },
-    "resume_schedule": {
-      "name": "Reprendre le programme",
-      "description": "Supprimez toute dérogation manuelle et revenez au programme automatique."
-    },
     "set_climate_temperature_offset": {
       "name": "Régler l'Offset de température climatique",
       "description": "Réglez l'Offset de température (étalonnage) d'un appareil climatique Tado. Compatible avec l'intégration Tado intégrée.",
@@ -1222,8 +1233,8 @@
         }
       }
     },
-    "set_away_configuration": {
-      "name": "Définir la configuration d'absence",
+    "set_climate_away_configuration": {
+      "name": "Définir la configuration d'absence du climat",
       "description": "Configurez la température à utiliser lorsque tout le monde est absent de la maison.",
       "fields": {
         "entity_id": {
@@ -1244,8 +1255,8 @@
         }
       }
     },
-    "get_temperature_offset": {
-      "name": "Obtenir l'Offset de température",
+    "get_climate_temperature_offset": {
+      "name": "Obtenir l'Offset de température du climat",
       "description": "Récupérez l'Offset de température actuel (étalonnage) d'un appareil climatique Tado. Renvoie la valeur de l'Offset pour utilisation dans les automatisations.",
       "fields": {
         "entity_id": {
@@ -1254,38 +1265,30 @@
         }
       }
     },
-    "activate_open_window": {
-      "name": "Activer la fenêtre ouverte (Auto-Assist)",
-      "description": "Confirmez l'ouverture d'une fenêtre déjà détectée par Tado, comme si vous appuyiez sur l'icône dans l'application Tado. Cette fonction ne fonctionne que lorsque le système de détection intégré de Tado a signalé l'ouverture d'une fenêtre. Pour activer le mode fenêtre ouverte à partir de capteurs externes, utilisez plutôt « Définir le mode fenêtre ouverte »."
+    "activate_climate_open_window": {
+      "name": "Activer la fenêtre ouverte du climat (Auto-Assist)",
+      "description": "Confirmez l'ouverture d'une fenêtre déjà détectée par Tado, comme si vous appuyiez sur l'icône dans l'application Tado. Cette fonction ne fonctionne que lorsque le système de détection intégré de Tado a signalé l'ouverture d'une fenêtre. Pour activer le mode fenêtre ouverte à partir de capteurs externes, utilisez plutôt « Définir le mode fenêtre ouverte du climat »."
     },
-    "deactivate_open_window": {
-      "name": "Désactiver la fenêtre ouverte",
-      "description": "Annulez une fenêtre ouverte détectée par Tado lui-même ou confirmée avec « Activer la fenêtre ouverte », puis reprenez le chauffage ou la climatisation normalement. Cela n'annule pas « Définir le mode fenêtre ouverte ». Ce mode applique un Overlay antigel : annulez-le plutôt avec « Reprendre le programme » ou « Rétablir l'état antérieur »."
+    "deactivate_climate_open_window": {
+      "name": "Désactiver la fenêtre ouverte du climat",
+      "description": "Annulez une fenêtre ouverte détectée par Tado lui-même ou confirmée avec « Activer la fenêtre ouverte du climat », puis reprenez le chauffage ou la climatisation normalement. Cela n'annule pas « Définir le mode fenêtre ouverte du climat ». Ce mode applique un Overlay antigel : annulez-le plutôt avec « Reprendre le programme climatique » ou « Rétablir l'état antérieur climatique »."
     },
-    "set_open_window_mode": {
-      "name": "Définir le mode fenêtre ouverte",
-      "description": "Activez le mode « Fenêtre ouverte » à partir de capteurs externes (Zigbee, capteurs de contact Z-Wave, etc.). Règle la zone sur la température de protection contre le gel, sans qu'une détection par Tado soit nécessaire. La durée par défaut correspond au délai de détection de fenêtre ouverte défini pour la zone, ou à 15 minutes si ce paramètre n'est pas configuré.",
+    "set_climate_open_window_mode": {
+      "name": "Définir le mode fenêtre ouverte du climat",
+      "description": "Active le mode « fenêtre ouverte » à partir de capteurs externes (Zigbee, capteurs de contact Z-Wave, etc.). Règle la zone sur la température de protection contre le gel, sans qu'une détection par Tado soit nécessaire. La durée par défaut correspond au délai d'Open Window Detection défini pour la zone, ou à 15 minutes si ce paramètre n'est pas configuré.",
       "fields": {
-        "duration": {
-          "name": "Durée",
-          "description": "Durée de maintien du mode fenêtre ouverte, en secondes (60–3600). Utilisez 0 pour une durée indéterminée, jusqu'à la reprise manuelle. Par défaut, le délai de détection de fenêtre ouverte Tado de la zone."
-        },
-        "capture_state": {
-          "name": "Capturer l'état",
-          "description": "Capturez l'état actuel de la zone avant d'appliquer le mode fenêtre ouverte, afin de pouvoir le rétablir plus tard avec le service Rétablir l'état antérieur. Activé par défaut."
+        "time_period": {
+          "name": "Période",
+          "description": "Durée pendant laquelle le mode « fenêtre ouverte » doit rester actif, exprimée en heures:minutes:secondes (de 00:01:00 à 01:00:00). Utilisez 00:00:00 pour le garder actif jusqu'à ce que vous repreniez le programme de la zone. La valeur par défaut correspond au délai d'Open Window Detection de Tado pour la zone."
         }
       }
     },
-    "restore_previous_state": {
-      "name": "Rétablir l'état antérieur",
-      "description": "Rétablissez une zone dans l'état où elle se trouvait avant la dernière opération Overlay. Sans état capturé, le programme reprend."
-    },
-    "turn_off_all_zones": {
-      "name": "Éteindre toutes les pièces",
+    "turn_off_all_climate_zones": {
+      "name": "Éteindre toutes les pièces climatiques",
       "description": "Placez chaque zone climatique (chauffage + climatisation) en Overlay manuel « OFF ». Reproduit le bouton « Éteindre toutes les pièces » de l'application Tado. Les programmes restent suspendus tant que vous ne reprenez pas chaque zone manuellement."
     },
-    "set_schedule_temperature": {
-      "name": "Régler la température programmée",
+    "set_climate_schedule_temperature": {
+      "name": "Régler la température programmée du climat",
       "description": "Définissez la température cible d'une zone à partir d'une automatisation, comme un calendrier de vacances, sans que Smart Valve Control ne la considère comme une dérogation manuelle. Smart Valve Control continue de fonctionner pour atteindre cette température cible et reprend votre programme habituel au prochain changement de bloc.",
       "fields": {
         "temperature": {
@@ -1315,6 +1318,36 @@
     "get_flow_temperature_settings": {
       "name": "Lecture du réglage de la température de départ",
       "description": "Lit la valeur de température de départ maximale enregistrée par Tado pour un système de chauffage OpenTherm. Aucune modification n'est effectuée. Cette opération utilise un seul appel API et renvoie un statut ainsi que la valeur telle que transmise par Tado, les numéros de série étant tronqués. Pour une maison ne disposant pas d'un système OpenTherm, la valeur renvoyée est « not applicable »."
+    },
+    "set_climate_active_timetable": {
+      "name": "Définir la grille horaire active du climat",
+      "description": "Change la grille horaire (1 jour, 3 jours ou 7 jours) que suit une zone de chauffage ou de climatisation. Le programme de la zone est ensuite rechargé depuis Tado s'il avait déjà été chargé.",
+      "fields": {
+        "entity_id": {
+          "name": "Entité",
+          "description": "Les entités climate dont la grille horaire doit être changée."
+        },
+        "timetable": {
+          "name": "Grille horaire",
+          "description": "La grille horaire à activer."
+        }
+      }
+    },
+    "resume_climate_schedule": {
+      "name": "Reprendre le programme climatique",
+      "description": "Supprimez toute dérogation manuelle d'une pièce chauffée ou climatisée et revenez au programme automatique."
+    },
+    "resume_water_heater_schedule": {
+      "name": "Reprendre le programme du chauffe-eau",
+      "description": "Supprimez toute dérogation manuelle de la zone d'eau chaude et revenez au programme automatique."
+    },
+    "restore_climate_previous_state": {
+      "name": "Rétablir l'état antérieur climatique",
+      "description": "Rétablissez une pièce chauffée ou climatisée dans l'état où elle se trouvait avant la dernière opération Overlay. Sans état capturé, le programme reprend."
+    },
+    "restore_water_heater_previous_state": {
+      "name": "Rétablir l'état antérieur du chauffe-eau",
+      "description": "Rétablissez la zone d'eau chaude dans l'état où elle se trouvait avant la dernière opération Overlay. Sans état capturé, le programme reprend."
     }
   },
   "selector": {
@@ -1399,6 +1432,13 @@
         "linear": "Ligne droite",
         "exponential": "Courbe"
       }
+    },
+    "active_timetable": {
+      "options": {
+        "one_day": "1 jour",
+        "three_day": "3 jours",
+        "seven_day": "7 jours"
+      }
     }
   },
   "exceptions": {
@@ -1408,7 +1448,7 @@
     "entity_not_tado_ce": {
       "message": "L'entité {entity_id} n'est pas une entité Tado CE (platform={platform})"
     },
-    "entity_no_config_entry": {
+    "entity_config_entry_not_found": {
       "message": "L'entité {entity_id} n'a pas d'association d'entrée de configuration"
     },
     "entry_not_loaded": {
@@ -1435,14 +1475,11 @@
     "timer_set_failed": {
       "message": "Échec du réglage de la minuterie de {duration} min pour {zone_name} : {error}"
     },
-    "bridge_auth_failed": {
-      "message": "Numéro de série ou code d'authentification du bridge non valide"
-    },
     "offset_write_failed": {
       "message": "Impossible de définir l'Offset de température pour {entity_id} : aucun des {device_count} appareil(s) n'a accepté l'écriture. Vérifiez que les appareils sont en ligne et réessayez."
     },
-    "timer_set_failed_all": {
-      "message": "La minuterie n'a pu être réglée sur aucune des {entity_count} zone(s). Raisons : {reasons}"
+    "timer_set_all_zones_failed": {
+      "message": "La minuterie n'a pas pu être réglée. Motif : {reasons}"
     },
     "state_restore_failed": {
       "message": "Échec de la restauration de l'état pour {entity_id}. Le cloud a rejeté l'appel. L'état capturé a été conservé afin que vous puissiez réessayer."
@@ -1453,14 +1490,11 @@
     "turn_off_all_no_climate_zones": {
       "message": "Aucune zone de chauffage ou de climatisation n'a été détectée dans cette maison Tado ; il n'y a donc rien à désactiver."
     },
-    "turn_off_all_failed_all": {
+    "turn_off_all_zones_failed": {
       "message": "Aucune zone n'a pu être éteinte. Le cloud de Tado a rejeté tous les appels au cours de ce cycle. Motifs : {reasons}. Vérifiez le quota API de l'intégration ou réessayez."
     },
     "auth_required": {
       "message": "Authentification Tado requise. Veuillez réauthentifier l'intégration."
-    },
-    "cloud_write_failed": {
-      "message": "Échec de l'écriture dans le cloud Tado. Le cloud a rejeté la requête. Veuillez réessayer."
     },
     "rate_limited": {
       "message": "L'API Tado est soumise à une limite de requêtes. Veuillez réessayer dans {retry_after_minutes} minutes."
@@ -1497,12 +1531,36 @@
     },
     "cloud_blocked": {
       "message": "Tado bloque pour l'instant les requêtes provenant de cette connexion. Veuillez patienter quelques minutes, puis réessayez ; il n'est pas nécessaire de vous reconnecter."
+    },
+    "no_matching_zones": {
+      "message": "Aucune zone Tado CE ne correspond à la cible de ce service (domaines {domains}). Sélectionnez au moins une zone Tado CE."
+    },
+    "zone_not_available": {
+      "message": "{entity_id} n'est pas disponible en tant que zone Tado CE pour le moment. Elle est peut-être désactivée ou en cours de chargement."
+    },
+    "set_active_timetable_failed": {
+      "message": "« Définir la grille horaire active du climat » a échoué pour {entity_id}. Le cloud n'a pas confirmé la nouvelle grille horaire, la zone conserve donc la sienne. Veuillez réessayer."
+    },
+    "cloud_read_failed": {
+      "message": "Le cloud de Tado n'a pas renvoyé les données. Veuillez réessayer."
+    },
+    "cloud_write_failed": {
+      "message": "Il se peut que la modification n'ait pas été prise en compte par Tado : soit elle a été rejetée, soit Tado n'a pas répondu à temps. Vérifiez la zone dans l'application Tado avant de réessayer."
+    },
+    "zone_without_device": {
+      "message": "{entity_id} ne correspond à aucun appareil Tado qui signale un décalage de température."
+    },
+    "feature_not_enabled": {
+      "message": "Rien à actualiser : le paramètre Tado CE associé à « {feature} » est désactivé."
+    },
+    "temperature_out_of_range": {
+      "message": "Valeur : {temperature} °C. Pièce : {entity_id}. Plage autorisée : de {minimum} °C à {maximum} °C. Aucune modification n'a été apportée."
     }
   },
   "issues": {
     "auth_token_expired": {
-      "title": "Tado CE : Authentification expirée",
-      "description": "Le jeton d'actualisation de la maison **{home_id}** a expiré. Veuillez reconfigurer l'intégration pour vous réauthentifier.\n\nAllez dans **Paramètres → Appareils et services → Tado CE → Reconfigurer**."
+      "title": "Tado CE : Échec de la connexion à Tado",
+      "description": "La connexion enregistrée pour la maison **{home_id}** ne fonctionne plus. Elle a peut-être expiré ou a été révoquée, ou bien Tado l'a peut-être rejetée. Veuillez reconfigurer l'intégration pour vous reconnecter.\n\nAccédez à **Paramètres → Appareils et services → Tado CE → Reconfigurer**."
     },
     "svc_sensor_missing": {
       "title": "Smart Valve Control désactivé pour {zone_name}",
@@ -1530,7 +1588,15 @@
     },
     "battery_low": {
       "title": "Tado CE : batterie faible dans {zone_name}",
-      "description": "Niveau de batterie faible signalé par : {devices}.\n\n{advice}\n\nTant que les piles n'auront pas été remplacées, la pièce risque de ne pas se chauffer correctement. Le capteur de batterie de chaque appareil dans Home Assistant affiche la même valeur. Cette alerte disparaîtra d'elle-même dès qu'aucun appareil de la pièce ne signale de niveau de batterie faible."
+      "description": "Niveau de batterie faible signalé par : {devices}.\n\nRemplacez les piles ({battery_type}) d'ici 1 à 2 semaines.\n\nTant que les piles n'auront pas été remplacées, la pièce risque de ne pas se chauffer correctement. Le capteur de batterie de chaque appareil dans Home Assistant affiche la valeur propre à cet appareil. Cette alerte disparaîtra d'elle-même dès que les appareils signaleront de nouveau un niveau de batterie normal."
+    },
+    "battery_critical": {
+      "title": "Tado CE : batterie faible dans {zone_name}",
+      "description": "Niveau de batterie critique signalé par : {devices}.\n\nRemplacez les piles ({battery_type}) aujourd'hui, car l'appareil risque de cesser de fonctionner.\n\nTant que les piles n'auront pas été remplacées, la pièce risque de ne pas se chauffer correctement. Le capteur de batterie de chaque appareil dans Home Assistant affiche la valeur propre à cet appareil. Cette alerte disparaîtra d'elle-même dès que les appareils signaleront de nouveau un niveau de batterie normal."
+    },
+    "battery_offline": {
+      "title": "Tado CE : batterie faible dans {zone_name}",
+      "description": "Niveau de batterie faible signalé par : {devices}.\n\nUn appareil de cette pièce est hors ligne depuis le {offline_date} et son dernier niveau de batterie était faible ou critique. Remplacez les piles ({battery_type}) et vérifiez que l'appareil se reconnecte.\n\nTant que les piles n'auront pas été remplacées, la pièce risque de ne pas se chauffer correctement. Le capteur de batterie de chaque appareil dans Home Assistant affiche la valeur propre à cet appareil. Cette alerte disparaîtra d'elle-même dès que les appareils signaleront de nouveau un niveau de batterie normal."
     }
   },
   "config": {
@@ -1599,6 +1665,7 @@
       "already_configured": "Cette maison Tado est déjà configurée dans Tado CE.",
       "timeout": "L'autorisation a expiré. Veuillez réessayer.",
       "no_homes": "Aucune maison Tado n'a été trouvée pour ce compte.",
+      "wrong_home": "Cette connexion Tado n'inclut pas la maison configurée dans Tado CE. Connectez-vous avec le compte qui possède cette maison, ou utilisez Reconfigurer pour passer à une autre maison.",
       "reauth_successful": "Réauthentification réussie ! Vos informations d'identification ont été mises à jour.",
       "reconfigure_successful": "Terminé. Votre nouvelle connexion Tado a été enregistrée."
     },
@@ -1879,7 +1946,7 @@
               "wc_curve_k": "Courbure de la courbe"
             },
             "data_description": {
-              "wc_slope": "Amplitude de variation de la température de départ en fonction de la température extérieure (0,3–3,0). Lorsque la température extérieure est inférieure à la température extérieure de référence, la température de départ est égale à la température de départ maximale, quelle que soit la pente. Au-delà de cette température, une pente plus raide entraîne une température de départ plus basse. Ce paramètre n’est utilisé que lorsque le préréglage du système de chauffage ci-dessus est défini sur « Personnalisé » et que la forme de la courbe de chauffage est « Ligne droite » ; dans le cas contraire, il est calculé à partir des valeurs de température de départ maximale/minimale, d’arrêt du chauffage et de température extérieure de référence, ou ignoré lorsque l’option « Courbe » est sélectionnée.",
+              "wc_slope": "Amplitude de variation de la température de départ en fonction de la température extérieure (0,3–3,0). Lorsque la température extérieure est inférieure à la température extérieure de référence, la température de départ est égale à la température de départ maximale, quelle que soit la pente. Au-delà de cette température, une pente plus raide entraîne une température de départ plus basse. La compensation de la pièce peut malgré tout l’abaisser lorsque les pièces qui chauffent sont plus chaudes que leur température cible. Ce paramètre n’est utilisé que lorsque le préréglage du système de chauffage ci-dessus est défini sur « Personnalisé » et que la forme de la courbe de chauffage est « Ligne droite » ; dans le cas contraire, il est calculé à partir des valeurs de température de départ maximale/minimale, d’arrêt du chauffage et de température extérieure de référence, ou ignoré lorsque l’option « Courbe » est sélectionnée.",
               "wc_design_outdoor_temp": "La température la plus froide à laquelle vous vous attendez dans votre région (-30 à 10°C)",
               "wc_max_flow_temp": "Température maximale de départ que votre chaudière doit atteindre lorsque la température extérieure est la plus basse (30–80 °C). Ce paramètre sert de base au calcul automatique de la pente, sauf si le paramètre défini ci-dessus est « Personnalisé ».",
               "wc_min_flow_temp": "Température minimale de départ, également utilisée lorsque le chauffage s'arrête (30–60 °C). Elle sert de base au calcul automatique de la pente, sauf si le paramètre défini ci-dessus est « Personnalisé ».",
@@ -1949,7 +2016,7 @@
         }
       },
       "reset_confirm": {
-        "description": "Cette opération remet les réglages choisis à leurs valeurs par défaut. Tout réinitialiser désactive aussi toutes les fonctionnalités sauf l'Internet Bridge, qui reste activé tant que son numéro de série et son code d'authentification sont conservés. Désactiver une fonctionnalité supprime les entités qu'elle a créées. Votre connexion Tado et les réglages par zone sont conservés, ainsi que le numéro de série et le code d'authentification du bridge, sauf si vous avez choisi Internet Bridge.",
+        "description": "Cette opération remet les réglages choisis à leurs valeurs par défaut. Tout réinitialiser désactive aussi toutes les fonctionnalités sauf l'Internet Bridge, qui reste activé tant que son numéro de série et son code d'authentification sont conservés. Désactiver une fonctionnalité supprime les entités qu'elle a créées. Votre connexion Tado et les réglages par zone sont conservés, ainsi que le numéro de série et le code d'authentification du bridge, sauf si vous avez choisi Internet Bridge. Choisir Internet Bridge désactive aussi la compensation météorologique, car elle a besoin du bridge.",
         "title": "Confirmer la réinitialisation"
       },
       "homekit_pairing": {
@@ -1974,6 +2041,7 @@
     "error": {
       "interval_out_of_range": "L'intervalle d'interrogation doit être compris entre 1 et 1440 minutes.",
       "bridge_auth_failed": "Numéro de série ou code d'authentification du bridge non valide. Veuillez vérifier ces informations et réessayer.",
+      "bridge_unreachable": "Impossible de joindre Tado pour vérifier les informations du bridge. Vérifiez que Home Assistant est connecté à Internet, puis réessayez",
       "wc_min_exceeds_max": "La température minimale de départ ne peut pas dépasser la température maximale de départ",
       "bridge_serial_invalid": "Seuls les Internet Bridges de version 3 et ultérieure (numéro de série commençant par IB) disposent de l'API locale. Ce numéro de série ne commence pas par IB : il peut s'agir d'un ancien bridge (préfixe GW) ou d'une faute de frappe. La compensation météorologique nécessite un bridge doté de l'API locale.",
       "homekit_wrong_pin": "Le bridge a rejeté le code. Soit le code de configuration HomeKit à 8 chiffres est incorrect (vérifiez-le sur le bridge ou dans l'application Tado), soit un autre contrôleur HomeKit (Homebridge, Apple Home ou le HomeKit intégré à Home Assistant) a pris le contrôle du bridge. Arrêtez l'autre contrôleur, puis réessayez.",

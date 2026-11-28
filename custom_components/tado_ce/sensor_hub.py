@@ -137,9 +137,6 @@ class TadoHubSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntity
         self._attr_entity_category = get_entity_category(_meta)
         self._attr_device_info = get_hub_device_info(coordinator.home_id)
         self._attr_native_value = None
-        # Only set static icon; subclasses with dynamic icons define @property
-        if _meta.icon is not None:
-            self._attr_icon = _meta.icon
         # Only override when registry says disabled (HA default is True)
         if not _meta.enabled_default:
             self._attr_entity_registry_enabled_default = False
@@ -576,13 +573,6 @@ class TadoTokenStatusSensor(TadoHubSensor):
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
         super().__init__(coordinator, "sensor_token_status")
-
-    @property
-    def icon(self) -> str:
-        """Return the icon for the sensor."""
-        if self._attr_native_value == "valid":
-            return "mdi:key"
-        return "mdi:key-alert"
 
     @callback
     def update(self) -> None:

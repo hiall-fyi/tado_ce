@@ -13,6 +13,17 @@ from .insights_models import (
 )
 
 
+def battery_cell_label(device_type: str | None) -> str:
+    """Return the cells a Tado device takes: AA, 2x AA or 3x AAA."""
+    if device_type:
+        device_lower = device_type.lower()
+        if "trv" in device_lower or "va0" in device_lower or "ru0" in device_lower:
+            return "2x AA"
+        if "thermostat" in device_lower or "su0" in device_lower:
+            return "3x AAA"
+    return "AA"
+
+
 def calculate_battery_recommendation(
     battery_state: str,
     zone_name: str,
@@ -23,13 +34,7 @@ def calculate_battery_recommendation(
     if battery_state.upper() == "NORMAL":
         return ""
 
-    battery_type = "AA batteries"
-    if device_type:
-        device_lower = device_type.lower()
-        if "trv" in device_lower or "va0" in device_lower or "ru0" in device_lower:
-            battery_type = "2x AA batteries"
-        elif "thermostat" in device_lower or "su0" in device_lower:
-            battery_type = "3x AAA batteries"
+    battery_type = f"{battery_cell_label(device_type)} batteries"
 
     if offline_since and battery_state.upper() in ("LOW", "CRITICAL"):
         return (

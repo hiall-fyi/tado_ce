@@ -90,12 +90,6 @@ def reset_blocked_record(home_id: str | None) -> None:
     _BLOCKED_RECORDS.pop(_blocked_key(home_id), None)
 
 
-def blocked_attempts(home_id: str | None) -> int:
-    """Return the BLOCKED attempts counted for a home."""
-    record = _BLOCKED_RECORDS.get(_blocked_key(home_id))
-    return record.attempts if record is not None else 0
-
-
 def _backoff_seconds(retry_after: object) -> float:
     """Return a finite window length in [floor, cap]; garbage input counts as 0."""
     if isinstance(retry_after, bool) or not isinstance(retry_after, int | float):

@@ -26,7 +26,6 @@ class FieldEnrichment:
     device_class: str | None = None
     state_class: str | None = None
     unit_of_measurement: str | None = None
-    icon: str | None = None
     entity_category: str | None = "diagnostic"
     translation_key: str | None = None
     enabled_default: bool = True
@@ -206,7 +205,7 @@ def resolve_entities(
                     device_class=e.device_class,
                     state_class=e.state_class,
                     unit_of_measurement=e.unit_of_measurement,
-                    icon=e.icon,
+                    icon=None,
                     entity_category=e.entity_category,
                     translation_key=e.translation_key,
                     enabled_default=e.enabled_default,

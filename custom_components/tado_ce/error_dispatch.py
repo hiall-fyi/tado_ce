@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, NoReturn
+from typing import TYPE_CHECKING, NoReturn
 
 from homeassistant.exceptions import HomeAssistantError
 
@@ -27,20 +27,8 @@ def _apply_cloud_error_recovery(
     exc: TadoAuthError | TadoRateLimitError | TadoBlockedError,
     config_entry: ConfigEntry,
     hass: HomeAssistant,
-    coordinator: Any,
 ) -> None:
-    """Run the recovery side effect for a typed cloud error, no raise / no log.
-
-    Single source of truth for both dispatchers: an auth error starts the
-    reauth flow (per HA docs, `ConfigEntryAuthFailed` raised from a
-    service-call path does NOT trigger reauth, so the explicit
-    `async_start_reauth` is required). Rate-limit and blocked errors need no
-    side effect: the API client wrapper already recorded them in CloudHealth.
-
-    `coordinator` is typed `Any` to avoid a circular import: annotating it
-    as TadoDataUpdateCoordinator would import coordinator.py, which imports
-    this module.
-    """
+    """Start reauth for an auth error; rate-limit and blocked errors need nothing here because the API client already recorded them."""
     if isinstance(exc, TadoAuthError):
         config_entry.async_start_reauth(hass)
 
@@ -49,36 +37,20 @@ def handle_background_write_error(
     exc: TadoAuthError | TadoRateLimitError | TadoBlockedError,
     config_entry: ConfigEntry,
     hass: HomeAssistant,
-    coordinator: Any,
     log_message: str,
 ) -> None:
-    """Non-raising dispatch for background-controller cloud-write errors.
-
-    The non-raising sibling of `dispatch_to_service_call`. Both the Smart
-    Valve and Offset Sync controllers run fire-and-forget off the
-    coordinator's post-sync loop, so they cannot raise a HomeAssistantError
-    to a caller, so they log and recover. `log_message` is the caller's
-    already-formatted warning.
-    """
+    """Log a typed cloud-write error and run its recovery without raising, for fire-and-forget callers."""
     _LOGGER.warning("%s", log_message)
-    _apply_cloud_error_recovery(exc, config_entry, hass, coordinator)
-    # NB: param order (exc, config_entry, hass, coordinator) matches the two
-    # sibling dispatchers above: keep all three aligned.
+    _apply_cloud_error_recovery(exc, config_entry, hass)
 
 
 def dispatch_to_service_call(
     exc: TadoAuthError | TadoRateLimitError | TadoBlockedError,
     config_entry: ConfigEntry,
     hass: HomeAssistant,
-    coordinator: Any,
 ) -> NoReturn:
-    """Pattern B canonical dispatch: runs cloud-error recovery, then raises.
-
-    The raising sibling of `handle_background_write_error`: same recovery side
-    effect (reauth / back-off via `_apply_cloud_error_recovery`), but surfaces
-    a translated HomeAssistantError to the service caller afterwards.
-    """
-    _apply_cloud_error_recovery(exc, config_entry, hass, coordinator)
+    """Run the recovery for a typed cloud error, then raise the translated HomeAssistantError to the caller."""
+    _apply_cloud_error_recovery(exc, config_entry, hass)
 
     if isinstance(exc, TadoAuthError):
         raise HomeAssistantError(
