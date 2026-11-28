@@ -144,7 +144,7 @@
     },
     "calendar": {
       "schedule": {
-        "name": "Schema"
+        "name": "{zone_name}"
       }
     },
     "climate": {
@@ -335,6 +335,21 @@
           },
           "status": {
             "name": "Status"
+          },
+          "rate_limited_until": {
+            "name": "Verzoeklimiet tot"
+          },
+          "cloud_health": {
+            "name": "Cloudstatus"
+          },
+          "weather_last_fetched_min_ago": {
+            "name": "Weer: laatst opgehaald (min geleden)"
+          },
+          "presence_last_fetched_min_ago": {
+            "name": "Aanwezigheid: laatst opgehaald (min geleden)"
+          },
+          "mobile_devices_last_fetched_min_ago": {
+            "name": "Mobiele apparaten: laatst opgehaald (min geleden)"
           }
         }
       },
@@ -1180,10 +1195,6 @@
         }
       }
     },
-    "resume_schedule": {
-      "name": "Schema hervatten",
-      "description": "Verwijder elke handmatige overschrijving en keer terug naar het automatische schema."
-    },
     "set_climate_temperature_offset": {
       "name": "Klimaattemperatuur-offset instellen",
       "description": "Stel de temperatuuroffset (kalibratie) in voor een Tado-klimaatapparaat. Compatibel met de ingebouwde Tado-integratie.",
@@ -1222,8 +1233,8 @@
         }
       }
     },
-    "set_away_configuration": {
-      "name": "Afwezigheidsconfiguratie instellen",
+    "set_climate_away_configuration": {
+      "name": "Klimaatafwezigheidsconfiguratie instellen",
       "description": "Configureer welke temperatuur wordt gebruikt als niemand thuis is.",
       "fields": {
         "entity_id": {
@@ -1244,8 +1255,8 @@
         }
       }
     },
-    "get_temperature_offset": {
-      "name": "Temperatuuroffset opvragen",
+    "get_climate_temperature_offset": {
+      "name": "Klimaattemperatuuroffset opvragen",
       "description": "Haal de huidige temperatuuroffset (kalibratie) op voor een Tado-klimaatapparaat. Geeft de offsetwaarde terug voor gebruik in automatiseringen.",
       "fields": {
         "entity_id": {
@@ -1254,38 +1265,30 @@
         }
       }
     },
-    "activate_open_window": {
-      "name": "Open raam activeren (Auto-Assist)",
-      "description": "Bevestig een open raam dat Tado al heeft gedetecteerd, net als wanneer u op het pictogram in de Tado-app tikt. Dit werkt alleen als de ingebouwde detectie van Tado een open raam heeft gesignaleerd. Gebruik in plaats daarvan 'Open raam-modus instellen' om de open raam-modus via externe sensoren te activeren."
+    "activate_climate_open_window": {
+      "name": "Open raam klimaat activeren (Auto-Assist)",
+      "description": "Bevestig een open raam dat Tado al heeft gedetecteerd, net als wanneer u op het pictogram in de Tado-app tikt. Dit werkt alleen als de ingebouwde detectie van Tado een open raam heeft gesignaleerd. Gebruik in plaats daarvan 'Open raam-modus klimaat instellen' om de open raam-modus via externe sensoren te activeren."
     },
-    "deactivate_open_window": {
-      "name": "Open raam deactiveren",
-      "description": "Annuleer een open raam dat Tado zelf heeft gedetecteerd, of dat u hebt bevestigd met 'Open raam activeren', en hervat de normale verwarming/koeling. Hiermee wordt 'Open raam-modus instellen' niet opgeheven. Die modus schrijft een vorst-overlay, dus heft u die op met 'Schema hervatten' of 'Vorige status herstellen'."
+    "deactivate_climate_open_window": {
+      "name": "Open raam klimaat deactiveren",
+      "description": "Annuleer een open raam dat Tado zelf heeft gedetecteerd, of dat u hebt bevestigd met 'Open raam klimaat activeren', en hervat de normale verwarming/koeling. Hiermee wordt 'Open raam-modus klimaat instellen' niet opgeheven. Die modus schrijft een vorst-overlay, dus heft u die op met 'Klimaatschema hervatten' of 'Vorige klimaatstatus herstellen'."
     },
-    "set_open_window_mode": {
-      "name": "Open raam-modus instellen",
-      "description": "Activeer de open raam-modus via externe sensoren (Zigbee, Z-Wave-contactsensoren, enz.). Hiermee wordt de zone ingesteld op de vorstbeveiligingstemperatuur, zonder dat detectie door Tado nodig is. De duur is standaard gelijk aan de time-outinstelling voor Open-raamdetectie van de zone, of 15 minuten indien deze niet is geconfigureerd.",
+    "set_climate_open_window_mode": {
+      "name": "Open raam-modus klimaat instellen",
+      "description": "Activeer de modus ‘Open raam’ via externe sensoren (Zigbee, Z-Wave-contactsensoren, enz.). Hiermee wordt de zone ingesteld op de vorstbeveiligingstemperatuur, zonder dat detectie door Tado nodig is. De tijdsduur is standaard ingesteld op de time-out voor Open Window Detection van de zone, of op 15 minuten indien deze niet is geconfigureerd.",
       "fields": {
-        "duration": {
-          "name": "Duur",
-          "description": "Hoe lang de open raam-modus actief blijft, in seconden (60–3600). Gebruik 0 voor onbeperkte duur tot u het schema handmatig hervat. Standaard de time-out van de Open-raamdetectie van Tado voor de zone."
-        },
-        "capture_state": {
-          "name": "Status vastleggen",
-          "description": "Leg de huidige zonestatus vast voordat de open raam-modus wordt toegepast, zodat u deze later kunt herstellen met de service Vorige status herstellen. Standaard ingeschakeld."
+        "time_period": {
+          "name": "Tijdsperiode",
+          "description": "Hoe lang de modus ‘Open raam’ actief moet blijven, in uren:minuten:seconden (00:01:00 tot 01:00:00). Gebruik 00:00:00 om de modus te laten duren totdat u het schema van de zone hervat. Standaard is dit ingesteld op de time-out voor Tado Open Window Detection van de zone."
         }
       }
     },
-    "restore_previous_state": {
-      "name": "Vorige status herstellen",
-      "description": "Herstel een zone naar de status van vóór de laatste overlay-bewerking. Als er geen vastgelegde status bestaat, wordt het schema hervat."
-    },
-    "turn_off_all_zones": {
-      "name": "Alle kamers uitschakelen",
+    "turn_off_all_climate_zones": {
+      "name": "Alle klimaatkamers uitschakelen",
       "description": "Zet elke klimaatzone (verwarming + airco) in een handmatige UIT-overlay. Dit komt overeen met de knop ‘Alle kamers uitschakelen’ in de Tado-app. De schema’s blijven onderdrukt totdat u elke zone handmatig hervat."
     },
-    "set_schedule_temperature": {
-      "name": "Schematemperatuur instellen",
+    "set_climate_schedule_temperature": {
+      "name": "Klimaatschematemperatuur instellen",
       "description": "Stel de streeftemperatuur van een zone in via een automatisering, zoals een vakantiekalender, zonder dat Smart Valve Control dit als een handmatige overschrijving beschouwt. Smart Valve Control blijft naar deze streeftemperatuur toewerken en hervat uw normale schema bij de volgende blokwisseling.",
       "fields": {
         "temperature": {
@@ -1315,6 +1318,36 @@
     "get_flow_temperature_settings": {
       "name": "Instelling van de aanvoertemperatuur aflezen",
       "description": "Leest de maximale aanvoertemperatuurinstelling op die Tado opslaat voor een OpenTherm-verwarmingssysteem. Er wordt niets gewijzigd. Er wordt één API-aanroep gebruikt en er wordt een status plus de instelling teruggestuurd zoals Tado deze verstuurt, waarbij serienummers zijn ingekort. Bij een woning zonder OpenTherm-systeem wordt \"niet van toepassing\" geretourneerd."
+    },
+    "set_climate_active_timetable": {
+      "name": "Actieve klimaatschema-indeling instellen",
+      "description": "Kies welke schema-indeling (1 dag, 3 dagen of 7 dagen) een verwarmings- of airconditioningzone volgt. Het schema van de zone wordt daarna opnieuw uit Tado geladen als het al was geladen.",
+      "fields": {
+        "entity_id": {
+          "name": "Entiteit",
+          "description": "De klimaatentiteiten waarvan de schema-indeling moet worden gewijzigd."
+        },
+        "timetable": {
+          "name": "Schema-indeling",
+          "description": "De schema-indeling die actief moet worden."
+        }
+      }
+    },
+    "resume_climate_schedule": {
+      "name": "Klimaatschema hervatten",
+      "description": "Verwijder elke handmatige overschrijving in een ruimte met verwarming of airconditioning en keer terug naar het automatische schema."
+    },
+    "resume_water_heater_schedule": {
+      "name": "Warmwaterschema hervatten",
+      "description": "Verwijder elke handmatige overschrijving van de warmwaterzone en keer terug naar het automatische schema."
+    },
+    "restore_climate_previous_state": {
+      "name": "Vorige klimaatstatus herstellen",
+      "description": "Herstel een ruimte met verwarming of airconditioning naar de status van vóór de laatste overlay-bewerking. Als er geen vastgelegde status bestaat, wordt het schema hervat."
+    },
+    "restore_water_heater_previous_state": {
+      "name": "Vorige warmwaterstatus herstellen",
+      "description": "Herstel de warmwaterzone naar de status van vóór de laatste overlay-bewerking. Als er geen vastgelegde status bestaat, wordt het schema hervat."
     }
   },
   "selector": {
@@ -1399,6 +1432,13 @@
         "linear": "Rechte lijn",
         "exponential": "Gebogen"
       }
+    },
+    "active_timetable": {
+      "options": {
+        "one_day": "1 dag",
+        "three_day": "3 dagen",
+        "seven_day": "7 dagen"
+      }
     }
   },
   "exceptions": {
@@ -1408,7 +1448,7 @@
     "entity_not_tado_ce": {
       "message": "Entiteit {entity_id} is geen Tado CE-entiteit (platform={platform})"
     },
-    "entity_no_config_entry": {
+    "entity_config_entry_not_found": {
       "message": "Entiteit {entity_id} is niet gekoppeld aan een config entry"
     },
     "entry_not_loaded": {
@@ -1435,14 +1475,11 @@
     "timer_set_failed": {
       "message": "Timer van {duration} min instellen voor {zone_name} mislukt: {error}"
     },
-    "bridge_auth_failed": {
-      "message": "Ongeldig bridge-serienummer of ongeldige auth-code"
-    },
     "offset_write_failed": {
       "message": "De temperatuuroffset voor {entity_id} kon niet worden ingesteld: geen van de {device_count} apparaten heeft de schrijfbewerking geaccepteerd. Controleer of de apparaten online zijn en probeer het opnieuw."
     },
-    "timer_set_failed_all": {
-      "message": "De timer kon op geen van de {entity_count} zone(s) worden ingesteld. Redenen: {reasons}"
+    "timer_set_all_zones_failed": {
+      "message": "De timer kon niet worden ingesteld. Reden: {reasons}"
     },
     "state_restore_failed": {
       "message": "Het herstellen van de status voor {entity_id} is mislukt. De cloud heeft de aanroep afgewezen. De vastgelegde status is bewaard, zodat u het opnieuw kunt proberen."
@@ -1453,14 +1490,11 @@
     "turn_off_all_no_climate_zones": {
       "message": "Er zijn geen verwarmings- of airco-zones gevonden in deze Tado-woning, dus er valt niets uit te schakelen."
     },
-    "turn_off_all_failed_all": {
+    "turn_off_all_zones_failed": {
       "message": "Het is niet gelukt om een zone uit te schakelen. De cloud van Tado heeft alle verzoeken in deze cyclus afgewezen. Redenen: {reasons}. Controleer het API-quotum van de integratie of probeer het opnieuw."
     },
     "auth_required": {
       "message": "Tado-verificatie vereist. Voer de verificatie van de integratie opnieuw uit."
-    },
-    "cloud_write_failed": {
-      "message": "Het schrijven naar de Tado-cloud is mislukt. De cloud heeft het verzoek afgewezen. Probeer het opnieuw."
     },
     "rate_limited": {
       "message": "Tado API: limiet op verzoeken bereikt. Probeer het over {retry_after_minutes} min. opnieuw."
@@ -1497,12 +1531,36 @@
     },
     "cloud_blocked": {
       "message": "Tado blokkeert momenteel verzoeken vanaf deze verbinding. Wacht een paar minuten en probeer het opnieuw; u hoeft niet opnieuw in te loggen."
+    },
+    "no_matching_zones": {
+      "message": "Geen enkele Tado CE-zone komt overeen met het doel van deze service ({domains}). Kies ten minste één Tado CE-zone."
+    },
+    "zone_not_available": {
+      "message": "{entity_id} is momenteel niet beschikbaar als Tado CE-zone. Het is mogelijk dat deze is uitgeschakeld of nog aan het laden is."
+    },
+    "set_active_timetable_failed": {
+      "message": "'Actieve klimaatschema-indeling instellen' is mislukt voor {entity_id}. De cloud heeft de nieuwe indeling niet bevestigd, dus de zone behoudt de huidige. Probeer het opnieuw."
+    },
+    "cloud_read_failed": {
+      "message": "De cloud van Tado heeft de gegevens niet teruggestuurd. Probeer het nog eens."
+    },
+    "cloud_write_failed": {
+      "message": "De wijziging is mogelijk nog niet bij Tado doorgedrongen: deze is afgewezen, of Tado heeft niet op tijd gereageerd. Controleer de zone in de Tado-app voordat u de handeling herhaalt."
+    },
+    "zone_without_device": {
+      "message": "Er is geen Tado-apparaat dat een temperatuurafwijking rapporteert voor {entity_id}."
+    },
+    "feature_not_enabled": {
+      "message": "Er valt niets te vernieuwen: de Tado CE-instelling achter ‘{feature}’ is uitgeschakeld."
+    },
+    "temperature_out_of_range": {
+      "message": "Waarde: {temperature} °C. Ruimte: {entity_id}. Toegestaan bereik: {minimum} °C tot {maximum} °C. Er is niets gewijzigd."
     }
   },
   "issues": {
     "auth_token_expired": {
-      "title": "Tado CE: Authenticatie verlopen",
-      "description": "Het vernieuwingstoken voor woning **{home_id}** is verlopen. Configureer de integratie opnieuw om opnieuw te authenticeren.\n\nGa naar **Instellingen → Apparaten en services → Tado CE → Opnieuw configureren**."
+      "title": "Tado CE: Inloggen bij Tado is mislukt",
+      "description": "De opgeslagen aanmelding voor huis **{home_id}** werkt niet meer. Deze is mogelijk verlopen of ingetrokken, of Tado heeft deze mogelijk geweigerd. Stel de integratie opnieuw in om je opnieuw aan te melden.\n\nGa naar **Instellingen → Apparaten en diensten → Tado CE → Opnieuw configureren**."
     },
     "svc_sensor_missing": {
       "title": "Smart Valve Control uitgeschakeld voor {zone_name}",
@@ -1530,7 +1588,15 @@
     },
     "battery_low": {
       "title": "Tado CE: batterij bijna leeg in {zone_name}",
-      "description": "Lage batterijspanning gemeld door: {devices}.\n\n{advice}\n\nTotdat de batterijen zijn vervangen, wordt de kamer mogelijk niet naar behoren verwarmd. De batterijsensor van elk apparaat in Home Assistant geeft dezelfde waarde weer. Deze melding verdwijnt vanzelf zodra geen enkel apparaat in de kamer een lage batterijspanning meldt."
+      "description": "Lage batterijspanning gemeld door: {devices}.\n\nVervang de batterijen ({battery_type}) binnen 1 tot 2 weken.\n\nTotdat de batterijen zijn vervangen, wordt de kamer mogelijk niet naar behoren verwarmd. De batterijsensor van elk apparaat in Home Assistant geeft de eigen waarde van dat apparaat weer. Deze melding verdwijnt vanzelf zodra de apparaten weer een normale batterijspanning melden."
+    },
+    "battery_critical": {
+      "title": "Tado CE: batterij bijna leeg in {zone_name}",
+      "description": "Kritiek lage batterijspanning gemeld door: {devices}.\n\nVervang de batterijen ({battery_type}) vandaag nog, want het apparaat kan uitvallen.\n\nTotdat de batterijen zijn vervangen, wordt de kamer mogelijk niet naar behoren verwarmd. De batterijsensor van elk apparaat in Home Assistant geeft de eigen waarde van dat apparaat weer. Deze melding verdwijnt vanzelf zodra de apparaten weer een normale batterijspanning melden."
+    },
+    "battery_offline": {
+      "title": "Tado CE: batterij bijna leeg in {zone_name}",
+      "description": "Lage batterijspanning gemeld door: {devices}.\n\nEen apparaat in deze kamer is offline sinds {offline_date} en de laatst gemelde batterijspanning was laag of kritiek. Vervang de batterijen ({battery_type}) en controleer of het apparaat weer verbinding maakt.\n\nTotdat de batterijen zijn vervangen, wordt de kamer mogelijk niet naar behoren verwarmd. De batterijsensor van elk apparaat in Home Assistant geeft de eigen waarde van dat apparaat weer. Deze melding verdwijnt vanzelf zodra de apparaten weer een normale batterijspanning melden."
     }
   },
   "config": {
@@ -1599,6 +1665,7 @@
       "already_configured": "Deze Tado-woning is al ingesteld in Tado CE.",
       "timeout": "Autorisatie verlopen. Probeer het opnieuw.",
       "no_homes": "Geen Tado-woningen gevonden voor dit account.",
+      "wrong_home": "Deze Tado-login bevat de woning niet die in Tado CE is ingesteld. Meld u aan met het account dat eigenaar is van die woning, of gebruik Opnieuw configureren om naar een andere woning over te schakelen.",
       "reauth_successful": "Herauthenticatie succesvol! Uw gegevens zijn vernieuwd.",
       "reconfigure_successful": "Klaar. Uw nieuwe Tado-login is opgeslagen."
     },
@@ -1879,7 +1946,7 @@
               "wc_curve_k": "Buiging van de curve"
             },
             "data_description": {
-              "wc_slope": "Hoe sterk de aanvoertemperatuur verandert met de buitentemperatuur (0,3–3,0). Bij temperaturen onder uw ontwerpbuitentemperatuur is de aanvoer altijd gelijk aan de maximale aanvoer, ongeacht de helling. Als het warmer is dan die temperatuur, zorgt een steilere helling voor een lagere aanvoertemperatuur. Dit wordt alleen gebruikt wanneer de hierboven ingestelde verwarmingssysteeminstelling ‘Aangepast’ is en de vorm van de verwarmingscurve ‘Rechte lijn’ is; anders wordt het berekend op basis van uw waarden voor maximale/minimale aanvoertemperatuur, uitschakeltemperatuur verwarming en ontwerpbuitentemperatuur, of genegeerd wanneer ‘Gebogen’ is gekozen.",
+              "wc_slope": "Hoe sterk de aanvoertemperatuur verandert met de buitentemperatuur (0,3–3,0). Bij temperaturen onder uw ontwerpbuitentemperatuur is de aanvoer altijd gelijk aan de maximale aanvoer, ongeacht de helling. Als het warmer is dan die temperatuur, zorgt een steilere helling voor een lagere aanvoertemperatuur. Kamercompensatie kan de aanvoer toch verlagen wanneer de kamers die verwarmen warmer zijn dan hun streeftemperatuur. Dit wordt alleen gebruikt wanneer de hierboven ingestelde verwarmingssysteeminstelling ‘Aangepast’ is en de vorm van de verwarmingscurve ‘Rechte lijn’ is; anders wordt het berekend op basis van uw waarden voor maximale/minimale aanvoertemperatuur, uitschakeltemperatuur verwarming en ontwerpbuitentemperatuur, of genegeerd wanneer ‘Gebogen’ is gekozen.",
               "wc_design_outdoor_temp": "De koudste temperatuur die u in uw gebied verwacht (-30 tot 10°C)",
               "wc_max_flow_temp": "De hoogste aanvoertemperatuur die uw ketel bij de laagste buitentemperatuur mag bereiken (30–80 °C). Deze waarde wordt gebruikt voor de automatische hellingsberekening, tenzij de hierboven ingestelde waarde „Aangepast” is.",
               "wc_min_flow_temp": "Laagste aanvoertemperatuur, wordt ook gebruikt wanneer de verwarming wordt uitgeschakeld (30–60 °C). Wordt gebruikt voor de automatische hellingsberekening, tenzij de hierboven ingestelde waarde ‘Aangepast’ is.",
@@ -1949,7 +2016,7 @@
         }
       },
       "reset_confirm": {
-        "description": "Hiermee worden de gekozen instellingen teruggezet naar de standaardwaarden. Alles resetten schakelt ook elke functie uit, behalve de Internet Bridge, die aan blijft terwijl het serienummer en de auth-code behouden blijven. Een functie uitschakelen verwijdert de entiteiten die de functie heeft aangemaakt. Uw Tado-login en de instellingen per zone blijven behouden, evenals het serienummer en de auth-code van de bridge, tenzij u Internet Bridge hebt gekozen.",
+        "description": "Hiermee worden de gekozen instellingen teruggezet naar de standaardwaarden. Alles resetten schakelt ook elke functie uit, behalve de Internet Bridge, die aan blijft terwijl het serienummer en de auth-code behouden blijven. Een functie uitschakelen verwijdert de entiteiten die de functie heeft aangemaakt. Uw Tado-login en de instellingen per zone blijven behouden, evenals het serienummer en de auth-code van de bridge, tenzij u Internet Bridge hebt gekozen. Als u Internet Bridge kiest, wordt ook de weerscompensatie uitgeschakeld, omdat die de bridge nodig heeft.",
         "title": "Reset bevestigen"
       },
       "homekit_pairing": {
@@ -1974,6 +2041,7 @@
     "error": {
       "interval_out_of_range": "Polling-interval moet tussen 1 en 1440 minuten liggen",
       "bridge_auth_failed": "Ongeldig serienummer of ongeldige auth-code van de bridge. Controleer dit en probeer het opnieuw.",
+      "bridge_unreachable": "Kan Tado niet bereiken om de gegevens van de bridge te controleren. Controleer of Home Assistant online is en probeer het opnieuw",
       "wc_min_exceeds_max": "De minimale aanvoertemperatuur kan niet hoger zijn dan de maximale aanvoertemperatuur",
       "bridge_serial_invalid": "Alleen Internet Bridges van versie 3 en later (serienummer begint met IB) hebben de lokale API. Dit serienummer begint niet met IB, dus het kan een oudere bridge zijn (prefix GW) of een typefout. Weerscompensatie heeft een bridge met de lokale API nodig.",
       "homekit_wrong_pin": "De bridge heeft de code geweigerd. Of de 8-cijferige HomeKit-installatiecode is onjuist (controleer deze op de bridge of in de Tado-app), of een andere HomeKit-controller (Homebridge, Apple Home of de eigen HomeKit van Home Assistant) houdt de bridge bezet. Stop de andere controller en probeer het opnieuw.",

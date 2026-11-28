@@ -143,21 +143,15 @@ def _resolve_and_log_power(
 
 @dataclass(frozen=True, slots=True)
 class ZoneView:
-    """One zone's power, target and epochs read together; pure reads, nothing is stored or engaged."""
+    """One zone's power, target and fetch epoch read together; pure reads, nothing is stored or engaged."""
 
     zone_id: str
     cloud_power: str | None
     power: str | None
     power_source: str
-    homekit_power: str | None
-    homekit_changed_at: datetime | None
     cloud_target: float | None
     fetch_epoch: datetime | None
-    write_epoch: datetime | None
-    cloud_overlay_type: str | None
     cloud_overlay_termination: str | None
-    latch_present: bool
-    own_off_mark: bool
 
 
 def zone_view(
@@ -177,9 +171,9 @@ def zone_view(
     epoch = fetch_epoch if fetch_epoch is not None else coordinator.last_zone_fetch_ts()
     if sequence_pending:
         # A pending write shows the cloud power with no HomeKit consulted, as the heating card always did.
-        power, source, homekit_power, changed = cloud_power, "cloud", None, None
+        power, source = cloud_power, "cloud"
     else:
-        power, source, homekit_power, changed, _ = _resolve_and_log_power(
+        power, source, *_ = _resolve_and_log_power(
             coordinator, zone_id, zone_data=zone_data, fetch_epoch=fetch_epoch, zones_info=zones_info,
         )
     overlay = zone_data.get("overlay")
@@ -189,15 +183,9 @@ def zone_view(
         cloud_power=cloud_power,
         power=power,
         power_source=source,
-        homekit_power=homekit_power,
-        homekit_changed_at=changed,
         cloud_target=(setting.get("temperature") or {}).get("celsius"),
         fetch_epoch=epoch,
-        write_epoch=coordinator.zone_fetch_epoch_for_write(),
-        cloud_overlay_type=zone_data.get("overlayType"),
         cloud_overlay_termination=termination.get("type") if isinstance(termination, dict) else None,
-        latch_present=zone_id in coordinator.homekit_off_latch,
-        own_off_mark=coordinator.own_off_mark(zone_id),
     )
 
 

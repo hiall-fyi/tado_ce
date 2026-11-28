@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 import logging
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 from homeassistant.core import callback
 from homeassistant.helpers.event import async_call_later, async_track_point_in_utc_time
@@ -21,6 +21,8 @@ from .const import (
     HOMEKIT_EXPIRE_WINDOW_SECONDS,
     HOMEKIT_PUT_PENDING_MAX_SECONDS,
     MECH_HK_PUT_AGREE,
+    OVERLAY_MODE_MANUAL,
+    OVERLAY_MODE_TADO_MODE,
     VERIFY_FETCH_BY_KIND,
 )
 from .error_dispatch import handle_background_write_error
@@ -55,6 +57,10 @@ _OWED_MAX_WAITS = 3
 # Seconds before each zone-fetch probe while the cloud is unreachable and a change is owed; the last step repeats.
 _OWED_PROBE_STEPS = (600, 1200, 1800)
 _TEMPERATURE_TOLERANCE = 0.05
+# the heating timer range the services accept
+_OWED_MIN_TEMPERATURE: Final = 5.0
+_OWED_MAX_TEMPERATURE: Final = 30.0
+_OWED_TERMINATIONS: Final = frozenset({OVERLAY_MODE_MANUAL, OVERLAY_MODE_TADO_MODE})
 
 
 class IntentKind(StrEnum):
@@ -63,7 +69,6 @@ class IntentKind(StrEnum):
     TEMPERATURE = "temperature"
     POWER_ON = "power_on"
     POWER_OFF = "power_off"
-    RESUME = "resume"
     TIMER = "timer"
     MODE = "mode"
     FAN = "fan"
@@ -74,9 +79,7 @@ class IntentKind(StrEnum):
 class IntentState(StrEnum):
     """Where a write is in its life."""
 
-    QUEUED = "queued"
     SENDING = "sending"
-    SENT_UNKNOWN = "sent_unknown"
     ACKED = "acked"
     HELD_LOCAL = "held_local"
     CONFIRMED = "confirmed"
@@ -679,7 +682,7 @@ class ZoneWriteLedger:
         return time.monotonic() - record.queued_since
 
     def begin_send(self, zone_id: str) -> None:
-        """A queued write's PUT starts running (QUEUED to SENDING)."""
+        """A queued write's PUT starts running."""
         record = self._records.setdefault(zone_id, _ZoneRecord())
         record.running += 1
         # A newer tap announced while this one fired is still in the timer, and the flag follows it.
@@ -854,7 +857,12 @@ class ZoneWriteLedger:
         return reading[0] if isinstance(changed, datetime) and changed > put_at else None
 
     def spawn_task(self, zone_id: str, coro: Coroutine[Any, Any, None], *, hass: HomeAssistant) -> asyncio.Future[Any]:
-        """Start `coro` as a task of the zone that `cancel_resends` cancels."""
+        """Start `coro` as a task of the zone that `cancel_resends` cancels; a closed ledger starts nothing and returns a cancelled future."""
+        if self._closed:
+            coro.close()
+            closed_future: asyncio.Future[Any] = hass.loop.create_future()
+            closed_future.cancel()
+            return closed_future
         task: asyncio.Future[Any] = hass.async_create_task(coro)
         tasks = self._tasks.setdefault(zone_id, set())
         tasks.add(task)
@@ -865,6 +873,8 @@ class ZoneWriteLedger:
         self, zone_id: str, send: Callable[[], Coroutine[Any, Any, None]], *, entry: ResendEntry, retry_at: datetime | None = None,
     ) -> None:
         """Keep a refused resend and judge it once, at the first data publish after CloudHealth stops holding or at `retry_at`; a later refusal replaces it."""
+        if self._closed:
+            return
         self._drop_held(zone_id)
         entity = entry.entity
         held = _HeldResend(send=send, entry=entry)
@@ -980,7 +990,7 @@ class ZoneWriteLedger:
 
     def _arm_publish_wait(self, reason: str = "resend_recovery", *, ask: bool = True) -> None:
         """Wait, once, for a publish with a newer zone fetch, and ask for that fetch: a HomeKit setup would not make one for up to the cloud-sync dial."""
-        if self._publish_unsub is not None:
+        if self._publish_unsub is not None or self._closed:
             return
         coordinator = self._coordinator
         self._publish_epoch = coordinator.last_zone_fetch_ts()
@@ -1382,7 +1392,7 @@ class ZoneWriteLedger:
                     record.owed_attempts -= 1
                     record.owed_retry_at = dt_util.utcnow() + timedelta(seconds=_OWED_RETRY_SECONDS)
                     handle_background_write_error(
-                        exc, coordinator.config_entry, coordinator.hass, coordinator,
+                        exc, coordinator.config_entry, coordinator.hass,
                         f"Zone {zone_id}: Tado refused the held change ({type(exc).__name__}), it is kept and sent again after recovery",
                     )
                     return
@@ -1577,12 +1587,16 @@ class ZoneWriteLedger:
         for key in ("temperature", "duration_seconds"):
             value = stored.get(key)
             if isinstance(value, int | float) and not isinstance(value, bool):
+                if key == "temperature" and not _OWED_MIN_TEMPERATURE <= value <= _OWED_MAX_TEMPERATURE:
+                    raise ValueError("the target temperature is out of range")
                 target[key] = value
         if power == "ON" and "temperature" not in target:
             raise ValueError("the target temperature is missing")
         termination, ambiguous = row.get("termination"), row.get("ambiguous")
         if not isinstance(termination, str) or not termination:
             raise ValueError("the ending is missing")
+        if termination not in _OWED_TERMINATIONS:
+            raise ValueError("the ending is not a known type")
         if not isinstance(ambiguous, bool):
             raise ValueError("the ambiguous flag is not a boolean")
         # A fresh reconciler counts from zero, so a write that reaches the zone after this load is the one the stamp cannot match.

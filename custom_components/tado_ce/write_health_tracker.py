@@ -91,9 +91,3 @@ class WriteHealthTracker:
         if self.state == CircuitState.OPEN:
             self._state = CircuitState.HALF_OPEN
             _LOGGER.info("Write Health: zone %s: the bridge reconnected, HomeKit writes are tried again", self._zone_id)
-
-    def reset(self) -> None:
-        """Reset to a clean closed state (e.g. on bridge reconnect)."""
-        self._consecutive_failures = 0
-        self._circuit_opened_at = None
-        self._state = CircuitState.CLOSED

@@ -17,7 +17,8 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .climate_helpers import inject_child_lock
+from .climate_helpers import inject_child_lock, inject_early_start
+from .config_manager import DEFAULT_QUOTA_RESERVE_ENABLED
 from .const import DOMAIN
 from .device_manager import get_hub_device_info, get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
@@ -40,7 +41,7 @@ PARALLEL_UPDATES = 1
 def _dispatch_queue_error(coordinator: TadoDataUpdateCoordinator, operation: DeviceOperation) -> None:
     """Raise the translated error when the queued write was refused by a rate limit, sign-in or block."""
     if operation.error is not None:
-        dispatch_to_service_call(operation.error, coordinator.config_entry, coordinator.hass, coordinator)
+        dispatch_to_service_call(operation.error, coordinator.config_entry, coordinator.hass)
 
 
 async def async_setup_entry(
@@ -55,6 +56,7 @@ async def async_setup_entry(
     home_id = coordinator.home_id
     zones_info = await hass.async_add_executor_job(data_loader.load_zones_info_file)
 
+    early_start_cache = data_loader.get_cached("early_start")
     switches: list[SwitchEntity] = []
 
     # Device controls (Early Start, Child Lock)
@@ -68,13 +70,14 @@ async def async_setup_entry(
             if zone_type == "HEATING":
                 early_start = zone.get("earlyStart") or {}
                 if early_start.get("supported", True):  # Default to supported
+                    stored = (early_start_cache if isinstance(early_start_cache, dict) else {}).get(zone_id)
                     switches.append(
                         TadoEarlyStartSwitch(
                             coordinator,
                             zone_id,
                             zone_name,
                             zone_type,
-                            early_start.get("enabled", False),
+                            bool(stored["enabled"]) if isinstance(stored, dict) and "enabled" in stored else None,
                             home_id,
                         ),
                     )
@@ -114,21 +117,15 @@ async def async_setup_entry(
     # users can flip Quota Reserve even when device controls are off.
     hub_switches: list[SwitchEntity] = [
         TadoHubToggleSwitch(
-            coordinator, home_id, "switch_quota_reserve", "quota_reserve_enabled", "mdi:shield-check", "mdi:shield-off",
+            coordinator, home_id, "switch_quota_reserve", "quota_reserve_enabled",
+            DEFAULT_QUOTA_RESERVE_ENABLED,
         ),
     ]
     async_add_entities(hub_switches, True)
 
 
 class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], SwitchEntity):
-    """Toggle Tado's per-zone Early Start preheat.
-
-    Early Start tells the Tado cloud to start heating ahead of a
-    schedule block so the room reaches target on time. The cloud
-    is the source of truth, so we surface the cached value and
-    optimistically reflect the user's flip while the write goes
-    through the device-sync queue.
-    """
+    """Toggle Tado's per-zone Early Start preheat, shown from the stored value read once per room."""
 
     _attr_has_entity_name = True
 
@@ -138,7 +135,7 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
         zone_id: str,
         zone_name: str,
         zone_type: str,
-        initial_state: bool,
+        initial_state: bool | None,
         home_id: str,
     ) -> None:
         super().__init__(coordinator)
@@ -159,11 +156,6 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
         self._rollback_is_on: bool | None = initial_state
 
     @property
-    def icon(self) -> str | None:
-        """Return icon based on state."""
-        return "mdi:clock-fast" if self._attr_is_on else "mdi:clock-outline"
-
-    @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Return extra state attributes."""
         return {
@@ -180,12 +172,7 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
 
     @callback
     def update(self) -> None:
-        """Hold the optimistic value during its window; otherwise leave state unchanged.
-
-        Early Start isn't part of the cached zone snapshot, so a
-        normal poll has no fresh API value to compare against, so
-        we hold the last known state until the next user toggle.
-        """
+        """Hold the optimistic value during its window; otherwise show the stored value."""
         result = resolve_optimistic_update(
             self,
             api_values={},
@@ -198,6 +185,9 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
                 self._zone_name,
             )
             return
+        entry = ((self.coordinator.data or {}).get("early_start") or {}).get(self._zone_id)
+        if isinstance(entry, dict) and "enabled" in entry:
+            self._attr_is_on = bool(entry["enabled"])
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Enable Early Start for this zone."""
@@ -312,13 +302,14 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
         self.async_write_ha_state()
 
     async def _async_set_early_start(self, enabled: bool) -> bool:
-        """Send the Early Start enable / disable to the cloud."""
+        """Send the Early Start enable / disable to the cloud and keep the accepted value."""
         client = self.coordinator.api_client
 
         endpoint = f"zones/{self._zone_id}/earlyStart"
         result = await client.api_call(endpoint, method="PUT", data={"enabled": enabled})
 
         if result is not None:
+            await inject_early_start(self.coordinator, self._zone_id, enabled)
             state_str = "enabled" if enabled else "disabled"
             _LOGGER.debug(
                 "Switch: zone %s Early Start %s", self._zone_name, state_str,
@@ -379,11 +370,6 @@ class TadoChildLockSwitch(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDat
 
         # Optimistic update tracking
         self._optimistic_set_at: float | None = None
-
-    @property
-    def icon(self) -> str | None:
-        """Return icon based on state."""
-        return "mdi:lock" if self._attr_is_on else "mdi:lock-open"
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
@@ -570,14 +556,12 @@ class TadoHubToggleSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
         home_id: str,
         registry_key: str,
         option_key: str,
-        icon_on: str,
-        icon_off: str,
+        default: bool,
     ) -> None:
         super().__init__(coordinator)
         _meta = ENTITY_REGISTRY[registry_key]
         self._option_key = option_key
-        self._icon_on = icon_on
-        self._icon_off = icon_off
+        self._default = default
 
         self._attr_translation_key = _meta.translation_key
         self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix}"
@@ -588,13 +572,8 @@ class TadoHubToggleSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
     def _read_option(self) -> bool:
         """Read current option value from config entry."""
         entry = self.coordinator.config_entry
-        result = entry.options.get(self._option_key, self._attr_is_on)
+        result = entry.options.get(self._option_key, self._default)
         return bool(result)
-
-    @property
-    def icon(self) -> str | None:
-        """Return icon based on state."""
-        return self._icon_on if self._attr_is_on else self._icon_off
 
     @callback
     def _handle_coordinator_update(self) -> None:

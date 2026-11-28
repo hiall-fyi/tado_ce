@@ -92,7 +92,6 @@ class TadoSolarIntensitySensor(
         _meta = ENTITY_REGISTRY["sensor_solar_intensity"]
         self._attr_translation_key = _meta.translation_key
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
-        self._attr_icon = _meta.icon
         self._attr_native_unit_of_measurement = PERCENTAGE
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_entity_category = get_entity_category(_meta)

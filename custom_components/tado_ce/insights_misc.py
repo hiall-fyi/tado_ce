@@ -202,8 +202,8 @@ def calculate_ventilation_opportunity_insight(
 
     rec = (
         f"{zone_name}: air is {current_differential:.1f} g/m³ more humid than "
-        f"outside, well above this home's recent average gap of {avg_history:.1f} "
-        f"— open a window to dry it out efficiently"
+        f"outside, well above this home's recent average gap of {avg_history:.1f}. "
+        "Open a window to dry it out efficiently"
     )
 
     return Insight(

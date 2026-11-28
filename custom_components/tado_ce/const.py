@@ -33,39 +33,45 @@ DATA_DIR = Path(_BASE_CONFIG_DIR) / ".storage" / "tado_ce"
 
 # Service names
 SERVICE_SET_CLIMATE_TIMER = "set_climate_timer"
-SERVICE_SET_SCHEDULE_TEMPERATURE = "set_schedule_temperature"
+SERVICE_SET_CLIMATE_SCHEDULE_TEMPERATURE = "set_climate_schedule_temperature"
 SERVICE_SET_WATER_HEATER_TIMER = "set_water_heater_timer"
-SERVICE_RESUME_SCHEDULE = "resume_schedule"
+SERVICE_RESUME_CLIMATE_SCHEDULE = "resume_climate_schedule"
+SERVICE_RESUME_WATER_HEATER_SCHEDULE = "resume_water_heater_schedule"
+SERVICE_SET_CLIMATE_ACTIVE_TIMETABLE = "set_climate_active_timetable"
 SERVICE_SET_TEMP_OFFSET = "set_climate_temperature_offset"  # Match official Tado integration
-SERVICE_GET_TEMP_OFFSET = "get_temperature_offset"  # On-demand offset fetch
+SERVICE_GET_CLIMATE_TEMPERATURE_OFFSET = "get_climate_temperature_offset"  # On-demand offset fetch
 SERVICE_GET_FLOW_TEMPERATURE_SETTINGS = "get_flow_temperature_settings"
 SERVICE_ADD_METER_READING = "add_meter_reading"
 SERVICE_IDENTIFY_DEVICE = "identify_device"
-SERVICE_SET_AWAY_CONFIG = "set_away_configuration"
-SERVICE_ACTIVATE_OPEN_WINDOW = "activate_open_window"
-SERVICE_DEACTIVATE_OPEN_WINDOW = "deactivate_open_window"
-SERVICE_SET_OPEN_WINDOW_MODE = "set_open_window_mode"
-SERVICE_RESTORE_PREVIOUS_STATE = "restore_previous_state"
-SERVICE_TURN_OFF_ALL_ZONES = "turn_off_all_zones"
+SERVICE_SET_CLIMATE_AWAY_CONFIGURATION = "set_climate_away_configuration"
+SERVICE_ACTIVATE_CLIMATE_OPEN_WINDOW = "activate_climate_open_window"
+SERVICE_DEACTIVATE_CLIMATE_OPEN_WINDOW = "deactivate_climate_open_window"
+SERVICE_SET_CLIMATE_OPEN_WINDOW_MODE = "set_climate_open_window_mode"
+SERVICE_RESTORE_CLIMATE_PREVIOUS_STATE = "restore_climate_previous_state"
+SERVICE_RESTORE_WATER_HEATER_PREVIOUS_STATE = "restore_water_heater_previous_state"
+SERVICE_TURN_OFF_ALL_CLIMATE_ZONES = "turn_off_all_climate_zones"
 SERVICE_REFRESH = "refresh"
 
 # Every registered service, in registration order; unload removes exactly these.
 SERVICE_NAMES: Final[tuple[str, ...]] = (
     SERVICE_SET_CLIMATE_TIMER,
-    SERVICE_SET_SCHEDULE_TEMPERATURE,
+    SERVICE_SET_CLIMATE_SCHEDULE_TEMPERATURE,
     SERVICE_SET_WATER_HEATER_TIMER,
-    SERVICE_RESUME_SCHEDULE,
-    SERVICE_TURN_OFF_ALL_ZONES,
+    SERVICE_RESUME_CLIMATE_SCHEDULE,
+    SERVICE_RESUME_WATER_HEATER_SCHEDULE,
+    SERVICE_SET_CLIMATE_ACTIVE_TIMETABLE,
+    SERVICE_TURN_OFF_ALL_CLIMATE_ZONES,
     SERVICE_SET_TEMP_OFFSET,
     SERVICE_ADD_METER_READING,
     SERVICE_REFRESH,
     SERVICE_IDENTIFY_DEVICE,
-    SERVICE_SET_AWAY_CONFIG,
-    SERVICE_ACTIVATE_OPEN_WINDOW,
-    SERVICE_DEACTIVATE_OPEN_WINDOW,
-    SERVICE_SET_OPEN_WINDOW_MODE,
-    SERVICE_GET_TEMP_OFFSET,
-    SERVICE_RESTORE_PREVIOUS_STATE,
+    SERVICE_SET_CLIMATE_AWAY_CONFIGURATION,
+    SERVICE_ACTIVATE_CLIMATE_OPEN_WINDOW,
+    SERVICE_DEACTIVATE_CLIMATE_OPEN_WINDOW,
+    SERVICE_SET_CLIMATE_OPEN_WINDOW_MODE,
+    SERVICE_GET_CLIMATE_TEMPERATURE_OFFSET,
+    SERVICE_RESTORE_CLIMATE_PREVIOUS_STATE,
+    SERVICE_RESTORE_WATER_HEATER_PREVIOUS_STATE,
     SERVICE_GET_FLOW_TEMPERATURE_SETTINGS,
 )
 
@@ -127,12 +133,9 @@ QUOTA_BOOTSTRAP_CALLS = 3  # Hard limit - never use these calls
 # and a percentage), so it tracks whatever quota Tado grants without hardcoding
 # any tier breakpoint. A 100-call budget stays at the 100-call floor; a
 # 1,000-call budget fires at 100 (10% = floor); a 20,000-call budget fires at
-# 2,000 (10% > floor, proportional cushion). Use helpers.low_quota_threshold().
+# 2,000 (10% > floor, proportional cushion). Read as QuotaLevels.soft_low.
 LOW_QUOTA_RESERVE_PERCENT = 0.10  # 10% of daily limit
 LOW_QUOTA_RESERVE_FLOOR = 100      # Floor (one full day's worth on a 100-call budget)
-
-# Backwards-compat alias, scheduled for removal in v5.0.0.
-LOW_QUOTA_THRESHOLD = LOW_QUOTA_RESERVE_FLOOR
 
 # Day-type mapping, shared by calendar.py's setup-time fetch and
 # api_client.py's SVC-driven full-sync fetch, so both read one definition.
@@ -141,6 +144,9 @@ DAY_TYPES: Final[dict[str, list[str]]] = {
     "THREE_DAY": ["MONDAY_TO_FRIDAY", "SATURDAY", "SUNDAY"],
     "SEVEN_DAY": ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"],
 }
+
+# Tado's id for each timetable type, as sent to PUT activeTimetable.
+ACTIVE_TIMETABLE_IDS: Final[dict[str, int]] = {"ONE_DAY": 0, "THREE_DAY": 1, "SEVEN_DAY": 2}
 
 # Worst-case cost of fetching one zone's schedule: the activeTimetable call
 # plus one blocks/{day_type} call per day type in the largest timetable.
@@ -169,11 +175,6 @@ MAX_PRESENCE_MIN_REFRESH_MINUTES: Final[int] = 60
 DEFAULT_MOBILE_DEVICES_MIN_REFRESH_MINUTES: Final[int] = 5
 MIN_MOBILE_DEVICES_MIN_REFRESH_MINUTES: Final[int] = 1
 MAX_MOBILE_DEVICES_MIN_REFRESH_MINUTES: Final[int] = 60
-
-# Backwards-compat aliases used by coordinator imports.
-WEATHER_MIN_REFRESH_MINUTES = DEFAULT_WEATHER_MIN_REFRESH_MINUTES
-PRESENCE_MIN_REFRESH_MINUTES = DEFAULT_PRESENCE_MIN_REFRESH_MINUTES
-MOBILE_DEVICES_MIN_REFRESH_MINUTES = DEFAULT_MOBILE_DEVICES_MIN_REFRESH_MINUTES
 
 # Mechanism counter ids (Stage 0 measurement); counts under any other id are dropped.
 MECH_POLL_SKIP: Final[str] = "poll_skip"
@@ -351,7 +352,6 @@ SVC_RESUME_RETRY_SECONDS: Final[float] = 300.0  # minimum gap between retries of
 SVC_RESUME_RETRY_MAX_SECONDS: Final[float] = 21600.0  # cap on the doubling retry gap (6 hours)
 
 # SVC operating mode (per-zone select, mutually exclusive)
-SVC_MODE_OFF: Final[str] = "off"
 SVC_MODE_VALVE_TARGET: Final[str] = "valve_target"
 SVC_MODE_OFFSET_SYNC: Final[str] = "offset_sync"
 
@@ -359,7 +359,6 @@ SVC_MODE_OFFSET_SYNC: Final[str] = "offset_sync"
 SVC_OFFSET_MIN_CHANGE: Final[float] = 0.5  # °C (default)
 SVC_OFFSET_MIN_CHANGE_MIN: Final[float] = 0.5  # °C, lower bound for config
 SVC_OFFSET_MIN_CHANGE_MAX: Final[float] = 3.0  # °C, upper bound for config
-SVC_OFFSET_MIN_CHANGE_STEP: Final[float] = 0.5  # °C, step size in UI
 
 # Offset Sync: maximum offset movement allowed in a single write, since
 # inside_temperature can be momentarily unreliable while a zone is off.
@@ -429,7 +428,6 @@ DEFAULT_HOMEKIT_CLOUD_SYNC_MINUTES: Final[int] = 30
 MIN_HOMEKIT_CLOUD_SYNC_MINUTES: Final[int] = 5
 MAX_HOMEKIT_CLOUD_SYNC_MINUTES: Final[int] = 120
 
-# Provisional: shortest gap between HomeKit-triggered forced zone fetches, until FetchPlan accounts for them.
 HOMEKIT_DROP_FETCH_MIN_GAP_SECONDS: Final[float] = 600.0
 
 # One catch-up cloud fetch this long after a start on the saved snapshot.
@@ -454,7 +452,6 @@ VERIFY_FETCH_BY_KIND: Final[dict[str, bool]] = {
     "temperature": True,
     "power_on": True,
     "power_off": True,
-    "resume": True,
     "timer": True,
     "mode": True,
     "fan": True,
@@ -499,12 +496,6 @@ HOMEKIT_LOOP_RECONNECT_MIN_GAP_SECONDS: Final[float] = 3600.0
 # HomeKit mapping retry: stop retrying after this many polls with no newly
 # mapped zone (the remaining zones have no matching bridge accessory)
 MAPPING_RETRY_STALL_LIMIT: Final[int] = 3
-
-# Former weather-skip floor when HomeKit connected; v4.0.2 replaced it with
-# the per-type WEATHER_MIN_REFRESH_MINUTES floor (applied in all cadence
-# states, not just HomeKit). No consumers remain, kept for backwards-compat,
-# scheduled for removal in v5.0.0.
-HOMEKIT_WEATHER_SKIP_MINUTES: Final[int] = 30  # legacy, superseded by WEATHER_MIN_REFRESH_MINUTES
 
 # Periodic device-offset resync interval. Tado's own calibration or the
 # user's app can change an offset with no HA write, and the per-write

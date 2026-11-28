@@ -44,9 +44,9 @@ from .helpers import (
     PerEntityAvailabilityMixin,
     connection_value_to_bool,
     get_zone_state,
-    get_zone_states,
     mask_serial,
     parse_iso_datetime,
+    resolve_home_presence,
 )
 from .insights_device import calculate_connection_recommendation
 
@@ -226,33 +226,14 @@ class TadoHomeSensor(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpda
     def update(self) -> None:
         """Update from home_state.json (primary) or zones.json (fallback)."""
         try:
-            coord_data = self.coordinator.data or {}
-
-            # Primary: Read from home_state (source of truth for presence)
-            home_state = coord_data.get("home_state")
-            if home_state:
-                presence = home_state.get("presence", "HOME")
-                self._presence_locked = home_state.get("presenceLocked", False)
-                self._attr_is_on = presence == "HOME"
-                self._tado_mode = presence  # Keep tado_mode attribute for compatibility
-                self._data_source = "home_state"
-                self._data_present = True
+            resolved = resolve_home_presence(self.coordinator.data, self.coordinator.last_zone_fetch_ts())
+            if resolved is None:
+                self._data_present = False
                 return
-
-            # Fallback: Read from zones tadoMode
-            # This is used when home_state_sync_enabled=false
-            zone_states = get_zone_states(coord_data)
-            if zone_states:
-                for zone_data in zone_states.values():
-                    self._tado_mode = zone_data.get("tadoMode")
-                    if self._tado_mode:
-                        self._attr_is_on = self._tado_mode == "HOME"
-                        self._presence_locked = zone_data.get("geolocationOverride", False)
-                        self._data_source = "zones"
-                        self._data_present = True
-                        return
-
-            self._data_present = False
+            presence, self._presence_locked, self._data_source = resolved
+            self._attr_is_on = presence == "HOME"
+            self._tado_mode = presence
+            self._data_present = True
         except Exception as e:
             _LOGGER.warning(
                 "Binary Sensor: home / away update failed (%s), "
@@ -404,13 +385,6 @@ class TadoPreheatNowSensor(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDa
             "is_tomorrow": self._is_tomorrow,
             "zone_type": _format_zone_type(self._zone_type),
         }
-
-    @property
-    def icon(self) -> str | None:
-        """Dynamic icon based on state."""
-        if self._attr_is_on:
-            return "mdi:radiator"
-        return "mdi:radiator-off"
 
     @callback
     def update(self) -> None:
@@ -784,8 +758,6 @@ class TadoBridgeConnectedSensor(
         self._attr_translation_key = _meta.translation_key
         self._attr_entity_registry_enabled_default = _meta.enabled_default
         self._attr_entity_category = get_entity_category(_meta)
-        if _meta.icon:
-            self._attr_icon = _meta.icon
 
     @callback
     def _handle_coordinator_update(self) -> None:

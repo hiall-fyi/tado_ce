@@ -21,11 +21,13 @@ from .exceptions import TadoAuthError, TadoBlockedError, TadoRateLimitError
 from .helpers import (
     async_trigger_immediate_refresh,
     get_zone_states,
+    live_zones,
     mask_serial,
     merge_homekit_into_zone_data,
     zone_entity_id,
 )
 from .ratelimit import async_check_bootstrap_reserve_or_raise as _check_bootstrap_reserve_or_raise
+from .schedule_helpers import async_refresh_zone_schedule
 from .services import _find_entity_by_id
 from .zone_write_ledger import ordered_zone_write
 
@@ -65,10 +67,11 @@ async def async_setup_entry(
     # Add Resume All Schedules button (hub-level)
     buttons.append(TadoResumeAllSchedulesButton(coordinator, home_id))
 
-    has_capability_zones = any(
-        z.get("type") in CAPABILITY_ZONE_TYPES for z in (zones_info or [])
+    # A heating room counts: the button is the only way to re-read its Early Start.
+    has_refreshable_zones = any(
+        z.get("type") == "HEATING" or z.get("type") in CAPABILITY_ZONE_TYPES for z in (zones_info or [])
     )
-    if has_capability_zones:
+    if has_refreshable_zones:
         buttons.append(TadoRefreshZoneCapabilitiesButton(coordinator, home_id))
 
     if zones_info:
@@ -139,14 +142,14 @@ class TadoResumeAllSchedulesButton(CoordinatorEntity[TadoDataUpdateCoordinator],
         self._attr_translation_key = _meta.translation_key
         self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix}"
         self._attr_device_info = get_hub_device_info(home_id)
-        self._attr_icon = _meta.icon
 
     async def async_press(self) -> None:
-        """Delete each zone's overlay, then refresh (a rate limit, sign-in or blocked refusal stops the run before the refresh)."""
+        """Delete the overlay of each room Tado still lists, then refresh (a rate limit, sign-in or blocked refusal stops the run before the refresh)."""
         _LOGGER.debug("Button: Resume All Schedules pressed")
 
         client = self.coordinator.api_client
         zones_info = await self.hass.async_add_executor_job(self.coordinator.data_loader.load_zones_info_file)
+        zones_info = live_zones(zones_info or [], self.coordinator.data)
 
         if not zones_info:
             _LOGGER.warning(
@@ -228,7 +231,7 @@ class TadoResumeAllSchedulesButton(CoordinatorEntity[TadoDataUpdateCoordinator],
                     "the remaining zones were not tried",
                     zone_name, resumed_count,
                 )
-                dispatch_to_service_call(err, self.coordinator.config_entry, self.hass, self.coordinator)
+                dispatch_to_service_call(err, self.coordinator.config_entry, self.hass)
             except Exception:
                 # One zone failing must not stop the others; counted and reported below.
                 _LOGGER.warning(
@@ -269,11 +272,7 @@ class TadoResumeAllSchedulesButton(CoordinatorEntity[TadoDataUpdateCoordinator],
 
 
 class TadoRefreshZoneCapabilitiesButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonEntity):
-    """Drop the cached zone capabilities and re-fetch from the cloud.
-
-    Useful after a hardware swap or firmware update changes what a unit
-    reports: the cache otherwise only refreshes on integration setup.
-    """
+    """Re-fetch the zone capabilities and every heating zone's Early Start setting from the cloud."""
 
     _attr_has_entity_name = True
 
@@ -286,19 +285,22 @@ class TadoRefreshZoneCapabilitiesButton(CoordinatorEntity[TadoDataUpdateCoordina
         self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix}"
         self._attr_device_info = get_hub_device_info(home_id)
         self._attr_entity_category = get_entity_category(_meta)
-        self._attr_icon = _meta.icon
 
     async def async_press(self) -> None:
-        """Mark the `zone_capabilities` cache dirty and re-fetch from the cloud."""
+        """Mark the `zone_capabilities` cache dirty and re-fetch it and the Early Start values from the cloud."""
         _LOGGER.debug("Button: Refresh Zone Capabilities pressed")
 
         zones_info = self.coordinator.data_loader.get_cached("zones_info")
         capability_zones = sum(
             1 for z in (zones_info if isinstance(zones_info, list) else []) if z.get("type") in CAPABILITY_ZONE_TYPES
         )
+        heating_ids = {
+            str(z.get("id")) for z in (zones_info if isinstance(zones_info, list) else []) if z.get("type") == "HEATING"
+        }
         # Before the dirty mark, so a blocked press leaves the cached capabilities in place.
         await _check_bootstrap_reserve_or_raise(
-            self.hass, "Refresh Zone Capabilities", coordinator=self.coordinator, cost=max(capability_zones, 1),
+            self.hass, "Refresh Zone Capabilities", coordinator=self.coordinator,
+            cost=max(capability_zones + len(heating_ids), 1),
         )
 
         self.coordinator.data_loader.mark_cache_dirty("zone_capabilities")
@@ -314,6 +316,7 @@ class TadoRefreshZoneCapabilitiesButton(CoordinatorEntity[TadoDataUpdateCoordina
 
         try:
             await client._sync_zone_capabilities(zones_info)
+            await client._sync_early_start(zones_info, force_zone_ids=heating_ids)
             _LOGGER.info(
                 "Button: zone capabilities refreshed, entities will "
                 "pick up the new shape on the next coordinator update",
@@ -324,10 +327,11 @@ class TadoRefreshZoneCapabilitiesButton(CoordinatorEntity[TadoDataUpdateCoordina
                 "Button: triggered coordinator refresh after zone "
                 "capability re-fetch",
             )
+        except (TadoAuthError, TadoRateLimitError, TadoBlockedError) as err:
+            dispatch_to_service_call(err, self.coordinator.config_entry, self.hass)
         except Exception:
             _LOGGER.warning(
-                "Button: zone capabilities refresh failed, the cache stays "
-                "marked stale and the next poll or press re-fetches it",
+                "Button: zone capabilities refresh failed, press the button again to retry",
                 exc_info=True,
             )
 
@@ -352,7 +356,7 @@ class TadoWaterHeaterTimerButton(CoordinatorEntity[TadoDataUpdateCoordinator], B
         self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id, duration=duration)}"
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, "HOT_WATER", home_id)
         self._attr_entity_category = get_entity_category(_meta)
-        self._attr_icon = _meta.icon
+        self._attr_icon = "mdi:timer"
 
     async def async_press(self) -> None:
         """Apply the preset timer to the matching water heater entity."""
@@ -461,7 +465,6 @@ class TadoRefreshScheduleButton(CoordinatorEntity[TadoDataUpdateCoordinator], Bu
         self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, home_id)
         # No entity_category = Controls section (action button, not config)
-        self._attr_icon = _meta.icon
 
     async def async_press(self) -> None:
         """Pull the latest schedule for this zone and write it through the cache."""
@@ -474,38 +477,10 @@ class TadoRefreshScheduleButton(CoordinatorEntity[TadoDataUpdateCoordinator], Bu
             self._zone_name, self._zone_id,
         )
 
-        client = self.coordinator.api_client
-
         try:
-            schedule_data = await client.get_zone_schedule(self._zone_id)
-
-            if not schedule_data:
-                _LOGGER.warning(
-                    "Button: schedule fetch for %s returned no data, "
-                    "calendar will keep the previous schedule",
-                    self._zone_name,
-                )
-                return
-
-            refreshed = {
-                "name": self._zone_name,
-                "type": schedule_data.get("type", "ONE_DAY"),
-                "blocks": schedule_data.get("blocks") or {},
-                "failed_days": schedule_data.get("failed_days") or [],
-            }
-
-            await self.coordinator.data_loader.async_merge_store("schedules", {self._zone_id: refreshed})
-
-            _LOGGER.debug(
-                "Button: schedule refreshed for %s, cache updated",
-                self._zone_name,
-            )
-
-            self.hass.bus.async_fire(
-                f"{DOMAIN}_schedule_updated",
-                {"zone_id": self._zone_id, "zone_name": self._zone_name},
-            )
-
+            await async_refresh_zone_schedule(self.coordinator, self._zone_id, self._zone_name)
+        except (TadoAuthError, TadoRateLimitError, TadoBlockedError) as err:
+            dispatch_to_service_call(err, self.coordinator.config_entry, self.hass)
         except Exception:
             _LOGGER.warning(
                 "Button: schedule refresh for %s failed, calendar "
@@ -539,8 +514,18 @@ def _find_heating_climate(
     return ent
 
 
+def _timer_not_accepted(zone_name: str, minutes: int) -> HomeAssistantError:
+    return HomeAssistantError(
+        translation_domain=DOMAIN,
+        translation_key="timer_set_failed",
+        translation_placeholders={
+            "duration": str(minutes), "zone_name": zone_name, "error": "Tado did not accept the change",
+        },
+    )
+
+
 class TadoBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonEntity):
-    """Mirror the Tado app boost: 25°C for 30 minutes, then back to schedule."""
+    """Mirror the Tado app boost: 25°C (or the room's maximum when lower) for 30 minutes, then back to schedule."""
 
     _attr_has_entity_name = True
 
@@ -554,32 +539,27 @@ class TadoBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonEntity
         self._attr_translation_key = _meta.translation_key
         self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, "HEATING", home_id)
-        self._attr_icon = _meta.icon
 
     async def async_press(self) -> None:
-        """Apply the 25°C / 30-minute boost overlay to this zone."""
+        """Apply the boost overlay (25°C, or the room's maximum when lower) for 30 minutes."""
         _LOGGER.debug("Button: Boost pressed for %s", self._zone_name)
 
         ent = _find_heating_climate(self.hass, self.coordinator, self._zone_id, self._zone_name)
         if ent is None:
             return
+        temperature = min(BOOST_TEMPERATURE, ent.max_temp)
         api_success = await ent.async_set_timer(
-            temperature=BOOST_TEMPERATURE, duration_minutes=BOOST_DURATION_MINUTES, overlay=None,
+            temperature=temperature, duration_minutes=BOOST_DURATION_MINUTES, overlay=None,
         )
 
-        if api_success:
-            _LOGGER.info(
-                "Button: boosted %s to %s°C for %s minutes",
-                self._zone_name,
-                BOOST_TEMPERATURE,
-                BOOST_DURATION_MINUTES,
-            )
-        else:
-            _LOGGER.warning(
-                "Button: boost for %s could not be activated, "
-                "schedule remains unchanged",
-                self._zone_name,
-            )
+        if not api_success:
+            raise _timer_not_accepted(self._zone_name, BOOST_DURATION_MINUTES)
+        _LOGGER.info(
+            "Button: boosted %s to %s°C for %s minutes",
+            self._zone_name,
+            temperature,
+            BOOST_DURATION_MINUTES,
+        )
 
 
 class TadoSmartBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonEntity):
@@ -602,7 +582,6 @@ class TadoSmartBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonE
         self._attr_translation_key = _meta.translation_key
         self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, "HEATING", home_id)
-        self._attr_icon = _meta.icon
 
     def _get_heating_rate(self) -> float:
         """Pick the best available heating rate for duration sizing.
@@ -646,6 +625,10 @@ class TadoSmartBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonE
         """Apply a smart boost: target temp from schedule, duration from heating rate."""
         _LOGGER.debug("Button: Smart Boost pressed for %s", self._zone_name)
 
+        ent = _find_heating_climate(self.hass, self.coordinator, self._zone_id, self._zone_name)
+        if ent is None:
+            return
+
         coord_data = self.coordinator.data or {}
         zone_states = get_zone_states(coord_data)
         zone_data = zone_states.get(self._zone_id) or zone_states.get(str(self._zone_id))
@@ -676,7 +659,7 @@ class TadoSmartBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonE
         if target_temp is None or target_temp <= current_temp:
             # No usable schedule target: pick a sensible default
             # so the button still does something useful.
-            target_temp = min(current_temp + 3.0, 25.0)
+            target_temp = min(current_temp + 3.0, ent.max_temp)
             _LOGGER.debug(
                 "Button: smart boost defaulting target to %s°C "
                 "(current + 3°C), schedule target unavailable or "
@@ -709,26 +692,18 @@ class TadoSmartBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonE
             duration_minutes,
         )
 
-        ent = _find_heating_climate(self.hass, self.coordinator, self._zone_id, self._zone_name)
-        if ent is None:
-            return
         api_success = await ent.async_set_timer(temperature=target_temp, duration_minutes=duration_minutes, overlay=None)
 
-        if api_success:
-            _LOGGER.info(
-                "Button: smart boosted %s to %s°C for %s minutes "
-                "(rate %s°C/h)",
-                self._zone_name,
-                target_temp,
-                duration_minutes,
-                heating_rate,
-            )
-        else:
-            _LOGGER.warning(
-                "Button: smart boost for %s could not be activated "
-                ", schedule remains unchanged",
-                self._zone_name,
-            )
+        if not api_success:
+            raise _timer_not_accepted(self._zone_name, duration_minutes)
+        _LOGGER.info(
+            "Button: smart boosted %s to %s°C for %s minutes "
+            "(rate %s°C/h)",
+            self._zone_name,
+            target_temp,
+            duration_minutes,
+            heating_rate,
+        )
 
 
 class TadoIdentifyButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonEntity):
@@ -761,7 +736,7 @@ class TadoIdentifyButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonEnt
             f"tado_ce_{coordinator.home_id}"
             f"_{_meta.unique_id_suffix.format(serial=self._device_serial)}"
         )
-        self._attr_icon = _meta.icon
+        self._attr_icon = "mdi:map-marker-radius"
         self._attr_entity_category = get_entity_category(_meta)
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, coordinator.home_id)
 
@@ -798,7 +773,7 @@ class TadoIdentifyButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonEnt
         try:
             success = await self.coordinator.api_client.identify_device(self._device_serial)
         except (TadoAuthError, TadoRateLimitError, TadoBlockedError) as err:
-            dispatch_to_service_call(err, self.coordinator.config_entry, self.hass, self.coordinator)
+            dispatch_to_service_call(err, self.coordinator.config_entry, self.hass)
         if success:
             _LOGGER.debug("Button: identify sent to device %s", mask_serial(self._device_serial))
         else:

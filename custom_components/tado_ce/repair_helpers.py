@@ -12,7 +12,7 @@ from homeassistant.helpers import issue_registry as ir
 from .cloud_health import reset_blocked_record
 from .const import DOMAIN
 from .helpers import offline_since_date, retry_after_to_minutes
-from .insights_device import calculate_battery_recommendation
+from .insights_device import battery_cell_label
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -92,9 +92,21 @@ SVC_SENSOR_MISSING_ISSUE = RepairIssueSpec(
     is_persistent=False,
 )
 
-# WARNING + non-persistent: re-raised from zones_info on every refresh while a device battery is LOW or CRITICAL.
+# WARNING + non-persistent, one id per zone: the LOW, CRITICAL and offline texts share the id prefix and are re-raised from zones_info on every refresh.
 TRV_BATTERY_LOW_ISSUE = RepairIssueSpec(
     translation_key="battery_low",
+    severity=ir.IssueSeverity.WARNING,
+    is_persistent=False,
+)
+TRV_BATTERY_CRITICAL_ISSUE = RepairIssueSpec(
+    translation_key="battery_critical",
+    id_prefix="battery_low",
+    severity=ir.IssueSeverity.WARNING,
+    is_persistent=False,
+)
+TRV_BATTERY_OFFLINE_ISSUE = RepairIssueSpec(
+    translation_key="battery_offline",
+    id_prefix="battery_low",
     severity=ir.IssueSeverity.WARNING,
     is_persistent=False,
 )
@@ -265,16 +277,14 @@ def async_create_zone_reassigned_issue(hass: HomeAssistant, home_id: str | None,
 
 
 def async_create_battery_low_issue(
-    hass: HomeAssistant, home_id: str | None, zone_id: str, zone_name: str, devices_text: str, advice: str,
+    hass: HomeAssistant, home_id: str | None, zone_id: str, spec: RepairIssueSpec, zone_name: str,
+    devices_text: str, battery_type: str, offline_date: str | None = None,
 ) -> None:
     """Surface a repair naming the zone whose device battery is LOW or CRITICAL."""
-    async_create_issue(
-        hass,
-        TRV_BATTERY_LOW_ISSUE,
-        home_id=home_id,
-        zone_id=zone_id,
-        placeholders={"zone_name": zone_name, "devices": devices_text, "advice": advice},
-    )
+    placeholders = {"zone_name": zone_name, "devices": devices_text, "battery_type": battery_type}
+    if offline_date is not None:
+        placeholders["offline_date"] = offline_date
+    async_create_issue(hass, spec, home_id=home_id, zone_id=zone_id, placeholders=placeholders)
 
 
 def async_dismiss_battery_low_issue(hass: HomeAssistant, home_id: str | None, zone_id: str) -> None:
@@ -300,27 +310,36 @@ def _sync_zone_battery_repair(hass: HomeAssistant, home_id: str | None, zone: An
             _LOGGER.info("Repairs: battery repair cleared for zone %s", zone_id)
         return
     names = ", ".join(sorted({device_names.get(str(d.get("deviceType") or "")[:2].upper(), "Tado device") for d in low}))
-    advice = " ".join(dict.fromkeys(
-        calculate_battery_recommendation(
-            str(d["batteryState"]), zone_name, d.get("deviceType"), offline_since_date(d.get("connectionState")),
-        ) for d in low
-    ))
-    async_create_battery_low_issue(hass, home_id, zone_id, zone_name, names, advice)
+    battery_type = ", ".join(sorted({battery_cell_label(d.get("deviceType")) for d in low}))
+    offline_dates = sorted({date for d in low if (date := offline_since_date(d.get("connectionState")))})
+    if offline_dates:
+        spec = TRV_BATTERY_OFFLINE_ISSUE
+    elif any(str(d.get("batteryState") or "").upper() == "CRITICAL" for d in low):
+        spec = TRV_BATTERY_CRITICAL_ISSUE
+    else:
+        spec = TRV_BATTERY_LOW_ISSUE
+    async_create_battery_low_issue(
+        hass, home_id, zone_id, spec, zone_name, names, battery_type, offline_dates[0] if offline_dates else None,
+    )
     if not existed:
         _LOGGER.info("Repairs: battery repair raised for zone %s (%s)", zone_id, names)
 
 
-def async_sync_battery_repairs(hass: HomeAssistant, home_id: str | None, zones_info: object) -> None:
-    """Raise or clear one low-battery repair per zone; a missing list changes nothing and one failing zone skips only itself."""
+def async_sync_battery_repairs(hass: HomeAssistant, home_id: str | None, zones_info: object, failed_zones: set[str]) -> None:
+    """Raise or clear one low-battery repair per zone; a missing list changes nothing, a failing zone skips only itself, and a zone that keeps failing warns once."""
     if not isinstance(zones_info, list):
         return
     for zone in zones_info:
+        zone_key = str(zone.get("id")) if isinstance(zone, dict) else "?"
         try:
             _sync_zone_battery_repair(hass, home_id, zone)
+            failed_zones.discard(zone_key)
         except Exception:  # noqa: BLE001  # the Repair is optional, so no registry or payload failure may abort a poll
-            _LOGGER.warning(
-                "Repairs: battery repair failed for zone %s", zone.get("id") if isinstance(zone, dict) else "?", exc_info=True,
-            )
+            if zone_key not in failed_zones:
+                failed_zones.add(zone_key)
+                _LOGGER.warning("Repairs: battery repair failed for zone %s", zone_key, exc_info=True)
+            else:
+                _LOGGER.debug("Repairs: battery repair still failing for zone %s", zone_key)
 
 
 def repair_home_id(home_id: str | None) -> str:

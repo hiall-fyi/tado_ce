@@ -11,8 +11,8 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 | | Supporters |
 |---|-----------|
 | ☕☕☕☕☕☕☕☕ | [@ChrisMarriott38](https://github.com/ChrisMarriott38) |
-| ☕☕☕☕☕☕ | [@hapklaar](https://github.com/hapklaar), [@jeverley](https://github.com/jeverley) |
-| ☕☕☕☕☕ | Marcel v.H., [@Prodeguerriero](https://github.com/Prodeguerriero), [@rodneyha](https://github.com/rodneyha), [@UKICS](https://github.com/UKICS), [@wisskid](https://github.com/wisskid) |
+| ☕☕☕☕☕☕ | [@hapklaar](https://github.com/hapklaar), [@jeverley](https://github.com/jeverley), [@Prodeguerriero](https://github.com/Prodeguerriero) |
+| ☕☕☕☕☕ | Marcel v.H., [@rodneyha](https://github.com/rodneyha), [@UKICS](https://github.com/UKICS), [@wisskid](https://github.com/wisskid) |
 | ☕☕ | Arnaud L., [@FerranMartin](https://github.com/FerranMartin), [@janchrillesen](https://github.com/janchrillesen), [@jeromewir](https://github.com/jeromewir), Luke R., [@marcovn](https://github.com/marcovn), [@ratormat](https://github.com/ratormat), [@Saughassy](https://github.com/Saughassy), Sebastian M., [@sknapek](https://github.com/sknapek), Vit P. |
 | ☕ | Alby T., Bernhard S., kottrupk, [@lsnijder94](https://github.com/lsnijder94), [@MathiasB112](https://github.com/MathiasB112), Philipp H. |
 
@@ -34,6 +34,7 @@ Community contributors who helped shape each release through bug reports, featur
 
 ### v5.0.0
 
+- **[@apilone](https://github.com/apilone)** — Asked for a way to switch a room's active timetable from Home Assistant ([#414](https://github.com/hiall-fyi/tado_ce/issues/414)), with the case he runs it for: his rooms follow the Mon-Fri, Sat, Sun timetable, the unused Mon-Sun timetable holds the holiday blocks, and an automation switches a room over on a public holiday and back the next day. That is the `tado_ce.set_climate_active_timetable` service in 5.0.0-beta.2.
 - **[@dragorex71](https://github.com/dragorex71)** — Reported that a zone switched off by Away mode showed the scheduled temperature on the card while the Tado app showed Anti freeze ([#390](https://github.com/hiall-fyi/tado_ce/issues/390)). The debug line he pasted from his Piano Notte zone is what settled it: Tado sends no target temperature at all for a zone that is off without a manual override, so the number on the card was one Tado CE had picked from the schedule. That is why an off heating zone now shows the 5°C frost temperature instead.
 - **[@dimitri-frank](https://github.com/dimitri-frank)** — Hit the same mismatch on his own setup (HomeKit with presence mode synchronisation, Away mode on v4.5.0), where the card kept showing the scheduled 20°C while the app showed 5°C frost protection and the boiler was not being asked to heat. A second report from another home is what showed this was how Tado CE treated every zone off under its schedule or Away, not something particular to one zone.
 

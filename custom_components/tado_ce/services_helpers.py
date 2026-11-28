@@ -43,7 +43,6 @@ async def run_service_call(
     capture_source: str | None,
     refresh_entity_id: str | None,
     reason: str,
-    force_refresh: bool = False,
     stamp_write: bool = True,
     cancels_pending_write: bool = True,
     own_power_off: bool | None = None,
@@ -72,7 +71,7 @@ async def run_service_call(
         await _verify_unknown_outcome(hass, coordinator, zone_id, refresh_entity_id, stamp_write)
         return False
     except (TadoAuthError, TadoRateLimitError, TadoBlockedError) as e:
-        dispatch_to_service_call(e, coordinator.config_entry, hass, coordinator)
+        dispatch_to_service_call(e, coordinator.config_entry, hass)
     except aiohttp.ClientError as e:
         _LOGGER.warning(
             "Services: %s for zone %s network error (%s)",
@@ -111,6 +110,6 @@ async def run_service_call(
         release_zone_hold(hass, coordinator, zone_id)
 
     if refresh_entity_id is not None:
-        await async_trigger_immediate_refresh(hass, refresh_entity_id, reason, force=force_refresh)
+        await async_trigger_immediate_refresh(hass, refresh_entity_id, reason)
 
     return True

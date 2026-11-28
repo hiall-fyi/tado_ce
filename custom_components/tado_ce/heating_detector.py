@@ -44,13 +44,12 @@ class HeatingCycleDetector:
         if self._last_target_temp is None:
             self._last_target_temp = new_target
 
-            # If current_temp is provided and below target,
-            # zone is already heating - start a cycle
+            # Below target after a restart: start a cycle that counts once heating is seen
             if current_temp is not None and current_temp < new_target - 0.1:
                 _LOGGER.info(
-                    "Heating Detector: zone %s active heating "
-                    "detected after restart (current %.1f°C < "
-                    "target %.1f°C), starting cycle",
+                    "Heating Detector: zone %s below target after "
+                    "restart (current %.1f°C < target %.1f°C), "
+                    "starting cycle",
                     self._zone_id,
                     current_temp,
                     new_target,
@@ -172,8 +171,14 @@ class HeatingCycleDetector:
                     temp_increase,
                 )
 
+    def note_heating(self, heating: bool | None) -> None:
+        """Add this tick's heating evidence to the active cycle; None means the feeder has no signal."""
+        if heating is None or not self._active_cycle:
+            return
+        self._active_cycle.heating_seen = bool(self._active_cycle.heating_seen) or heating
+
     def check_cycle_complete(self) -> HeatingCycle | None:
-        """Check if active cycle is complete; returns the completed cycle when target is reached, None otherwise."""
+        """Check if the active cycle is complete; returns it when target is reached, None otherwise or when no heating was seen."""
         if not self._active_cycle:
             return None
 
@@ -182,11 +187,20 @@ class HeatingCycleDetector:
 
         current_temp = self._active_cycle.temperature_readings[-1].temp
         if current_temp >= self._active_cycle.target_temp:
-            # Target reached
+            if self._active_cycle.heating_seen is False:
+                _LOGGER.debug(
+                    "Heating Detector: zone %s discarding cycle, no heating "
+                    "seen while it ran (%s°C to %.1f°C)",
+                    self._zone_id,
+                    self._active_cycle.start_temp,
+                    self._active_cycle.target_temp,
+                )
+                self._active_cycle = None
+                return None
+
             self._active_cycle.end_time = dt_util.utcnow()
 
-            # Validate: Only mark as completed if there was actual heating
-            # (start_temp < target_temp and meaningful temperature rise)
+            # Validate: only a meaningful temperature rise makes it a completed cycle
             start_temp = self._active_cycle.start_temp
             target_temp = self._active_cycle.target_temp
 
@@ -255,5 +269,5 @@ class HeatingCycleDetector:
         )
 
     def get_active_cycle(self) -> HeatingCycle | None:
-        """Get currently active cycle."""
+        """Return the cycle in progress, if any."""
         return self._active_cycle

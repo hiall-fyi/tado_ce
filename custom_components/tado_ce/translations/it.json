@@ -144,7 +144,7 @@
     },
     "calendar": {
       "schedule": {
-        "name": "Pianificazione"
+        "name": "{zone_name}"
       }
     },
     "climate": {
@@ -335,6 +335,21 @@
           },
           "status": {
             "name": "Stato"
+          },
+          "rate_limited_until": {
+            "name": "Limite di richieste fino a"
+          },
+          "cloud_health": {
+            "name": "Stato del cloud"
+          },
+          "weather_last_fetched_min_ago": {
+            "name": "Meteo: ultimo recupero (min fa)"
+          },
+          "presence_last_fetched_min_ago": {
+            "name": "Presenza: ultimo recupero (min fa)"
+          },
+          "mobile_devices_last_fetched_min_ago": {
+            "name": "Dispositivi mobili: ultimo recupero (min fa)"
           }
         }
       },
@@ -1180,10 +1195,6 @@
         }
       }
     },
-    "resume_schedule": {
-      "name": "Riprendi la pianificazione",
-      "description": "Elimina qualsiasi deroga manuale e torna alla pianificazione automatica."
-    },
     "set_climate_temperature_offset": {
       "name": "Imposta offset di temperatura del clima",
       "description": "Imposta l'offset di temperatura (calibrazione) per un dispositivo climatico Tado. Compatibile con l'integrazione Tado integrata.",
@@ -1222,8 +1233,8 @@
         }
       }
     },
-    "set_away_configuration": {
-      "name": "Imposta configurazione assenza",
+    "set_climate_away_configuration": {
+      "name": "Imposta configurazione assenza del clima",
       "description": "Configura la temperatura da usare quando tutti sono fuori casa.",
       "fields": {
         "entity_id": {
@@ -1244,8 +1255,8 @@
         }
       }
     },
-    "get_temperature_offset": {
-      "name": "Ottieni offset di temperatura",
+    "get_climate_temperature_offset": {
+      "name": "Ottieni offset di temperatura del clima",
       "description": "Recupera l'offset di temperatura attuale (calibrazione) di un dispositivo climatico Tado. Restituisce il valore dell'offset da usare nelle automazioni.",
       "fields": {
         "entity_id": {
@@ -1254,38 +1265,30 @@
         }
       }
     },
-    "activate_open_window": {
-      "name": "Attiva finestra aperta (Auto-Assist)",
-      "description": "Conferma una finestra aperta già rilevata da Tado, come toccando l'icona nell'app Tado. Funziona solo quando il rilevamento integrato di Tado ha segnalato un evento di finestra aperta. Per attivare la modalità finestra aperta da sensori esterni, usi invece 'Imposta modalità finestra aperta'."
+    "activate_climate_open_window": {
+      "name": "Attiva finestra aperta del clima (Auto-Assist)",
+      "description": "Conferma l'apertura di una finestra già rilevata da Tado, proprio come quando si tocca l'icona nell'app Tado. Funziona solo quando il sistema di rilevamento integrato di Tado ha segnalato l'apertura di una finestra. Per attivare la modalità finestra aperta da sensori esterni, usi invece 'Imposta modalità finestra aperta del clima'."
     },
-    "deactivate_open_window": {
-      "name": "Disattiva finestra aperta",
-      "description": "Annulla una finestra aperta rilevata da Tado stesso, oppure confermata con 'Attiva finestra aperta', e riprende il normale riscaldamento/raffrescamento. Non annulla 'Imposta modalità finestra aperta': quella modalità scrive un Overlay antigelo, quindi la annulli con 'Riprendi la pianificazione' o 'Ripristina stato precedente'."
+    "deactivate_climate_open_window": {
+      "name": "Disattiva finestra aperta del clima",
+      "description": "Annulla una finestra aperta rilevata da Tado stesso, oppure confermata con 'Attiva finestra aperta del clima', e riprende il normale riscaldamento/raffrescamento. Non annulla 'Imposta modalità finestra aperta del clima': quella modalità scrive un Overlay antigelo, quindi la annulli con 'Riprendi la pianificazione del clima' o 'Ripristina lo stato precedente del clima'."
     },
-    "set_open_window_mode": {
-      "name": "Imposta modalità finestra aperta",
-      "description": "Attiva la modalità finestra aperta da sensori esterni (sensori di contatto Zigbee, Z-Wave, ecc.). Porta la zona alla temperatura di protezione antigelo, senza bisogno del rilevamento di Tado. La durata predefinita è il timeout di rilevamento finestra aperta impostato per la zona, oppure 15 minuti se non è configurato.",
+    "set_climate_open_window_mode": {
+      "name": "Imposta modalità finestra aperta del clima",
+      "description": "Attiva la modalità finestra aperta tramite sensori esterni (sensori di contatto Zigbee, Z-Wave, ecc.). Imposta la zona alla temperatura di protezione antigelo, senza che sia necessario il rilevamento da parte di Tado. La durata predefinita corrisponde al timeout di Open Window Detection della zona oppure, se non configurato, a 15 minuti.",
       "fields": {
-        "duration": {
-          "name": "Durata",
-          "description": "Per quanto tempo mantenere attiva la modalità finestra aperta, in secondi (60–3600). Usi 0 per una durata indefinita fino alla ripresa manuale. Per impostazione predefinita è il timeout di rilevamento finestra aperta di Tado per la zona."
-        },
-        "capture_state": {
-          "name": "Acquisisci stato",
-          "description": "Acquisisce lo stato attuale della zona prima di applicare la modalità finestra aperta, per poterlo ripristinare in seguito con il servizio Ripristina stato precedente. Attivo per impostazione predefinita."
+        "time_period": {
+          "name": "Periodo di tempo",
+          "description": "Per quanto tempo mantenere attiva la modalità finestra aperta, espresso in ore:minuti:secondi (da 00:01:00 a 01:00:00). Usi 00:00:00 per mantenerla fino a quando riprenda la pianificazione della zona. Il valore predefinito corrisponde al timeout di Open Window Detection di Tado per la zona."
         }
       }
     },
-    "restore_previous_state": {
-      "name": "Ripristina stato precedente",
-      "description": "Riporta una zona allo stato precedente all'ultima operazione di Overlay. Se non esiste uno stato acquisito, riprende la pianificazione."
-    },
-    "turn_off_all_zones": {
-      "name": "Disattiva tutte le stanze",
+    "turn_off_all_climate_zones": {
+      "name": "Disattiva tutte le stanze del clima",
       "description": "Mette ogni zona climatica (riscaldamento + AC) in un Overlay OFF manuale. Riproduce il pulsante 'Turn OFF all rooms' dell'app Tado. Le pianificazioni restano sospese finché non riprende manualmente ogni zona."
     },
-    "set_schedule_temperature": {
-      "name": "Imposta temperatura pianificata",
+    "set_climate_schedule_temperature": {
+      "name": "Imposta temperatura pianificata del clima",
       "description": "Imposta la temperatura target di una zona da un'automazione, ad esempio un calendario delle festività, senza che Smart Valve Control la consideri una deroga manuale. Smart Valve Control continua a lavorare verso questo target e riprende la pianificazione normale al successivo cambio di blocco.",
       "fields": {
         "temperature": {
@@ -1315,6 +1318,36 @@
     "get_flow_temperature_settings": {
       "name": "Leggi impostazione temperatura di mandata",
       "description": "Legge l'impostazione della temperatura massima di mandata che Tado memorizza per un impianto di riscaldamento OpenTherm. Non viene modificato nulla. Usa una chiamata API e restituisce uno stato più l'impostazione così come la invia Tado, con i numeri di serie abbreviati. Una casa senza impianto OpenTherm restituisce \"not applicable\"."
+    },
+    "set_climate_active_timetable": {
+      "name": "Imposta schema di pianificazione attivo del clima",
+      "description": "Cambia lo schema di pianificazione (1 giorno, 3 giorni o 7 giorni) seguito da una zona di riscaldamento o climatizzazione. La pianificazione della zona viene poi ricaricata da Tado, se era già stata caricata.",
+      "fields": {
+        "entity_id": {
+          "name": "Entità",
+          "description": "Le entità climate di cui cambiare lo schema di pianificazione."
+        },
+        "timetable": {
+          "name": "Schema di pianificazione",
+          "description": "Lo schema di pianificazione da attivare."
+        }
+      }
+    },
+    "resume_climate_schedule": {
+      "name": "Riprendi la pianificazione del clima",
+      "description": "Elimina qualsiasi deroga manuale in una stanza con riscaldamento o climatizzazione e torna alla pianificazione automatica."
+    },
+    "resume_water_heater_schedule": {
+      "name": "Riprendi la pianificazione dello scaldacqua",
+      "description": "Elimina qualsiasi deroga manuale nella zona dell'acqua calda e torna alla pianificazione automatica."
+    },
+    "restore_climate_previous_state": {
+      "name": "Ripristina lo stato precedente del clima",
+      "description": "Riporta una stanza con riscaldamento o climatizzazione allo stato precedente all'ultima operazione di Overlay. Se non esiste uno stato acquisito, riprende la pianificazione."
+    },
+    "restore_water_heater_previous_state": {
+      "name": "Ripristina lo stato precedente dello scaldacqua",
+      "description": "Riporta la zona dell'acqua calda allo stato precedente all'ultima operazione di Overlay. Se non esiste uno stato acquisito, riprende la pianificazione."
     }
   },
   "selector": {
@@ -1399,6 +1432,13 @@
         "linear": "Linea retta",
         "exponential": "Curvo"
       }
+    },
+    "active_timetable": {
+      "options": {
+        "one_day": "1 giorno",
+        "three_day": "3 giorni",
+        "seven_day": "7 giorni"
+      }
     }
   },
   "exceptions": {
@@ -1408,7 +1448,7 @@
     "entity_not_tado_ce": {
       "message": "L'entità {entity_id} non è un'entità Tado CE (platform={platform})"
     },
-    "entity_no_config_entry": {
+    "entity_config_entry_not_found": {
       "message": "L'entità {entity_id} non ha alcuna associazione con la voce di configurazione"
     },
     "entry_not_loaded": {
@@ -1435,14 +1475,11 @@
     "timer_set_failed": {
       "message": "Impossibile impostare il timer di {duration} min per {zone_name}: {error}"
     },
-    "bridge_auth_failed": {
-      "message": "Numero di serie o codice di autenticazione del bridge non valido"
-    },
     "offset_write_failed": {
       "message": "Impossibile impostare l'offset di temperatura per {entity_id}: nessuno dei {device_count} dispositivi ha accettato la scrittura. Verificare che i dispositivi siano online e riprovare."
     },
-    "timer_set_failed_all": {
-      "message": "Impossibile impostare il timer su nessuna delle {entity_count} zone. Motivi: {reasons}"
+    "timer_set_all_zones_failed": {
+      "message": "Impossibile impostare il timer. Motivo: {reasons}"
     },
     "state_restore_failed": {
       "message": "Ripristino dello stato non riuscito per {entity_id}. Il cloud ha rifiutato la chiamata. Lo stato acquisito è stato conservato, quindi può riprovare."
@@ -1453,14 +1490,11 @@
     "turn_off_all_no_climate_zones": {
       "message": "In questa casa Tado non sono state trovate zone di riscaldamento o AC, quindi non c'è nulla da spegnere."
     },
-    "turn_off_all_failed_all": {
+    "turn_off_all_zones_failed": {
       "message": "Impossibile spegnere alcuna zona. Il cloud di Tado ha rifiutato ogni chiamata in questo ciclo. Motivi: {reasons}. Controlli la quota API dell'integrazione oppure riprovi."
     },
     "auth_required": {
       "message": "È richiesta l'autenticazione Tado. Autentichi nuovamente l'integrazione."
-    },
-    "cloud_write_failed": {
-      "message": "Scrittura nel cloud Tado non riuscita. Il cloud ha rifiutato la richiesta, riprovare."
     },
     "rate_limited": {
       "message": "L'API Tado ha raggiunto il limite di richieste. Riprovi tra {retry_after_minutes} min."
@@ -1497,12 +1531,36 @@
     },
     "cloud_blocked": {
       "message": "Per il momento Tado sta bloccando le richieste da questa connessione. Attenda qualche minuto e riprovi; non serve accedere di nuovo."
+    },
+    "no_matching_zones": {
+      "message": "Nessuna zona Tado CE corrisponde alla selezione per questo servizio ({domains}). Selezioni almeno una zona Tado CE."
+    },
+    "zone_not_available": {
+      "message": "Al momento {entity_id} non è disponibile come zona Tado CE. La zona potrebbe essere disattivata o ancora in caricamento."
+    },
+    "set_active_timetable_failed": {
+      "message": "'Imposta schema di pianificazione attivo del clima' non è riuscito per {entity_id}. Il cloud non ha confermato il nuovo schema, quindi la zona mantiene quello attuale. Riprovi."
+    },
+    "cloud_read_failed": {
+      "message": "Il cloud di Tado non ha restituito i dati. Riprovi."
+    },
+    "cloud_write_failed": {
+      "message": "La modifica potrebbe non essere arrivata a Tado: è stata rifiutata oppure Tado non ha risposto in tempo. Controlli la zona nell'app Tado prima di ripeterla."
+    },
+    "zone_without_device": {
+      "message": "{entity_id} non ha alcun dispositivo Tado che segnali uno scostamento di temperatura."
+    },
+    "feature_not_enabled": {
+      "message": "Nulla da aggiornare: l'impostazione Tado CE collegata a \"{feature}\" è disattivata."
+    },
+    "temperature_out_of_range": {
+      "message": "Valore: {temperature} °C. Stanza: {entity_id}. Intervallo consentito: da {minimum} °C a {maximum} °C. Non è stato modificato nulla."
     }
   },
   "issues": {
     "auth_token_expired": {
-      "title": "Tado CE: Autenticazione scaduta",
-      "description": "Il token di aggiornamento per la casa **{home_id}** è scaduto. Riconfigurare l'integrazione per autenticarsi di nuovo.\n\nVada in **Impostazioni → Dispositivi e servizi → Tado CE → Riconfigura**."
+      "title": "Tado CE: impossibile effettuare l'accesso a Tado",
+      "description": "L'accesso salvato per la casa **{home_id}** non funziona più. Potrebbe essere scaduto o essere stato revocato, oppure Tado potrebbe averlo rifiutato. Si prega di riconfigurare l'integrazione per effettuare nuovamente l'accesso.\n\nVai su **Impostazioni → Dispositivi e servizi → Tado CE → Riconfigura**."
     },
     "svc_sensor_missing": {
       "title": "Smart Valve Control disattivato per {zone_name}",
@@ -1530,7 +1588,15 @@
     },
     "battery_low": {
       "title": "Tado CE: batteria scarica in {zone_name}",
-      "description": "Batteria scarica segnalata da: {devices}.\n\n{advice}\n\nFinché le batterie non verranno sostituite, la stanza potrebbe non riscaldarsi come dovrebbe. Il sensore della batteria di ciascun dispositivo in Home Assistant mostra lo stesso valore. Questo avviso scompare automaticamente non appena nessun dispositivo nella stanza segnala più una batteria scarica."
+      "description": "Batteria scarica segnalata da: {devices}.\n\nSostituisca le batterie ({battery_type}) entro 1-2 settimane.\n\nFinché le batterie non verranno sostituite, la stanza potrebbe non riscaldarsi come dovrebbe. Il sensore della batteria di ciascun dispositivo in Home Assistant mostra la lettura propria di quel dispositivo. Questo avviso scompare automaticamente non appena i dispositivi segnalano di nuovo una batteria normale."
+    },
+    "battery_critical": {
+      "title": "Tado CE: batteria scarica in {zone_name}",
+      "description": "Batteria quasi esaurita segnalata da: {devices}.\n\nSostituisca le batterie ({battery_type}) oggi stesso, perché il dispositivo potrebbe smettere di funzionare.\n\nFinché le batterie non verranno sostituite, la stanza potrebbe non riscaldarsi come dovrebbe. Il sensore della batteria di ciascun dispositivo in Home Assistant mostra la lettura propria di quel dispositivo. Questo avviso scompare automaticamente non appena i dispositivi segnalano di nuovo una batteria normale."
+    },
+    "battery_offline": {
+      "title": "Tado CE: batteria scarica in {zone_name}",
+      "description": "Batteria scarica segnalata da: {devices}.\n\nUn dispositivo in questa stanza è offline dal {offline_date} e la sua ultima lettura della batteria era scarica o critica. Sostituisca le batterie ({battery_type}) e controlli che il dispositivo si riconnetta.\n\nFinché le batterie non verranno sostituite, la stanza potrebbe non riscaldarsi come dovrebbe. Il sensore della batteria di ciascun dispositivo in Home Assistant mostra la lettura propria di quel dispositivo. Questo avviso scompare automaticamente non appena i dispositivi segnalano di nuovo una batteria normale."
     }
   },
   "config": {
@@ -1599,6 +1665,7 @@
       "already_configured": "Questa casa Tado è già configurata in Tado CE.",
       "timeout": "Autorizzazione scaduta. Riprovare.",
       "no_homes": "Non sono state trovate case Tado per questo account.",
+      "wrong_home": "Questo accesso a Tado non include la casa configurata in Tado CE. Acceda con l'account proprietario di quella casa oppure utilizzi Riconfigura per passare a un'altra casa.",
       "reauth_successful": "Riautenticazione riuscita! Le credenziali sono state aggiornate.",
       "reconfigure_successful": "Fatto. Il nuovo accesso a Tado è stato salvato."
     },
@@ -1879,7 +1946,7 @@
               "wc_curve_k": "Incurvatura della curva"
             },
             "data_description": {
-              "wc_slope": "Quanto rapidamente varia la temperatura di mandata in funzione della temperatura esterna (0,3–3,0). Se la temperatura esterna è inferiore alla temperatura esterna di progetto, la temperatura di mandata è pari alla temperatura di mandata massima indipendentemente dalla pendenza. Se la temperatura esterna è superiore a tale valore, una pendenza maggiore comporta una temperatura di mandata più bassa. Viene utilizzato solo quando il tipo di sistema di riscaldamento sopra indicato è «Personalizzato» e la forma della curva di riscaldamento è «Linea retta»; in caso contrario, viene calcolato in base ai valori di temperatura di mandata massima/minima, temperatura di spegnimento e temperatura esterna di progetto, oppure ignorato se si seleziona «Curvo».",
+              "wc_slope": "Quanto rapidamente varia la temperatura di mandata in funzione della temperatura esterna (0,3–3,0). Se la temperatura esterna è inferiore alla temperatura esterna di progetto, la temperatura di mandata è pari alla temperatura di mandata massima indipendentemente dalla pendenza. Se la temperatura esterna è superiore a tale valore, una pendenza maggiore comporta una temperatura di mandata più bassa. La compensazione ambiente può comunque ridurla quando gli ambienti in riscaldamento sono più caldi del loro target. Viene utilizzato solo quando il tipo di sistema di riscaldamento sopra indicato è «Personalizzato» e la forma della curva di riscaldamento è «Linea retta»; in caso contrario, viene calcolato in base ai valori di temperatura di mandata massima/minima, temperatura di spegnimento e temperatura esterna di progetto, oppure ignorato se si seleziona «Curvo».",
               "wc_design_outdoor_temp": "La temperatura più bassa prevista nella sua zona (da -30 a 10 °C)",
               "wc_max_flow_temp": "Temperatura di mandata massima che la caldaia dovrebbe raggiungere alla temperatura esterna più bassa (30–80 °C). Viene utilizzata per il calcolo automatico della pendenza, a meno che il tipo di sistema di riscaldamento sopra indicato non sia “Personalizzato”.",
               "wc_min_flow_temp": "Temperatura di mandata minima, utilizzata anche quando il riscaldamento si spegne (30–60 °C). Serve per il calcolo automatico della pendenza, a meno che il tipo di sistema di riscaldamento sopra indicato non sia “Personalizzato”.",
@@ -1949,7 +2016,7 @@
         }
       },
       "reset_confirm": {
-        "description": "Questo riporta le impostazioni scelte ai valori predefiniti. Ripristina tutto disattiva anche ogni funzione tranne Internet Bridge, che resta attivo mentre numero di serie e codice di autenticazione vengono conservati. Disattivare una funzione rimuove le entità che ha creato. L'accesso a Tado e le impostazioni per zona vengono conservati, così come numero di serie e codice di autenticazione del bridge, a meno che abbia scelto Internet Bridge.",
+        "description": "Questo riporta le impostazioni scelte ai valori predefiniti. Ripristina tutto disattiva anche ogni funzione tranne Internet Bridge, che resta attivo mentre numero di serie e codice di autenticazione vengono conservati. Disattivare una funzione rimuove le entità che ha creato. L'accesso a Tado e le impostazioni per zona vengono conservati, così come numero di serie e codice di autenticazione del bridge, a meno che abbia scelto Internet Bridge. Scegliere Internet Bridge disattiva anche la compensazione meteo, perché richiede il bridge.",
         "title": "Conferma ripristino"
       },
       "homekit_pairing": {
@@ -1974,6 +2041,7 @@
     "error": {
       "interval_out_of_range": "L'intervallo di polling deve essere compreso tra 1 e 1440 minuti.",
       "bridge_auth_failed": "Numero di serie o codice di autenticazione del bridge non validi. Controlli e riprovi",
+      "bridge_unreachable": "Impossibile raggiungere Tado per verificare i dati del bridge. Verificare che Home Assistant sia online e riprovare",
       "wc_min_exceeds_max": "La temperatura di mandata minima non può superare la temperatura di mandata massima",
       "bridge_serial_invalid": "Solo gli Internet Bridge versione 3 e successive (numero di serie che inizia con IB) dispongono dell'API locale. Questo numero di serie non inizia con IB, quindi potrebbe essere un bridge più vecchio (prefisso GW) oppure un errore di digitazione. La compensazione meteo richiede un bridge con API locale.",
       "homekit_wrong_pin": "Il bridge ha rifiutato il codice. O il codice di configurazione HomeKit di 8 cifre è errato (lo controlli sul bridge o nell'app Tado), oppure un altro controller HomeKit (Homebridge, Apple Home o l'HomeKit di Home Assistant) sta occupando il bridge. Fermi l'altro controller, poi riprovi.",

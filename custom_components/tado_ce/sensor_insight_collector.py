@@ -25,6 +25,7 @@ from .helpers import (
     offline_since_date,
     parse_iso_datetime,
     resolve_boiler_flow_temperature,
+    resolve_home_presence,
 )
 from .insights_api import (
     calculate_api_quota_planning_insight,
@@ -106,7 +107,6 @@ class InsightContext:
     thermal_enabled: bool
     schedule_enabled: bool
     weather_enabled: bool
-    presence_enabled: bool
     geofencing_active: bool
     comfort_heat_vulnerable_group: bool = False
     # False in a keep-live refresh: held power may clear the anomaly timer but never start it.
@@ -121,9 +121,9 @@ class InsightContext:
 
         # Geofencing is active only when presence sync is on AND
         # the API reports presenceLocked=False (i.e. auto/geofencing mode).
-        presence_enabled = cfg.get_home_state_sync_enabled()
+        sync_enabled = cfg.get_home_state_sync_enabled()
         home_state = (coordinator.data or {}).get("home_state") or {}
-        geofencing_active = presence_enabled and not home_state.get(
+        geofencing_active = sync_enabled and not home_state.get(
             "presenceLocked", True,
         )
 
@@ -136,7 +136,6 @@ class InsightContext:
             thermal_enabled=cfg.get_thermal_analytics_enabled(),
             schedule_enabled=cfg.get_schedule_calendar_enabled(),
             weather_enabled=cfg.get_weather_enabled(),
-            presence_enabled=presence_enabled,
             geofencing_active=geofencing_active,
             comfort_heat_vulnerable_group=cfg.get_comfort_heat_vulnerable_group(),
         )
@@ -1057,8 +1056,7 @@ def get_hub_insights(
         if ctx.weather_enabled:
             _collect_weather_insights(coordinator, coord_data, hub_insights)
 
-        if ctx.presence_enabled:
-            _collect_presence_insights(hass, coordinator, hub_insights)
+        _collect_presence_insights(hass, coordinator, hub_insights)
 
         if ctx.geofencing_active:
             mobile_devices = coord_data.get("mobile_devices")
@@ -1128,11 +1126,11 @@ def _collect_presence_insights(
 ) -> None:
     """Collect away+heating and home+all-off insights."""
     coord_data = coordinator.data or {}
-    home_state_data = coord_data.get("home_state")
-    if not home_state_data:
+    resolved = resolve_home_presence(coord_data, coordinator.last_zone_fetch_ts())
+    if resolved is None:
         return
 
-    presence = home_state_data.get("presence")
+    presence = resolved[0]
     zones_info = coord_data.get("zones_info")
     zone_states = get_zone_states(coord_data)
     if not zone_states or not zones_info:

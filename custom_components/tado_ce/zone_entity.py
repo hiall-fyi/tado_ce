@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import logging
+import math
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from homeassistant.const import ATTR_TEMPERATURE
+from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util.unit_conversion import TemperatureConverter
 
 from .error_dispatch import is_typed_cloud_rejection
 from .optimistic_helpers import fetch_landed_since_write
@@ -61,8 +63,20 @@ class ZoneEntityMixin(_ZoneHost):
     async def _async_restore_target(self, default: float | None) -> None:
         """Restore the last target across a restart, fall back to `default`, then prime from a published fetch."""
         last_state = await self.async_get_last_state()
-        if last_state and last_state.attributes.get(ATTR_TEMPERATURE) is not None:
-            self._attr_native_target_temperature = last_state.attributes[ATTR_TEMPERATURE]
+        restored: float | None = None
+        attributes = last_state.attributes if last_state else {}
+        saved = attributes.get(ATTR_TEMPERATURE)
+        if saved is not None:
+            # The saved value is in the display unit: the state's own unit first, the system unit second.
+            unit = attributes.get("temperature_unit", self.hass.config.units.temperature_unit)
+            try:
+                restored = TemperatureConverter.convert(float(saved), unit, UnitOfTemperature.CELSIUS)
+            except (TypeError, ValueError, HomeAssistantError):
+                _LOGGER.debug(
+                    "%s: %s ignored an unreadable saved target %r", self._LOG_LABEL, self._zone_name, saved,
+                )
+        if restored is not None and math.isfinite(restored):
+            self._attr_native_target_temperature = restored
             _LOGGER.debug(
                 "%s: %s restored target %s°C from previous HA state",
                 self._LOG_LABEL, self._zone_name, self._attr_native_target_temperature,

@@ -15,8 +15,11 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from dataclasses import dataclass
+from datetime import UTC, datetime
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
+
+from homeassistant.util import dt as dt_util
 
 from .exceptions import TadoAuthError, TadoBlockedError, TadoRateLimitError
 from .helpers import get_zone_state
@@ -30,6 +33,9 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+# The Cloud Data Refresh setting is the data age the user accepts; a poll can start late, so trust zone data 1.5 times over.
+RESUME_TRUST_MARGIN: Final[float] = 1.5
+
 
 def _log_task_exception(task: asyncio.Task[object]) -> None:
     """Log uncaught exceptions from fire-and-forget tasks at warning level."""
@@ -38,11 +44,23 @@ def _log_task_exception(task: asyncio.Task[object]) -> None:
 
 
 def held_data_unconfirmed(coordinator: TadoDataUpdateCoordinator, zone_id: str | None = None) -> bool:
-    """True while polling is paused or the zone's last write is of unknown outcome: the data on hand cannot say what Tado holds, so no guard may skip on it."""
+    """True while polling is paused, the zone's last write is of unknown outcome or the zone fetch is older than the trusted window: the data on hand cannot say what Tado holds, so no guard may skip on it."""
     if getattr(coordinator, "polling_paused", False) is True:
         return True
     ledger = getattr(coordinator, "write_ledger", None)
-    return zone_id is not None and ledger is not None and ledger.unconfirmed(zone_id) is True
+    if zone_id is not None and ledger is not None and ledger.unconfirmed(zone_id) is True:
+        return True
+    # Cloud-derived card state can change in the Tado app, so only a recent zone fetch can confirm it.
+    stamp = coordinator.last_zone_fetch_ts()
+    if not isinstance(stamp, datetime):
+        return True
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=UTC)
+    age_minutes = max(0.0, (dt_util.utcnow() - stamp).total_seconds() / 60)
+    if age_minutes > coordinator.config_manager.get_homekit_cloud_sync_minutes() * RESUME_TRUST_MARGIN:
+        _LOGGER.debug("Write guard: zone data is %d minutes old, older than the trusted window, not skipping", int(age_minutes))
+        return True
+    return False
 
 
 class ActionGuard:
@@ -123,6 +141,7 @@ class ActionDebouncer:
         self._default_window: float = default_window
         self._loop: asyncio.AbstractEventLoop | None = None
         self._running_tasks: set[asyncio.Task[None]] = set()
+        self._closed = False
         # Told of each zone whose waiting call is cancelled, so the write ledger can drop its queued mark.
         self.on_cancel: Callable[[str], None] | None = None
 
@@ -142,8 +161,11 @@ class ActionDebouncer:
 
         A non-positive window short-circuits the debounce and runs the
         callback immediately, useful for tests and for callers that
-        want a synchronous "no debounce" path.
+        want a synchronous "no debounce" path. Once cancel_all has closed the debouncer it runs nothing.
         """
+        if self._closed:
+            return
+
         effective_window = window if window is not None else self._default_window
 
         if effective_window <= 0:
@@ -182,7 +204,8 @@ class ActionDebouncer:
             self.on_cancel(zone_id)
 
     def cancel_all(self) -> None:
-        """Cancel every pending debounce (called during integration unload)."""
+        """Cancel every pending debounce and refuse new ones (called during integration unload)."""
+        self._closed = True
         if self._pending:
             _LOGGER.warning(
                 "Write Optimiser: shutdown dropped %d pending debounced "
@@ -395,7 +418,7 @@ class ResumeGuard:
         *,
         owed_before: bool = False,
     ) -> bool:
-        """Return True when the zone has no active overlay (no API call needed) in data that already shows our last write."""
+        """Return True when the zone has no active overlay (no API call needed) in recent data that already shows our last write."""
         # Held data can be hours old while polling is paused, and data from before a timed-out write cannot show whether it landed.
         if held_data_unconfirmed(coordinator, zone_id) or not coordinator.zone_data_covers_own_write(zone_id):
             return False

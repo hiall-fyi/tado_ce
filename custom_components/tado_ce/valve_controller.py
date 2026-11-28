@@ -448,7 +448,7 @@ class SmartValveController:
         except (TadoAuthError, TadoRateLimitError, TadoBlockedError) as e:
             self._coordinator.mechanism_counters.count(MECH_SVC_CLOUD_WRITE, "error", calls=1)
             handle_background_write_error(
-                e, self._coordinator.config_entry, self._hass, self._coordinator,
+                e, self._coordinator.config_entry, self._hass,
                 f"Smart Valve: zone {self._zone_id} cloud write failed, "
                 "starting recovery; will retry on next sensor change",
             )
@@ -517,7 +517,7 @@ class SmartValveController:
         except (TadoAuthError, TadoRateLimitError, TadoBlockedError) as e:
             self._runtime.resume_failures += 1
             handle_background_write_error(
-                e, self._coordinator.config_entry, self._hass, self._coordinator,
+                e, self._coordinator.config_entry, self._hass,
                 f"Smart Valve: zone {self._zone_id} clearing overlay failed, "
                 "starting recovery; will retry on a later cycle",
             )

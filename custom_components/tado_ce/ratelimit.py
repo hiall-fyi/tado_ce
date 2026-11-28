@@ -24,7 +24,7 @@ from .const import (
     _RATE_LIMIT_MIN_S,
     DOMAIN,
 )
-from .helpers import parse_iso_datetime, predicted_next_reset
+from .helpers import mask_unique_id, parse_iso_datetime, predicted_next_reset
 from .quota_levels import QuotaLevels
 
 if TYPE_CHECKING:
@@ -285,13 +285,13 @@ def _resolve_api_usage_entity_id(hass: HomeAssistant, home_id: str | None) -> st
             _LOGGER.debug(
                 "Rate Limit: found API usage sensor via registry: %s "
                 "(unique_id=%s)",
-                entry, target_uid,
+                entry, mask_unique_id(target_uid),
             )
             return entry
         _LOGGER.debug(
             "Rate Limit: registry has no entry for unique_id %s, "
             "falling back to default entity id",
-            target_uid,
+            mask_unique_id(target_uid),
         )
 
     _LOGGER.debug("Rate Limit: using fallback entity id sensor.tado_ce_api_usage")

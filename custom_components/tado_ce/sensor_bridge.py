@@ -247,8 +247,6 @@ class TadoBridgeCapabilitiesSensor(
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{meta.unique_id_suffix}"
         self._attr_translation_key = meta.translation_key
         self._attr_entity_registry_enabled_default = meta.enabled_default
-        if meta.icon:
-            self._attr_icon = meta.icon
         self._capabilities: BridgeCapabilities | None = None
 
     @callback
@@ -299,8 +297,6 @@ class TadoBridgeSchemaVersionSensor(
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{meta.unique_id_suffix}"
         self._attr_translation_key = meta.translation_key
         self._attr_entity_registry_enabled_default = meta.enabled_default
-        if meta.icon:
-            self._attr_icon = meta.icon
         self._previous_fields: list[DiscoveredField] | None = None
         self._last_schema_change: datetime | None = None
         self._recent_changes: list[dict[str, str]] = []

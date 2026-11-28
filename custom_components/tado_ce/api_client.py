@@ -37,6 +37,7 @@ from .api_call_tracker import (
 from .api_schemas import (
     ACTIVE_TIMETABLE,
     DEVICE_OFFSET,
+    EARLY_START,
     HEATING_CIRCUITS,
     HOME_DEVICES,
     HOME_STATE,
@@ -52,6 +53,7 @@ from .api_schemas import (
 )
 from .cloud_health import BACKOFF_CAP_SECONDS, CloudEvent, CloudHealth
 from .const import (
+    ACTIVE_TIMETABLE_IDS,
     API_ENDPOINT_DEVICES,
     CAPABILITY_ZONE_TYPES,
     DAY_TYPES,
@@ -65,7 +67,6 @@ from .const import (
     TADO_API_BASE,
     TADO_GRAPHQL_API,
     ZONE_STATES_EMPTY_CONFIRMATIONS,
-    is_climate_zone,
     is_valid_device_offset,
 )
 from .exceptions import TadoAuthError, TadoBlockedError, TadoRateLimitError, TadoSyncError
@@ -74,6 +75,7 @@ from .fetch_plan import (
     KIND_CAPABILITIES,
     KIND_CIRCUIT_CONTROL,
     KIND_DEVICES,
+    KIND_EARLY_START,
     KIND_HEATING_CIRCUITS,
     KIND_HOME_STATE,
     KIND_MOBILE_FULL,
@@ -110,14 +112,14 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
-# Set around a user write so a lost connection reaches the writer as an unknown outcome instead of a plain None.
-_RAISE_NETWORK_ERRORS: ContextVar[bool] = ContextVar("tado_raise_network_errors", default=False)
+# Holds the task that opened a user-write block, so only that task gets a lost connection as an error instead of a plain None.
+_RAISE_NETWORK_ERRORS: ContextVar[asyncio.Task[Any] | None] = ContextVar("tado_raise_network_errors", default=None)
 
 
 @contextmanager
 def raising_network_errors() -> Iterator[None]:
     """Make every api_call awaited inside the block raise a lost connection once retries are exhausted."""
-    token = _RAISE_NETWORK_ERRORS.set(True)
+    token = _RAISE_NETWORK_ERRORS.set(asyncio.current_task())
     try:
         yield
     finally:
@@ -496,14 +498,6 @@ class TadoApiClient(TadoAuthMixin):
             if date_key not in first_calls_by_day or call_time < first_calls_by_day[date_key]:
                 first_calls_by_day[date_key] = call_time
         return first_calls_by_day
-
-    @staticmethod
-    def _round_to_nearest_hour(dt_val: datetime) -> int:
-        """Round a datetime to the nearest hour (0-23)."""
-        hour = dt_val.hour
-        if dt_val.minute >= 30:
-            hour = (hour + 1) % 24
-        return hour
 
     @staticmethod
     def _find_most_common_reset_hour(
@@ -986,7 +980,7 @@ class TadoApiClient(TadoAuthMixin):
                     if rest:
                         self.note_cloud(CloudEvent.REST_NETWORK_EXHAUSTED)
                     # A caller that must tell an unknown outcome from a refusal asks for the error.
-                    if raise_network_errors or _RAISE_NETWORK_ERRORS.get():
+                    if raise_network_errors or _RAISE_NETWORK_ERRORS.get() is asyncio.current_task():
                         raise
                     return None
             except TadoAuthError:
@@ -1177,22 +1171,20 @@ class TadoApiClient(TadoAuthMixin):
         )
         return result is not None
 
-    async def get_zone_default_overlay(self, zone_id: str) -> str | None:
-        """Return the zone's server-side default termination type, or None.
-
-        Reads the per-zone default the user set in the Tado app
-        (GET /zones/{id}/defaultOverlay). Returns MANUAL / TADO_MODE / TIMER,
-        or None when unavailable so callers fall back to the integration default.
-        """
-        result = await self.api_call(f"zones/{zone_id}/defaultOverlay")
-        if not isinstance(result, dict):
-            return None
-        term = result.get("terminationCondition")
-        if isinstance(term, dict):
-            value = term.get("type")
-            if value in ("MANUAL", "TADO_MODE", "TIMER"):
-                return value  # type: ignore[no-any-return]
-        return None
+    async def set_zone_active_timetable(self, zone_id: str, timetable_type: str) -> bool:
+        """Switch a zone's active timetable; True only when Tado echoes the requested timetable."""
+        timetable_id = ACTIVE_TIMETABLE_IDS.get(timetable_type)
+        if timetable_id is None:
+            raise ValueError(f"unknown timetable type {timetable_type!r}")
+        result = await self.api_call(
+            f"zones/{zone_id}/schedule/activeTimetable",
+            method="PUT",
+            data={"id": timetable_id},
+            schema=ACTIVE_TIMETABLE,
+        )
+        if not isinstance(result, dict) or result.get("id") != timetable_id:
+            return False
+        return bool(result.get("type", timetable_type) == timetable_type)
 
     async def get_zone_schedule(self, zone_id: str) -> dict[str, Any] | None:
         """Return the zone's full schedule (timetable type + blocks per day)."""
@@ -1365,6 +1357,10 @@ class TadoApiClient(TadoAuthMixin):
         if plan.has(KIND_CAPABILITIES):
             caps = await self._sync_zone_capabilities(zones_info)
             results[KIND_CAPABILITIES] = ItemResult(KIND_CAPABILITIES, caps.obtained == caps.calls, caps.calls)
+
+        if plan.has(KIND_EARLY_START):
+            early = await self._sync_early_start(zones_info)
+            results[KIND_EARLY_START] = ItemResult(KIND_EARLY_START, early.obtained == early.calls, early.calls)
 
         circuits_planned = plan.has(KIND_HEATING_CIRCUITS)
         control_planned = plan.has(KIND_CIRCUIT_CONTROL)
@@ -1597,12 +1593,6 @@ class TadoApiClient(TadoAuthMixin):
         """Re-read the offsets of one zone (the round-robin drift path) and tally the calls and offsets obtained."""
         return await self._read_offsets(zones_info, target_zone_id=target_zone_id)
 
-    async def _sync_offsets(
-        self, zones_info: list[Any], target_zone_id: str | None = None,
-    ) -> int:
-        """Refresh the device-offset cache and return the calls made."""
-        return (await self._read_offsets(zones_info, target_zone_id=target_zone_id)).calls
-
     async def _read_offsets(
         self, zones_info: list[Any], target_zone_id: str | None = None,
     ) -> FetchTally:
@@ -1614,7 +1604,7 @@ class TadoApiClient(TadoAuthMixin):
             zone_id = str(zone.get("id"))
             zone_type = zone.get("type")
 
-            if not is_climate_zone(zone_type or ""):
+            if zone_type != "HEATING":
                 continue
 
             if target_zone_id is not None and zone_id != target_zone_id:
@@ -1695,6 +1685,47 @@ class TadoApiClient(TadoAuthMixin):
                     len(merged),
                 )
         return FetchTally(attempted, len(fetched), frozenset(fetched))
+
+    async def _sync_early_start(
+        self, zones_info: list[Any], force_zone_ids: set[str] | None = None,
+    ) -> FetchTally:
+        """Cache each heating zone's Early Start setting for zones not cached or forced, merging into the store; tally the fetches."""
+        cached_raw = (
+            self._data_loader.get_cached("early_start")
+            if self._data_loader is not None else None
+        )
+        # A snapshot, not the live dict: membership decides what to fetch and a value written during the loop beats the older reply.
+        before = dict(cached_raw) if isinstance(cached_raw, dict) else {}
+        force = force_zone_ids or set()
+        fetched: dict[str, Any] = {}
+        attempted = 0
+
+        for zone in zones_info:
+            zone_id = str(zone.get("id"))
+
+            if zone.get("type") != "HEATING":
+                continue
+
+            if zone_id in before and zone_id not in force:
+                continue
+
+            attempted += 1
+            reply = await self.api_call(f"zones/{zone_id}/earlyStart", schema=EARLY_START)
+            if reply:
+                fetched[zone_id] = {"enabled": reply["enabled"]}
+
+        tally = FetchTally(attempted, len(fetched), frozenset(fetched))
+        if self._data_loader is not None:
+            current = self._data_loader.get_cached("early_start")
+            live = current if isinstance(current, dict) else {}
+            # The store changed during the loop (a toggle wrote through), so the newer write wins over this older reply.
+            for zone_id in [z for z in fetched if live.get(z) != before.get(z)]:
+                del fetched[zone_id]
+            removed = _unlisted_zone_ids(current, zones_info)
+            if fetched or removed:
+                merged = await self._data_loader.async_merge_store("early_start", fetched, removed)
+                _LOGGER.debug("API: early start cached for %s zone(s)", len(merged))
+        return tally
 
     async def add_meter_reading(self, reading: int, date: str | None = None) -> bool:
         """Submit a meter reading via GraphQL (non-idempotent: no retry on failure).

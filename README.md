@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2026.11%2B-blue?style=for-the-badge&logo=home-assistant) ![Stable](https://img.shields.io/badge/Stable-4.6.0-brightgreen?style=for-the-badge) ![Beta](https://img.shields.io/badge/Beta-5.0.0--beta.1-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-lightgrey?style=for-the-badge)
+![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2026.11%2B-blue?style=for-the-badge&logo=home-assistant) ![Stable](https://img.shields.io/badge/Stable-4.6.0-brightgreen?style=for-the-badge) ![Beta](https://img.shields.io/badge/Beta-5.0.0--beta.2-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-lightgrey?style=for-the-badge)
 
 ![GitHub stars](https://img.shields.io/github/stars/hiall-fyi/tado_ce?style=for-the-badge&logo=github) [![Buy Me A Coffee](https://img.shields.io/badge/Support-Buy%20Me%20A%20Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/hiallfyi)
 

@@ -460,7 +460,7 @@ class OffsetSyncController:
             from .error_dispatch import handle_background_write_error
 
             handle_background_write_error(
-                e, self._coordinator.config_entry, self._hass, self._coordinator,
+                e, self._coordinator.config_entry, self._hass,
                 f"Offset Sync: zone {self._zone_id} write failed, "
                 "starting recovery; will retry on next sensor change",
             )
@@ -544,7 +544,7 @@ class OffsetSyncController:
                 from .error_dispatch import handle_background_write_error
 
                 handle_background_write_error(
-                    typed_error, self._coordinator.config_entry, self._hass, self._coordinator,
+                    typed_error, self._coordinator.config_entry, self._hass,
                     f"Offset Sync: zone {self._zone_id} write refused, "
                     "starting recovery; will retry on next sensor change",
                 )
@@ -785,7 +785,7 @@ class OffsetSyncController:
             from .error_dispatch import handle_background_write_error
 
             handle_background_write_error(
-                e, self._coordinator.config_entry, self._hass, self._coordinator,
+                e, self._coordinator.config_entry, self._hass,
                 f"Offset Sync: zone {self._zone_id} could not read offset, "
                 "starting recovery; starting with offset 0.0°C",
             )

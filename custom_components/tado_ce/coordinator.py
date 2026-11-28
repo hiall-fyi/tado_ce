@@ -49,6 +49,7 @@ from .const import (
     get_climate_zone_ids,
     is_climate_zone,
 )
+from .entity_cleanup import remove_zone_registry_rows
 from .exceptions import TadoAuthError, TadoBlockedError, TadoBridgeApiError, TadoRateLimitError, TadoSyncError
 from .fetch_plan import (
     GAP_PARTIAL,
@@ -92,7 +93,7 @@ from .helpers import (
     svc_schedule_zone_ids,
     zone_build_identity,
 )
-from .homekit_mapping import async_rebuild_and_save_mapping, cloud_only_climate_zones
+from .homekit_mapping import async_rebuild_and_save_mapping, cloud_only_climate_zones, device_serials
 from .insight_history import InsightHistoryTracker
 from .mechanism_counters import MechanismCounters
 from .polling import get_polling_interval, should_pause_polling
@@ -210,7 +211,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             hass,
             _LOGGER,
             config_entry=entry,
-            name=f"{DOMAIN} ({config_manager.get_all_config().get('home_id', 'default')})",
+            name=f"{DOMAIN} ({mask_home_id(entry.data.get('home_id'))})",
             update_interval=timedelta(minutes=initial_interval),
         )
 
@@ -244,7 +245,6 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Outdoor temp history (owned by coordinator; async load, debounced sync save)
         self._outdoor_temp_history: list[float] = []
-        self._outdoor_temp_loaded: bool = False
 
         # Shared entity data store, entities publish computed values here
         # so other components (insight collector, adaptive preheat) can read
@@ -293,6 +293,8 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._request_full_sync_next_cycle: bool = False
         # Per mode, the quota day (last_reset_utc) whose first hold was already logged.
         self._quota_hold_logged: dict[bool, str | None] = {}
+        # Zones whose battery repair failed on the last refresh, so a repair that keeps failing warns once.
+        self._battery_repair_failed_zones: set[str] = set()
 
         # Polling pause state, set when should_pause_polling returns
         # True, cleared on the first cycle that returns False after a
@@ -311,7 +313,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._last_offset_resync: datetime | None = None
 
         # Round-robin drift-refresh cursor: zone_id of the last zone
-        # refreshed. Keyed by zone_id (not list position) so it self-heals on
+        # tried. Keyed by zone_id (not list position) so it self-heals on
         # zone add/remove. In-memory; restarting at the list head on reboot is
         # harmless (drift refresh is a reconcile, not a write).
         self._last_refreshed_zone_id: str | None = None
@@ -333,7 +335,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Platforms loaded during setup (used by unload to match exactly)
         self.loaded_platforms: frozenset[Platform] = frozenset()
-        # Zone ids the platforms built their entities for at setup; None until they are forwarded.
+        # Zone ids the platforms built their entities for at setup (a confirmed removal takes the id out); None until they are forwarded.
         self.entity_zone_ids: frozenset[str] | None = None
         # The (type, name) each of those zones' entities were built with, so a reused id can tell whether they still fit.
         self.entity_zone_identity: dict[str, tuple[str, str]] | None = None
@@ -653,7 +655,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def publish_entity_data(self, zone_id: str, key: str, data: dict[str, Any]) -> None:
         """Publish in-memory computed entity data; consumers must tolerate None during the startup gap."""
-        # A removed zone's entities still update until reload; their publish must not undo the drop.
+        # A removed zone's entity can still publish once from an update in flight, which must not undo the drop.
         if zone_id in self._zone_drops_done and zone_id not in self._zone_fingerprint.zone_ids:
             return
         if zone_id not in self.entity_data:
@@ -691,12 +693,17 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Read all data from in-memory cache (populated by api_client write-through)
         config_data = self.data_loader.get_cached("config")
         home_state_data = self.data_loader.get_cached("home_state")
+        # A stored dict from an earlier sync-on period must not outrank Tado's zone answer.
+        if not self.config_manager.get_home_state_sync_enabled() and not (
+            isinstance(home_state_data, dict) and "injected_until" in home_state_data
+        ):
+            home_state_data = None
         ratelimit_data = self.data_loader.get_cached("ratelimit")
         api_call_history_data: dict[str, Any] = dict(self.api_tracker._call_history) if self.api_tracker else {}
         zones_info_data = self.data_loader.get_cached("zones_info")
         mobile_devices_data = self.data_loader.get_cached("mobile_devices")
         home_devices_data = self.data_loader.get_cached("home_devices")
-        async_sync_battery_repairs(self.hass, self.home_id, zones_info_data)
+        async_sync_battery_repairs(self.hass, self.home_id, zones_info_data, self._battery_repair_failed_zones)
 
         # Withhold readings from an offline device before the heating cycle, weather compensation and result see them.
         previous_withheld: frozenset[tuple[str, str]] = (self.data or {}).get("withheld_readings") or frozenset()
@@ -715,6 +722,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         zone_capabilities = self.data_loader.get_cached("zone_capabilities")
         heating_circuits_data = self.data_loader.get_cached("heating_circuits")
         heating_circuit_control_data = self.data_loader.get_cached("heating_circuit_control")
+        early_start_data = self.data_loader.get_cached("early_start")
 
         if not saved_snapshot:
             await self._accumulate_outdoor_temp_history(weather_data)
@@ -780,6 +788,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "schedules": schedules_data or {},
             "heating_circuits": heating_circuits_data or {},
             "heating_circuit_control": heating_circuit_control_data or {},
+            "early_start": early_start_data or {},
         }
         if bridge_data is not None:
             result["bridge"] = bridge_data
@@ -981,7 +990,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     @callback
     def _on_cloud_health_change(self, change: CloudHealthChange) -> None:
-        """Log the cloud leaving or returning to OK and create or dismiss the repair issues for one CloudHealth transition."""
+        """Log the cloud entering a problem state or returning to OK and create or dismiss the repair issues for one CloudHealth transition."""
         from .repair_helpers import (
             async_create_auth_issue,
             async_create_blocked_issue,
@@ -989,7 +998,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             async_dismiss_cloud_health_issues,
         )
 
-        if change.previous is CloudHealthState.OK and change.current is not CloudHealthState.OK:
+        if change.current is not CloudHealthState.OK and change.current is not change.previous:
             _LOGGER.info("Coordinator: Tado cloud problem: %s", _CLOUD_STATE_WORDING[change.current])
         elif change.current is CloudHealthState.OK and change.previous is not CloudHealthState.OK:
             _LOGGER.info("Coordinator: Tado cloud reachable again")
@@ -1126,7 +1135,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return 1
 
     async def async_request_zone_fetch(self, reason: str) -> bool:
-        """Ask the refresh handler for a forced zone fetch (quota-gated, debounced); True when one was requested."""
+        """Ask the refresh handler for a forced zone fetch (quota-gated, spaced, debounced); True when one was requested, a skipped request leaves the flag for the next poll."""
         if self.refresh_handler is None:
             return False
         # WHY: the first poll fetches the zones itself, so a drop or reconnect before it returns has nothing to catch up on.
@@ -1141,7 +1150,8 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return False
         # The spacing damps flapping reconnects; the single catch-up after a start and the one fetch a waiting resend or an owed change needs are exempt.
         if reason not in ("cold_start_retry", "resend_recovery", "owed_write") and recent and (now - max(recent)).total_seconds() < HOMEKIT_DROP_FETCH_MIN_GAP_SECONDS:
-            _LOGGER.debug("Coordinator: skipping forced zone fetch (%s), quota held or fetched recently", reason)
+            self.refresh_handler.request_forced_zone_fetch()
+            _LOGGER.debug("Coordinator: skipping forced zone fetch (%s), fetched recently, zone fetch kept for the next poll", reason)
             return False
         if await self.refresh_handler.trigger_refresh("homekit.bridge", reason, force=True):
             self._last_zone_fetch_request = now
@@ -1220,6 +1230,11 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         capabilities = self.data_loader.get_cached("zone_capabilities")
         return frozenset(str(k) for k in capabilities) if isinstance(capabilities, dict) else frozenset()
 
+    def _cached_early_start_ids(self) -> frozenset[str]:
+        """The zone ids that already have a stored Early Start value."""
+        early_start = self.data_loader.get_cached("early_start")
+        return frozenset(str(k) for k in early_start) if isinstance(early_start, dict) else frozenset()
+
     def _plan_inputs(
         self, now: datetime, homekit_connected: bool, force_zone_fetch: bool, forced_types: frozenset[str],
     ) -> PlanInputs:
@@ -1244,6 +1259,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             forced_types=forced_types,
             zones_info=self._zone_facts(),
             cached_capability_ids=self._cached_capability_ids(),
+            cached_early_start_ids=self._cached_early_start_ids(),
             unlisted_zone_count=self._unlisted_zone_count(),
             svc_zone_ids=svc_schedule_zone_ids(self.zone_config_manager, self.hass),
             gaps=dict(self._gaps),
@@ -1572,10 +1588,9 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if post_plan.has(KIND_OFFSETS_DRIFT):
             tally = await self._run_offsets_drift(zones_info)
             if tally.obtained > 0:
-                self._last_refreshed_zone_id = min(tally.obtained_ids)
                 self._last_offset_resync = dt_util.utcnow()
             else:
-                _LOGGER.debug("Offset Sync: drift refresh returned no offset, retrying the same zone next cycle")
+                _LOGGER.debug("Offset Sync: drift refresh returned no offset, trying the next zone on the next due cycle")
         refreshed: set[str] = set()
         if post_plan.has(KIND_CAPABILITIES_FORCED):
             # WHY: not marking the cache dirty keeps unchanged zones' capabilities as the merge base.
@@ -1637,19 +1652,19 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Start the recovery for a typed cloud error caught outside the poll's own arms; HA de-duplicates an open reauth flow."""
         from .error_dispatch import _apply_cloud_error_recovery
 
-        _apply_cloud_error_recovery(exc, self.config_entry, self.hass, self)
+        _apply_cloud_error_recovery(exc, self.config_entry, self.hass)
 
     async def _run_offsets_drift(self, zones_info_data: list[Any]) -> FetchTally:
-        """Re-read the offsets of the next climate zone in the round-robin and tally what came back."""
-        # One climate zone per cycle keeps an N-zone home at 1 call a cycle; the cursor moves only on data.
-        climate_ids = sorted(
+        """Re-read the offsets of the next heating zone in the round-robin and tally what came back."""
+        # One heating zone per cycle keeps an N-zone home at 1 call a cycle; the cursor moves to the zone tried unless the read raised.
+        heating_ids = sorted(
             str(z.get("id"))
             for z in zones_info_data
-            if is_climate_zone(z.get("type") or "")
+            if z.get("type") == "HEATING"
         )
-        if not climate_ids:
+        if not heating_ids:
             return FetchTally(0, 0)
-        target = self._next_round_robin_zone(climate_ids)
+        target = self._next_round_robin_zone(heating_ids)
 
         try:
             tally = await self.api_client.async_resync_offsets(
@@ -1674,13 +1689,14 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             return FetchTally(0, 0)
 
+        self._last_refreshed_zone_id = target
         _LOGGER.debug(
             "Offset Sync: drift refresh of zone %s used %s cloud call(s), %s offset(s) obtained",
             target, tally.calls, tally.obtained,
         )
         return tally
 
-    def _next_round_robin_zone(self, climate_ids: list[str]) -> str:
+    def _next_round_robin_zone(self, heating_ids: list[str]) -> str:
         """Pick the next zone_id after the cursor in sorted order, wrapping.
 
         Self-heals (returns the list head) when the cursor zone is gone
@@ -1688,10 +1704,10 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         crashes on a topology change.
         """
         last = self._last_refreshed_zone_id
-        if last is None or last not in climate_ids:
-            return climate_ids[0]
-        idx = climate_ids.index(last)
-        return climate_ids[(idx + 1) % len(climate_ids)]
+        if last is None or last not in heating_ids:
+            return heating_ids[0]
+        idx = heating_ids.index(last)
+        return heating_ids[(idx + 1) % len(heating_ids)]
 
     async def _accumulate_outdoor_temp_history(
         self, weather_data: dict[str, Any] | list[Any] | None,
@@ -1702,17 +1718,6 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         outdoor_temp = (weather_data.get("outsideTemperature") or {}).get("celsius")  # type: ignore[union-attr]
         if outdoor_temp is None:
             return
-
-        # Defensive guard: should already be loaded during setup, but
-        # if a future refactor drops the eager load this branch keeps
-        # outdoor temp history working.
-        if not self._outdoor_temp_loaded:
-            _LOGGER.debug(
-                "Coordinator: outdoor temperature history not eagerly "
-                "loaded during setup, loading now",
-            )
-            self._outdoor_temp_history = await self.data_loader.async_load_outdoor_temp_history()
-            self._outdoor_temp_loaded = True
 
         prev_last = self._outdoor_temp_history[-1] if self._outdoor_temp_history else None
 
@@ -1731,7 +1736,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         zone_fetch_started: datetime | None = None,
         zones_info: dict[str, Any] | list[Any] | None = None,
     ) -> None:
-        """Forward each zone's target / current temperature to the heating-cycle coordinator."""
+        """Feed each zone's target and current temperature to the heating-cycle snapshot, and to its detector for zones that are not HEATING."""
         if not self.heating_cycle_coordinator or not zone_data:
             return
         # Tado API may return null for 'zoneStates'; 'or {}' handles None correctly
@@ -1765,12 +1770,14 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
                 resolved, _ = zone_view_target(self, view)
                 fed = resolved if resolved is not None else target_temp
+            # A HEATING zone's cycles come from its climate entity, so two temperature sources never share one cycle.
             try:
                 await self.heating_cycle_coordinator.on_zone_update(
                     zone_id,
                     fed,
                     current_temp,
                     source="cloud",
+                    track_cycle=str(zone_id) not in heating_ids,
                 )
             except (KeyError, TypeError, ValueError):
                 _LOGGER.debug(
@@ -1811,6 +1818,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             user_has_custom_interval=has_custom_interval(cm),
             zones_info=self._zone_facts(),
             cached_capability_ids=self._cached_capability_ids(),
+            cached_early_start_ids=self._cached_early_start_ids(),
             unlisted_zone_count=self._unlisted_zone_count(),
         ).per_full_sync
 
@@ -2099,14 +2107,6 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     len(expired),
                 )
 
-
-
-
-    def save_wc_state_if_loaded(self) -> None:
-        """Persist weather compensation state if it was loaded."""
-        if self._wc_state_loaded:
-            self.data_loader.save_wc_state(self._wc_state.to_dict())
-
     def _zero_savings_on_quota_reset(self, rl_data: dict[str, Any]) -> None:
         """Zero the HomeKit savings counters when the stored quota reset moved."""
         last_reset = rl_data.get("last_reset_utc")
@@ -2222,12 +2222,6 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._sr_manager is None:
             return
         await self._sr_manager.clear(zone_id, entity_type)
-
-    def get_state_restore_diagnostics(self) -> list[dict[str, str]]:
-        """Return state restore diagnostics summary (null-safe)."""
-        if self._sr_manager is None:
-            return []
-        return self._sr_manager.get_diagnostics_summary()
 
     # ------------------------------------------------------------------
     # Insight runtime state persistence (anomaly timers + humidity history)
@@ -2498,7 +2492,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             del self._zone_absent_polls[zone_id]
 
     def _schedule_reload_for_new_zones(self, live: set[str], zones_info: Any) -> None:
-        """Schedule one entry reload, never inline, for a zone the platforms built no entities for at setup."""
+        """Schedule one entry reload, never inline, for a room the platforms hold no entities for, new in Tado or removed and listed again."""
         if self.entity_zone_ids is None:
             return
         types = {str(z["id"]): z.get("type") or "" for z in zones_info if isinstance(z, dict) and z.get("id") is not None}
@@ -2508,7 +2502,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if not (is_climate_zone(zone_type) or zone_type == "HOT_WATER") or (entry_id, zone_id) in _ZONE_RELOADS_REQUESTED:
                 continue
             _ZONE_RELOADS_REQUESTED.add((entry_id, zone_id))
-            _LOGGER.info("Zone %s was added in Tado, reloading Tado CE once so it gets its entities", zone_id)
+            _LOGGER.info("Zone %s is new or came back in Tado, reloading Tado CE once so it gets its entities", zone_id)
             self.hass.config_entries.async_schedule_reload(entry_id)
             return
 
@@ -2585,22 +2579,24 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _register_zone_state_owners(self) -> None:
         """Register the holders of per-zone state in drop order; zone_config goes first so the controller teardown never reads the old room's settings."""
-        self.zone_state.register("zone_config", lambda z, r: self._drop_zone_config(z, r), reasons=REASSIGNED_ONLY)
-        self.zone_state.register("controllers", lambda z, r: self._drop_zone_controllers(z, r))
+        self.zone_state.register("zone_config", self._drop_zone_config, reasons=REASSIGNED_ONLY)
+        self.zone_state.register("controllers", self._drop_zone_controllers)
         self.zone_state.register("write_health", lambda z, r: self.write_health_trackers.pop(z, None) is not None)
         self.zone_state.register("homekit_off_latch", lambda z, r: self.homekit_off_latch.pop(z, False) is not False)
         self.zone_state.register("write_ledger", lambda z, r: self.write_ledger.forget_zone(z))
-        self.zone_state.register("adaptive_preheat", lambda z, r: self._drop_zone_preheat(z, r))
-        self.zone_state.register("heating_cycles", lambda z, r: self._drop_zone_heating_cycles(z, r))
-        self.zone_state.register("smart_comfort", lambda z, r: self._drop_zone_smart_comfort(z, r), reasons=REASSIGNED_ONLY)
-        self.zone_state.register("insight_runtime", lambda z, r: self._drop_zone_insight_runtime(z, r))
-        self.zone_state.register("flat_stores", lambda z, r: self._drop_zone_from_flat_stores(z, r))
-        self.zone_state.register("homekit_mapping", lambda z, r: self._drop_zone_homekit_mapping(z, r))
-        self.zone_state.register("state_reconciler", lambda z, r: self._drop_zone_reconciler(z, r))
-        self.zone_state.register("state_restore", lambda z, r: self._drop_zone_state_restore(z, r))
+        self.zone_state.register("adaptive_preheat", self._drop_zone_preheat)
+        self.zone_state.register("heating_cycles", self._drop_zone_heating_cycles)
+        self.zone_state.register("smart_comfort", self._drop_zone_smart_comfort, reasons=REASSIGNED_ONLY)
+        self.zone_state.register("insight_runtime", self._drop_zone_insight_runtime)
+        self.zone_state.register("flat_stores", self._drop_zone_from_flat_stores)
+        self.zone_state.register("homekit_mapping", self._drop_zone_homekit_mapping)
+        self.zone_state.register("state_reconciler", self._drop_zone_reconciler)
+        self.zone_state.register("state_restore", self._drop_zone_state_restore)
+        # Before entity_data: the removed entities stop publishing once their rows are gone.
+        self.zone_state.register("entity_registry_rows", self._drop_zone_entity_rows, reasons=REMOVED_ONLY)
         # After controllers: a running Offset Sync controller could re-write the clamp after it is cleared.
-        self.zone_state.register("entity_data", lambda z, r: self._drop_zone_entity_data(z, r))
-        self.zone_state.register("offset_clamps", lambda z, r: self._drop_zone_offset_clamps(z, r))
+        self.zone_state.register("entity_data", self._drop_zone_entity_data)
+        self.zone_state.register("offset_clamps", self._drop_zone_offset_clamps)
         self.zone_state.register(
             "sensor_missing_repair", lambda z, r: self._drop_zone_repair(SVC_SENSOR_MISSING_ISSUE, z),
         )
@@ -2723,6 +2719,21 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Drop the zone's captures and poll counters; True when it held any."""
         return await self._sr_manager.forget_zone(zone_id) if self._sr_manager is not None else False
 
+    def _live_device_serials(self, zones_info: list[Any]) -> frozenset[str]:
+        """Serials of every device a listed zone holds."""
+        return frozenset(s for z in zones_info if isinstance(z, dict) for d in z.get("devices") or [] for s in device_serials(d))
+
+    def _drop_zone_entity_rows(self, zone_id: str, reason: ZoneDropReason) -> bool:
+        """Remove the removed room's registry rows, then forget it was built so its return rebuilds it; True when any row went."""
+        live_serials = self._live_device_serials((self.data or {}).get("zones_info") or [])
+        entities, devices = remove_zone_registry_rows(self.hass, self.config_entry, self.home_id, zone_id, live_serials)
+        if self.entity_zone_ids is not None:
+            self.entity_zone_ids = self.entity_zone_ids - {zone_id}
+        if self.entity_zone_identity is not None:
+            self.entity_zone_identity.pop(zone_id, None)
+        _ZONE_RELOADS_REQUESTED.discard((self.config_entry.entry_id, zone_id))
+        return bool(entities or devices)
+
     def _drop_zone_entity_data(self, zone_id: str, reason: ZoneDropReason) -> bool:
         """Drop the values entities published for the zone; its entities republish on their next update."""
         return self.entity_data.pop(zone_id, None) is not None
@@ -2826,7 +2837,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._schedule_reload_for_reassigned_zones(dropped, zones_info)
 
     def _schedule_reload_for_reassigned_zones(self, zone_ids: set[str], zones_info: list[Any]) -> None:
-        """Schedule one entry reload, never inline, when a reassigned zone's type or name no longer matches its entities."""
+        """Schedule one entry reload, never inline, when a reassigned zone's type or name no longer matches its entities; a changed type first removes the old room's rows."""
         if self.entity_zone_identity is None:
             return
         now = {
@@ -2836,6 +2847,18 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
         stale = sorted(z for z in zone_ids if z in self.entity_zone_identity and now.get(z) not in (None, self.entity_zone_identity[z]))
         if stale:
+            retyped = [z for z in stale if now[z][0] != self.entity_zone_identity[z][0]]
+            if retyped:
+                try:
+                    live_serials = self._live_device_serials(zones_info)
+                    for zone_id in retyped:
+                        remove_zone_registry_rows(self.hass, self.config_entry, self.home_id, zone_id, live_serials)
+                except Exception:
+                    # Broad on purpose: a registry failure must not cost the reload that rebuilds the room.
+                    _LOGGER.warning(
+                        "Coordinator: could not remove the old entities of retyped zone(s) %s, they stay until deleted by hand",
+                        ", ".join(retyped), exc_info=True,
+                    )
             _LOGGER.info("Zone(s) %s were reassigned to a different room in Tado, reloading Tado CE once so their entities match", ", ".join(stale))
             self.hass.config_entries.async_schedule_reload(self.config_entry.entry_id)
 

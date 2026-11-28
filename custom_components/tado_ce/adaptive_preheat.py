@@ -16,11 +16,11 @@ from homeassistant.util import slugify
 from .const import ENTITY_DATA_PREHEAT_ADVISOR, ENTITY_DATA_PREHEAT_NOW, MECH_PREHEAT_PUT
 from .error_dispatch import handle_background_write_error
 from .exceptions import TadoAuthError, TadoBlockedError, TadoRateLimitError
-from .helpers import build_timer_termination, get_zone_states, zone_entity_id
+from .helpers import build_timer_termination, get_zone_states, resolve_home_presence, zone_entity_id
 from .zone_signals import fresher_than, is_off_in_app
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Coroutine
 
     from homeassistant.core import State
 
@@ -167,11 +167,16 @@ class AdaptivePreheatManager:
         )
 
     @callback
-    def _spawn_trigger(self, zone_id: str) -> None:
-        """Start the zone's preheat as a task that unload can wait for."""
-        task = self._hass.async_create_task(self._trigger_preheat(zone_id))
+    def _spawn_tracked(self, coro: Coroutine[Any, Any, None]) -> None:
+        """Start `coro` as a task that unload can wait for."""
+        task = self._hass.async_create_task(coro)
         self._start_tasks.add(task)
         task.add_done_callback(self._start_tasks.discard)
+
+    @callback
+    def _spawn_trigger(self, zone_id: str) -> None:
+        """Start the zone's preheat as a task that unload can wait for."""
+        self._spawn_tracked(self._trigger_preheat(zone_id))
 
     @callback
     def _unwatch_zone(self, zone_id: str) -> None:
@@ -238,7 +243,7 @@ class AdaptivePreheatManager:
             if key != "adaptive_preheat":
                 return
             if value in ("active", "passive"):
-                self._hass.async_create_task(self.async_enable_zone(zone_id))
+                self._spawn_tracked(self.async_enable_zone(zone_id))
             else:
                 self._cancel_start(zone_id)
 
@@ -332,8 +337,9 @@ class AdaptivePreheatManager:
         """Return True when the home presence is anything other than HOME."""
         if not self._coordinator:
             return False
-        home_state = (self._coordinator.data or {}).get("home_state")
-        return bool(home_state and home_state.get("presence") != "HOME")
+        # Same answer as the Home sensor: Tado's own mode when Home State Sync is off.
+        resolved = resolve_home_presence(self._coordinator.data, self._coordinator.last_zone_fetch_ts())
+        return bool(resolved and resolved[0] != "HOME")
 
     def _get_zone_state(self, zone_id: str) -> dict[str, Any] | None:
         """Return the cached zone state from the coordinator."""
@@ -662,7 +668,7 @@ class AdaptivePreheatManager:
                 self._count_put(zone_id, "error")
             if self._coordinator is not None:
                 handle_background_write_error(
-                    err, self._coordinator.config_entry, self._hass, self._coordinator,
+                    err, self._coordinator.config_entry, self._hass,
                     f"Adaptive Preheat: {zone_name} overlay write failed, "
                     f"starting recovery{self._retry_note(zone_id)}",
                 )

@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
+_flow_limit_logged: set[tuple[str, float]] = set()
 
 # Default configuration values
 DEFAULT_WEATHER_ENABLED = False
@@ -47,8 +48,6 @@ DEFAULT_SMART_COMFORT_HISTORY_DAYS = 7  # Days of temperature history to keep fo
 DEFAULT_MOLD_RISK_WINDOW_TYPE = "double_pane"  # Window type for mold risk surface temperature calculation
 
 # Validation constants
-MIN_HOUR = 0
-MAX_HOUR = 23
 MIN_SMART_COMFORT_HISTORY_DAYS = 1
 MAX_SMART_COMFORT_HISTORY_DAYS = 30
 
@@ -97,16 +96,17 @@ class ConfigurationManager:
             return default
         return value
 
-    def _get_float_option(self, key: str, default: float, min_val: float, max_val: float) -> float:
-        """Read a float option, falling back to `default` when missing or out of range."""
+    def _get_float_option(self, key: str, default: float, min_val: float, max_val: float, *, log: bool = True) -> float:
+        """Read a float option, falling back to `default` when missing or out of range; log=False keeps the fallback silent."""
         value = self._get_option(key, default)
         if isinstance(value, (int, float)) and min_val <= value <= max_val:
             return float(value)
-        _LOGGER.warning(
-            "Config: %s value %r outside range %s–%s, falling back "
-            "to default %s",
-            key, value, min_val, max_val, default,
-        )
+        if log:
+            _LOGGER.warning(
+                "Config: %s value %r outside range %s–%s, falling back "
+                "to default %s",
+                key, value, min_val, max_val, default,
+            )
         return default
 
     def get_weather_enabled(self) -> bool:
@@ -341,29 +341,33 @@ class ConfigurationManager:
 
     def get_wc_curve_shape(self) -> str:
         """Get the heating curve shape ('linear' / 'exponential', default 'linear')."""
-        shape = self._get_option("wc_curve_shape", "linear")
+        shape: str = self._get_option("wc_curve_shape", "linear")
         if shape in ("linear", "exponential"):
-            return shape  # type: ignore[no-any-return]
+            return shape
         return "linear"
 
     def get_wc_curve_k(self) -> float:
         """Get the exponential curve bend (0.005-0.10, default 0.02)."""
         return self._get_float_option("wc_curve_k", 0.02, 0.005, 0.10)
 
-    def _get_flow_limit_option(self, key: str, default: float, max_val: float) -> float:
-        """Read a flow limit option, raising a stored number below the bridge floor to the floor."""
+    def _get_flow_limit_option(self, key: str, default: float, max_val: float, *, log: bool = True) -> float:
+        """Read a flow limit option, raising a stored number below the bridge floor to the floor (logged once per value unless log=False)."""
         value = self._get_option(key, default)
         if isinstance(value, (int, float)) and not isinstance(value, bool) and value < MIN_FLOW_TEMP:
+            # once per stored value: this runs on every poll
+            if log and (key, value) not in _flow_limit_logged:
+                _flow_limit_logged.add((key, value))
+                _LOGGER.info("Weather Compensation: the saved %s of %s°C is below the %s°C minimum, so %s°C is used", key, value, MIN_FLOW_TEMP, MIN_FLOW_TEMP)
             return MIN_FLOW_TEMP
-        return self._get_float_option(key, default, MIN_FLOW_TEMP, max_val)
+        return self._get_float_option(key, default, MIN_FLOW_TEMP, max_val, log=log)
 
-    def get_wc_max_flow_temp(self) -> float:
+    def get_wc_max_flow_temp(self, *, log: bool = True) -> float:
         """Get the maximum flow temperature in °C (30-80, default 65; below 30 reads as 30)."""
-        return self._get_flow_limit_option("wc_max_flow_temp", 65.0, 80.0)
+        return self._get_flow_limit_option("wc_max_flow_temp", 65.0, 80.0, log=log)
 
-    def get_wc_min_flow_temp(self) -> float:
+    def get_wc_min_flow_temp(self, *, log: bool = True) -> float:
         """Get the minimum flow temperature in °C (30-60, default 30; below 30 reads as 30)."""
-        return self._get_flow_limit_option("wc_min_flow_temp", 30.0, 60.0)
+        return self._get_flow_limit_option("wc_min_flow_temp", 30.0, 60.0, log=log)
 
     def get_wc_shutoff_temp(self) -> float:
         """Get the heating shutoff outdoor temperature in °C (5-30, default 18)."""

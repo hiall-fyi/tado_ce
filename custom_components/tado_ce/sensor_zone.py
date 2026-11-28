@@ -259,7 +259,6 @@ class TadoHeatingPowerSensor(TadoZoneSensor):
         self._attr_translation_key = _meta.translation_key
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         self._attr_native_unit_of_measurement = PERCENTAGE
-        self._attr_icon = _meta.icon
         self._attr_entity_category = get_entity_category(_meta)
         self._attr_state_class = SensorStateClass.MEASUREMENT
 
@@ -283,7 +282,6 @@ class TadoACPowerSensor(TadoZoneSensor):
         self._attr_translation_key = _meta.translation_key
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         self._attr_native_unit_of_measurement = PERCENTAGE
-        self._attr_icon = _meta.icon
         self._attr_entity_category = get_entity_category(_meta)
         self._attr_state_class = SensorStateClass.MEASUREMENT
 
@@ -309,7 +307,6 @@ class TadoBoilerFlowTemperatureSensor(
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_suggested_display_precision = 1
-        self._attr_icon = _meta.icon
         self._attr_entity_category = get_entity_category(_meta)
         self._attr_device_info = get_hub_device_info(coordinator.home_id)
         self._data_present = False
@@ -361,7 +358,6 @@ class TadoTargetTempSensor(TadoZoneSensor):
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_suggested_display_precision = 1
-        self._attr_icon = _meta.icon
 
     @callback
     def _update_from_zone_data(self, zone_data: dict[str, Any]) -> None:
@@ -401,7 +397,6 @@ class TadoOverlaySensor(TadoZoneSensor):
         _meta = ENTITY_REGISTRY["sensor_overlay"]
         self._attr_translation_key = _meta.translation_key
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
-        self._attr_icon = _meta.icon
         self._attr_entity_category = get_entity_category(_meta)
         self._next_change = None
         self._next_temp = None

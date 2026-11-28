@@ -34,6 +34,10 @@ class TadoBridgeApiError(HomeAssistantError):
     """
 
 
+class TadoBridgeUnreachableError(TadoBridgeApiError):
+    """Raised when the Bridge API cannot be reached at all (transport error or timeout), as opposed to an answer that refused the call."""
+
+
 class TadoRateLimitError(HomeAssistantError):
     """Raised when the Tado API returns HTTP 429 and retries are exhausted."""
 

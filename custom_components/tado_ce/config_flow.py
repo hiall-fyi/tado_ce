@@ -467,9 +467,16 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def _async_finish_reauth(self) -> ConfigFlowResult:
-        """Save new credentials and finish reauth flow."""
+        """Save the new token and finish reauth, or abort when the new login does not include the entry's home."""
         reauth_entry = self._get_reauth_entry()
         home_id = reauth_entry.data.get("home_id")
+
+        if home_id and self._homes and not any(str(h["id"]) == str(home_id) for h in self._homes):
+            _LOGGER.warning(
+                "Config Flow: reauth aborted, the new login does not include home id %s",
+                mask_home_id(home_id),
+            )
+            return self.async_abort(reason="wrong_home")
 
         _LOGGER.info(
             "Config Flow: reauth complete, refreshed credentials "
@@ -581,7 +588,14 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="no_homes")
 
         if user_input is not None:
-            home_id = user_input["home"]
+            home_id = str(user_input["home"])
+            unique_id = f"tado_ce_{home_id}"
+            reconfigure_entry = self._get_reconfigure_entry()
+            for other in self.hass.config_entries.async_entries(DOMAIN):
+                if other.entry_id != reconfigure_entry.entry_id and (
+                    other.unique_id == unique_id or str(other.data.get("home_id")) == home_id
+                ):
+                    return self.async_abort(reason="already_configured")
 
             _LOGGER.info(
                 "Config Flow: reconfigure complete, switched to "
@@ -589,13 +603,17 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 mask_home_id(home_id),
             )
 
-            reconfigure_entry = self._get_reconfigure_entry()
             from .repair_helpers import async_dismiss_home_issues
 
             # The old home's repairs would otherwise stay once the entry points at the new home.
             async_dismiss_home_issues(self.hass, reconfigure_entry.data.get("home_id"))
-            new_data = {**reconfigure_entry.data, "home_id": str(home_id), "refresh_token": self._refresh_token}
-            self.hass.config_entries.async_update_entry(reconfigure_entry, data=new_data)
+            old_home_id = reconfigure_entry.data.get("home_id")
+            if old_home_id and str(old_home_id) != home_id:
+                from .entity_cleanup import remove_home_registry_rows
+
+                remove_home_registry_rows(self.hass, reconfigure_entry, str(old_home_id))
+            new_data = {**reconfigure_entry.data, "home_id": home_id, "refresh_token": self._refresh_token}
+            self.hass.config_entries.async_update_entry(reconfigure_entry, data=new_data, unique_id=unique_id)
 
             await self.hass.config_entries.async_reload(reconfigure_entry.entry_id)
             return self.async_abort(reason="reconfigure_successful")

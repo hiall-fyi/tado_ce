@@ -9,9 +9,11 @@ cloud.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
+import aiohttp
 from homeassistant.components.select import SelectEntity
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
@@ -21,6 +23,7 @@ from homeassistant.util import slugify
 from .climate_helpers import inject_heating_circuit, inject_presence_state
 from .const import (
     DOMAIN,
+    FORCEABLE_FETCH_HOME_STATE,
     OVERLAY_MODE_DEFAULT,
     OVERLAY_MODE_KEYS,
     TIMER_DURATION_DEFAULT,
@@ -128,16 +131,6 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
         self._expected_mode: str | None = None
 
     @property
-    def icon(self) -> str | None:
-        """Return icon based on current mode."""
-        if self._attr_current_option == "auto":
-            return "mdi:home-account"
-        if self._attr_current_option == "home":
-            return "mdi:home"
-        # Away
-        return "mdi:home-export-outline"
-
-    @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Return extra state attributes."""
         return {
@@ -224,17 +217,24 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
         self.async_write_ha_state()
 
         option_lower = option.lower()
+        from .api_client import raising_network_errors
+
         client = self.coordinator.api_client
         success = False
         reverted = False
+        unknown_outcome = False
         try:
-            if option_lower == "auto":
-                success = bool(await client.delete_presence_lock())
-            else:
-                success = bool(await client.set_presence_lock(option.upper()))
+            with raising_network_errors():
+                async with asyncio.timeout(10):
+                    if option_lower == "auto":
+                        success = bool(await client.delete_presence_lock())
+                    else:
+                        success = bool(await client.set_presence_lock(option.upper()))
+        except (TimeoutError, aiohttp.ClientError):
+            unknown_outcome = True
         except (TadoAuthError, TadoRateLimitError, TadoBlockedError) as err:
             # The finally below still restores the option before this error reaches the caller.
-            dispatch_to_service_call(err, self.coordinator.config_entry, self.hass, self.coordinator)
+            dispatch_to_service_call(err, self.coordinator.config_entry, self.hass)
         finally:
             if not success:
                 reverted = self._revert_presence(sequence, old_mode, old_presence, old_locked)
@@ -261,6 +261,9 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
                 option,
                 "reverted to previous mode" if reverted else "left to the latest poll",
             )
+            if unknown_outcome:
+                self.coordinator.request_forced_fetch(FORCEABLE_FETCH_HOME_STATE)
+                await async_trigger_immediate_refresh(self.hass, self.entity_id, "write_unknown")
             raise HomeAssistantError(
                 f"Set presence mode to {option} failed",
                 translation_domain=DOMAIN,
@@ -303,7 +306,6 @@ class TadoOverlayModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sele
         self._attr_entity_category = get_entity_category(_meta)
         self._attr_current_option = OVERLAY_MODE_DEFAULT.lower()
         self._attr_device_info = get_hub_device_info(home_id)
-        self._attr_icon = _meta.icon
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
@@ -381,7 +383,6 @@ class TadoTimerDurationSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Se
         self._attr_entity_category = get_entity_category(_meta)
         self._attr_current_option = str(TIMER_DURATION_DEFAULT)
         self._attr_device_info = get_hub_device_info(home_id)
-        self._attr_icon = _meta.icon
         self._attr_unit_of_measurement = "min"
 
     @property
@@ -481,13 +482,6 @@ class TadoHeatingCircuitSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], S
         ) or {}
         return control.get("heatingCircuit")
 
-    @property
-    def icon(self) -> str | None:
-        """Return the entity icon."""
-        return "mdi:radiator-disabled" if (
-            self._attr_current_option == NO_HEATING_CIRCUIT_OPTION
-        ) else "mdi:radiator"
-
     @callback
     def _handle_coordinator_update(self) -> None:
         """Refresh options + current selection from the latest cache."""
@@ -544,7 +538,7 @@ class TadoHeatingCircuitSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], S
             committed = await self.coordinator.api_client.set_zone_heating_circuit(self._zone_id, number)
         except (TadoAuthError, TadoRateLimitError, TadoBlockedError) as err:
             # The finally below still restores the option before this error reaches the caller.
-            dispatch_to_service_call(err, self.coordinator.config_entry, self.hass, self.coordinator)
+            dispatch_to_service_call(err, self.coordinator.config_entry, self.hass)
         finally:
             if not committed:
                 # Re-derive from the stored map, which a poll during the call may have refreshed.

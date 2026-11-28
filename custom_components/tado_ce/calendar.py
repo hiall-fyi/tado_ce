@@ -218,15 +218,11 @@ class TadoZoneScheduleCalendar(CoordinatorEntity["TadoDataUpdateCoordinator"], C
         self._zone_name = zone_name
         self._schedule = schedule
 
-        # Short name for calendar sidebar (just zone name)
         _meta = ENTITY_REGISTRY["calendar_schedule"]
         self._attr_translation_key = _meta.translation_key
+        self._attr_translation_placeholders = {"zone_name": zone_name}
         self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         self._attr_device_info = get_schedule_device_info(home_id)
-        if _meta.icon:
-            self._attr_icon = _meta.icon
-
-        self._event: CalendarEvent | None = None
 
     async def async_added_to_hass(self) -> None:
         """Listen for the Refresh Schedule button's bus event.
@@ -283,29 +279,27 @@ class TadoZoneScheduleCalendar(CoordinatorEntity["TadoDataUpdateCoordinator"], C
 
     @property
     def event(self) -> CalendarEvent | None:
-        """Return the current or next upcoming event."""
-        return self._event
-
-    async def async_update(self) -> None:
-        """Refresh `event` to whichever block is current or next upcoming today."""
+        """Return today's current or next schedule block, read from the cached schedule at each state write."""
         now = dt_util.now()
         today = now.date()
+        try:
+            events = self._events_between(today, today + timedelta(days=1))
+        except (ValueError, TypeError):
+            # Runs in every state write, so a malformed Tado block must not stop the entity updating.
+            _LOGGER.debug(
+                "Calendar: zone %s has a schedule block that cannot be read, no event shown",
+                self._zone_name,
+                exc_info=True,
+            )
+            return None
 
-        events = await self.async_get_events(self.hass, today, today + timedelta(days=1))
-
-        self._event = None
         for event in sorted(events, key=lambda e: e.start):
             if event.start <= now < event.end or event.start > now:
-                self._event = event
-                break
+                return event
+        return None
 
-    async def async_get_events(
-        self,
-        hass: HomeAssistant,
-        start_date: date,
-        end_date: date,
-    ) -> list[CalendarEvent]:
-        """Return all schedule events between `start_date` and `end_date`."""
+    def _events_between(self, start_date: date, end_date: date) -> list[CalendarEvent]:
+        """Render the schedule blocks of each day from start_date up to end_date as events."""
         events = []
         timetable_type = self._schedule.get("type", "ONE_DAY")
         blocks_by_day = self._schedule.get("blocks") or {}
@@ -323,6 +317,15 @@ class TadoZoneScheduleCalendar(CoordinatorEntity["TadoDataUpdateCoordinator"], C
             current += timedelta(days=1)
 
         return events
+
+    async def async_get_events(
+        self,
+        hass: HomeAssistant,
+        start_date: date,
+        end_date: date,
+    ) -> list[CalendarEvent]:
+        """Return all schedule events between `start_date` and `end_date`."""
+        return self._events_between(start_date, end_date)
 
     def _get_blocks_for_weekday(
         self,

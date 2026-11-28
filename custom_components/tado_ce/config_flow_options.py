@@ -419,7 +419,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
 
         # --- Weather Compensation (if enabled AND bridge exists) ---
         if opt("wc_enabled", False) and has_bridge_credentials:
-            flow_limits = ConfigurationManager(self.config_entry)  # same clamping getters as the engine
+            flow_limits = ConfigurationManager(self.config_entry)  # same clamping getters as the engine, read quietly so opening the form logs nothing
             sections[vol.Required("weather_compensation")] = data_entry_flow.section(
                 vol.Schema(
                     {
@@ -428,8 +428,8 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                         vol.Optional("wc_curve_shape", description={"suggested_value": opt("wc_curve_shape", "linear")}): SelectSelector(SelectSelectorConfig(options=["linear", "exponential"], translation_key="wc_curve_shape", mode=SelectSelectorMode.DROPDOWN)),
                         vol.Optional("wc_curve_k", default=opt("wc_curve_k", 0.02)): NumberSelector(NumberSelectorConfig(min=0.005, max=0.10, step=0.005, mode=NumberSelectorMode.BOX)),
                         vol.Optional("wc_design_outdoor_temp", default=opt("wc_design_outdoor_temp", -5.0)): NumberSelector(NumberSelectorConfig(min=-30, max=10, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="°C")),
-                        vol.Optional("wc_max_flow_temp", default=flow_limits.get_wc_max_flow_temp()): NumberSelector(NumberSelectorConfig(min=30, max=80, step=0.5, mode=NumberSelectorMode.BOX, unit_of_measurement="°C")),
-                        vol.Optional("wc_min_flow_temp", default=flow_limits.get_wc_min_flow_temp()): NumberSelector(NumberSelectorConfig(min=30, max=60, step=0.5, mode=NumberSelectorMode.BOX, unit_of_measurement="°C")),
+                        vol.Optional("wc_max_flow_temp", default=flow_limits.get_wc_max_flow_temp(log=False)): NumberSelector(NumberSelectorConfig(min=30, max=80, step=0.5, mode=NumberSelectorMode.BOX, unit_of_measurement="°C")),
+                        vol.Optional("wc_min_flow_temp", default=flow_limits.get_wc_min_flow_temp(log=False)): NumberSelector(NumberSelectorConfig(min=30, max=60, step=0.5, mode=NumberSelectorMode.BOX, unit_of_measurement="°C")),
                         vol.Optional("wc_shutoff_temp", default=opt("wc_shutoff_temp", 18.0)): NumberSelector(NumberSelectorConfig(min=5, max=30, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="°C")),
                         vol.Optional("wc_smoothing_method", description={"suggested_value": opt("wc_smoothing_method", "ema")}): SelectSelector(SelectSelectorConfig(options=["none", "ema", "rolling_average"], translation_key="wc_smoothing_method", mode=SelectSelectorMode.DROPDOWN)),
                         vol.Optional("wc_smoothing_window", default=opt("wc_smoothing_window", 60)): NumberSelector(NumberSelectorConfig(min=15, max=MAX_CUSTOM_INTERVAL, step=15, mode=NumberSelectorMode.BOX, unit_of_measurement="min")),
@@ -663,7 +663,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
 
         if user_input is not None:
             processed_input = self._process_advanced_settings_input(user_input, errors)
-            self._process_internet_bridge(user_input, processed_input)
+            await self._process_internet_bridge(user_input, processed_input, errors)
             self._process_weather_compensation(user_input, processed_input, errors)
 
             if not errors:
@@ -740,6 +740,21 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             description_placeholders={"homekit_status": homekit_status},
         )
 
+    async def _check_bridge_credentials(self, serial: str, key: str) -> str | None:
+        """Return the error key for a bridge serial and auth key, or None when both pass."""
+        if not serial.upper().startswith("IB"):
+            return "bridge_serial_invalid"
+        from .bridge_api import TadoBridgeApiClient
+        from .exceptions import TadoBridgeUnreachableError
+
+        bridge_client = TadoBridgeApiClient(async_get_clientsession(self.hass), serial, key)
+        try:
+            if not await bridge_client.async_validate_credentials():
+                return "bridge_auth_failed"
+        except TadoBridgeUnreachableError:
+            return "bridge_unreachable"
+        return None
+
     async def async_step_bridge_setup(
         self, user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
@@ -752,15 +767,8 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
 
             if not bridge_serial or not bridge_auth_key:
                 errors["base"] = "bridge_credentials_required"
-            elif not bridge_serial.upper().startswith("IB"):
-                errors["base"] = "bridge_serial_invalid"
-            else:
-                from .bridge_api import TadoBridgeApiClient
-
-                session = async_get_clientsession(self.hass)
-                bridge_client = TadoBridgeApiClient(session, bridge_serial, bridge_auth_key)
-                if not await bridge_client.async_validate_credentials():
-                    errors["base"] = "bridge_auth_failed"
+            elif error := await self._check_bridge_credentials(bridge_serial, bridge_auth_key):
+                errors["base"] = error
 
             if not errors:
                 self._pending_general_options["bridge_serial"] = bridge_serial
@@ -984,12 +992,13 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             errors["custom_night_interval"] = "interval_out_of_range"
             processed["custom_night_interval"] = None
 
-    def _process_internet_bridge(
+    async def _process_internet_bridge(
         self,
         user_input: dict[str, Any],
         processed: dict[str, Any],
+        errors: dict[str, str],
     ) -> None:
-        """Flatten internet_bridge section: bridge credentials with collapsed-section preservation."""
+        """Flatten internet_bridge section: bridge credentials with collapsed-section preservation, checking a changed pair."""
         if "internet_bridge" not in user_input:
             return
         section = user_input["internet_bridge"]
@@ -999,6 +1008,12 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         bridge_auth_key = (section.get("bridge_auth_key") or "").strip()
         processed["bridge_serial"] = bridge_serial or existing.get("bridge_serial", "")
         processed["bridge_auth_key"] = bridge_auth_key or existing.get("bridge_auth_key", "")
+        # Check only a changed pair: an untouched section sends the stored values back, and that must not need the bridge to be reachable.
+        if (processed["bridge_serial"], processed["bridge_auth_key"]) != (
+            existing.get("bridge_serial", ""),
+            existing.get("bridge_auth_key", ""),
+        ) and (error := await self._check_bridge_credentials(processed["bridge_serial"], processed["bridge_auth_key"])):
+            errors["base"] = error
 
     def _process_weather_compensation(
         self,

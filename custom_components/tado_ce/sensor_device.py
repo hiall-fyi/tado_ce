@@ -75,15 +75,6 @@ class TadoBatterySensor(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataU
         self._recommendation: str = ""
 
     @property
-    def icon(self) -> str | None:
-        """Return the icon for the entity."""
-        if self._attr_native_value == "Low":
-            return "mdi:battery-low"
-        if self._attr_native_value == "Critical":
-            return "mdi:battery-alert"
-        return "mdi:battery"
-
-    @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Return extra state attributes."""
         return {

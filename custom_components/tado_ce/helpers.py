@@ -18,9 +18,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 import logging
+import math
 import random
 import re
-from typing import TYPE_CHECKING, Any, Final
+import time
+from typing import TYPE_CHECKING, Any, Final, TypeGuard
 
 from homeassistant.const import UnitOfTemperature
 from homeassistant.helpers import entity_registry as er
@@ -65,6 +67,8 @@ else:
     _AvailabilityHost = object
 
 _LOGGER = logging.getLogger(__name__)
+
+_INJECTED_PRESENCE_MAX_AHEAD_SECONDS: Final = 3600
 
 REASON_NOT_CONNECTED: Final = "HomeKit is not connected"
 REASON_NO_CHARACTERISTIC: Final = "the zone has no HomeKit target characteristic"
@@ -131,6 +135,16 @@ def mask_api_url(url: str) -> str:
     return _API_URL_DEVICE_RE.sub(lambda m: m.group(1) + mask_serial(m.group(2)), url)
 
 
+_UNIQUE_ID_HOME_RE = re.compile(r"(tado_ce_)(\d+)")
+
+
+def mask_unique_id(unique_id: str | None) -> str:
+    """Mask the home ID that follows tado_ce_ in a unique ID for safe logging."""
+    if not unique_id:
+        return ""
+    return _UNIQUE_ID_HOME_RE.sub(lambda m: m.group(1) + mask_home_id(m.group(2)), unique_id)
+
+
 _BODY_SERIAL_RE = re.compile(r"\b[A-Z]{2}\d{8,12}\b")
 _BODY_HOME_ID_RE = re.compile(r"(home_?id[\"']?\s*[:=]\s*[\"']?)(\d+)", re.IGNORECASE)
 
@@ -187,6 +201,40 @@ def get_zone_states(coord_data: dict[str, Any] | None) -> dict[str, dict[str, An
     return zones.get("zoneStates") or {}
 
 
+def _is_number(value: Any) -> TypeGuard[float]:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def _injected_home_state_superseded(home_state: dict[str, Any], zone_fetch_started: datetime | None) -> bool:
+    """True once an injected answer's window is over and a zone fetch newer than the injection has landed."""
+    now = time.time()
+    until = home_state["injected_until"]
+    if _is_number(until) and now <= until <= now + _INJECTED_PRESENCE_MAX_AHEAD_SECONDS:
+        return False
+    if not isinstance(zone_fetch_started, datetime):
+        return False
+    injected_at = home_state.get("injected_at")
+    return zone_fetch_started.timestamp() > (injected_at if _is_number(injected_at) else 0)
+
+
+def resolve_home_presence(
+    coord_data: dict[str, Any] | None,
+    zone_fetch_started: datetime | None = None,
+) -> tuple[str, bool, str] | None:
+    """Return (presence, locked, source); home_state exists only with Home State Sync on, the zone fetch always carries tadoMode."""
+    home_state = (coord_data or {}).get("home_state")
+    if home_state and "presence" in home_state and not (
+        "injected_until" in home_state and _injected_home_state_superseded(home_state, zone_fetch_started)
+    ):
+        return home_state["presence"], home_state.get("presenceLocked", False), "home_state"
+    for zone in get_zone_states(coord_data).values():
+        if isinstance(zone, dict) and zone.get("tadoMode"):
+            return zone["tadoMode"], zone.get("geolocationOverride", False), "zones"
+    if home_state:
+        return home_state.get("presence", "HOME"), home_state.get("presenceLocked", False), "home_state"
+    return None
+
+
 def get_entity_zone_ids(coord_data: dict[str, Any] | None) -> frozenset[str]:
     """Zone ids that both zones_info and zoneStates list, the zones every per-zone platform can build for."""
     zones_info = (coord_data or {}).get("zones_info")
@@ -240,7 +288,12 @@ _TEMPERATURE_UNIT_ALIASES: Final[dict[str, str]] = {
     "f": UnitOfTemperature.FAHRENHEIT, "°f": UnitOfTemperature.FAHRENHEIT, "degf": UnitOfTemperature.FAHRENHEIT,
     "fahrenheit": UnitOfTemperature.FAHRENHEIT,
     "k": UnitOfTemperature.KELVIN,
+    # U+2103 / U+2109 and the ordinal-indicator forms a sensor may publish
+    "℃": UnitOfTemperature.CELSIUS, "ºc": UnitOfTemperature.CELSIUS,
+    "℉": UnitOfTemperature.FAHRENHEIT, "ºf": UnitOfTemperature.FAHRENHEIT,
 }
+# A sensor can read slightly above 100 (rounding or supersaturation), so up to this is clamped to 100.
+_HUMIDITY_OVERSHOOT_MAX: Final = 105.0
 
 
 def parse_temperature_celsius(raw: Any, unit: Any) -> float | None:
@@ -263,12 +316,12 @@ def parse_temperature_celsius(raw: Any, unit: Any) -> float | None:
 
 
 def parse_percentage(raw: Any) -> float | None:
-    """Return an external humidity reading when it is a number from 0 to 100, else None."""
+    """Return an external humidity reading from 0 to 100 (a reading of up to 105 is clamped to 100), else None."""
     try:
         value = float(raw)
     except (ValueError, TypeError):
         return None
-    return value if 0.0 <= value <= 100.0 else None
+    return min(value, 100.0) if 0.0 <= value <= _HUMIDITY_OVERSHOOT_MAX else None
 
 
 def resolve_boiler_flow_temperature(
@@ -998,20 +1051,6 @@ def retry_after_to_minutes(seconds: int) -> str:
     """Format retry-after seconds as minute count for user-facing messages."""
     # WHY: floor at 1, a 30-second cooldown still reads "Try again in 1 min."
     return str(max(1, seconds // 60))
-
-
-def low_quota_threshold(daily_limit: int | None) -> int:
-    """Return the low-quota threshold scaled to the daily-limit tier."""
-    from .quota_levels import QuotaLevels
-
-    return QuotaLevels(QuotaLevels.normalise_limit(daily_limit)).soft_low
-
-
-def full_sync_period_seconds(daily_limit: int | None) -> int:
-    """Return seconds between full syncs: the slower cadence on the free tier, hourly otherwise."""
-    from .quota_levels import QuotaLevels
-
-    return QuotaLevels(QuotaLevels.normalise_limit(daily_limit)).full_sync_period
 
 
 def hard_quota_reserve(daily_limit: int | None) -> int:

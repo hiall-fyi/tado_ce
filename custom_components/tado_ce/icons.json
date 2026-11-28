@@ -96,11 +96,17 @@
     },
     "select": {
       "presence_mode": {
-        "default": "mdi:home-account",
+        "default": "mdi:home-export-outline",
         "state": {
-          "auto": "mdi:home-automation",
-          "home": "mdi:home-account",
+          "auto": "mdi:home-account",
+          "home": "mdi:home",
           "away": "mdi:home-export-outline"
+        }
+      },
+      "heating_circuit": {
+        "default": "mdi:radiator",
+        "state": {
+          "no_heating_circuit": "mdi:radiator-disabled"
         }
       },
       "overlay_mode": {
@@ -154,10 +160,18 @@
         "default": "mdi:target"
       },
       "battery": {
-        "default": "mdi:battery"
+        "default": "mdi:battery",
+        "state": {
+          "Low": "mdi:battery-low",
+          "Critical": "mdi:battery-alert"
+        }
       },
       "battery_suffixed": {
-        "default": "mdi:battery"
+        "default": "mdi:battery",
+        "state": {
+          "Low": "mdi:battery-low",
+          "Critical": "mdi:battery-alert"
+        }
       },
       "home_id": {
         "default": "mdi:home"
@@ -175,7 +189,10 @@
         "default": "mdi:api"
       },
       "token_status": {
-        "default": "mdi:key"
+        "default": "mdi:key-alert",
+        "state": {
+          "valid": "mdi:key"
+        }
       },
       "zone_count": {
         "default": "mdi:home-thermometer"
@@ -202,13 +219,23 @@
         "default": "mdi:lightbulb-on-outline"
       },
       "mold_risk": {
-        "default": "mdi:mushroom"
+        "default": "mdi:check-circle",
+        "state": {
+          "Critical": "mdi:mushroom-outline",
+          "High": "mdi:alert-circle",
+          "Medium": "mdi:alert"
+        }
       },
       "mold_risk_pct": {
         "default": "mdi:water-percent"
       },
       "condensation_risk": {
-        "default": "mdi:water-alert"
+        "default": "mdi:check-circle",
+        "state": {
+          "Critical": "mdi:water-alert",
+          "High": "mdi:alert-circle",
+          "Medium": "mdi:alert"
+        }
       },
       "comfort_level": {
         "default": "mdi:air-filter"
@@ -234,15 +261,6 @@
       "comfort_target": {
         "default": "mdi:thermometer-check"
       },
-      "heating_power": {
-        "default": "mdi:radiator"
-      },
-      "ac_power": {
-        "default": "mdi:air-conditioner"
-      },
-      "target": {
-        "default": "mdi:thermometer-check"
-      },
       "bridge_capabilities": {
         "default": "mdi:information-outline"
       },
@@ -260,25 +278,58 @@
       },
       "homekit_writes_saved": {
         "default": "mdi:pencil-outline"
+      },
+      "absolute_humidity": {
+        "default": "mdi:water"
+      },
+      "data_age": {
+        "default": "mdi:timer-sand"
+      },
+      "boiler_wiring_state": {
+        "default": "mdi:pipe-wrench"
+      },
+      "boiler_output_temperature": {
+        "default": "mdi:thermometer-water"
+      },
+      "boiler_flow_temperature": {
+        "default": "mdi:thermometer-water"
+      },
+      "boiler_max_output_temperature": {
+        "default": "mdi:thermometer-water"
+      },
+      "boiler_hot_water_present": {
+        "default": "mdi:water-boiler"
+      },
+      "boiler_device_type": {
+        "default": "mdi:chip"
+      },
+      "boiler_device_serial": {
+        "default": "mdi:identifier"
+      },
+      "boiler_interface_type": {
+        "default": "mdi:connection"
+      },
+      "boiler_device_connected": {
+        "default": "mdi:lan-connect"
       }
     },
     "switch": {
       "early_start": {
-        "default": "mdi:clock-fast",
+        "default": "mdi:clock-outline",
         "state": {
           "on": "mdi:clock-fast",
           "off": "mdi:clock-outline"
         }
       },
       "child_lock": {
-        "default": "mdi:lock",
+        "default": "mdi:lock-open",
         "state": {
           "on": "mdi:lock",
           "off": "mdi:lock-open"
         }
       },
       "quota_reserve": {
-        "default": "mdi:shield-check",
+        "default": "mdi:shield-off",
         "state": {
           "on": "mdi:shield-check",
           "off": "mdi:shield-off"

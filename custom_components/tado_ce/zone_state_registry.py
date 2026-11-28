@@ -17,6 +17,7 @@ REMOVED_ONLY: Final[frozenset[ZoneDropReason]] = frozenset({"removed"})
 # Zone-keyed stores that are flat, one entry per zone; wrapped stores must never join this tuple.
 ZONE_KEYED_FLAT_STORES: Final[tuple[str, ...]] = (
     "schedules", "zone_capabilities", "zone_capabilities_fp", "offsets", "heating_circuit_control",
+    "early_start",
 )
 WRAPPED_ZONE_STORES: Final[tuple[str, ...]] = ("zone_config", "smart_comfort_cache")
 # "Class.attr" or "module.attr" -> the owner registered in TadoDataUpdateCoordinator._register_zone_state_owners that drops it.
@@ -64,6 +65,10 @@ ZONE_STATE_OWNED: Final[dict[str, str]] = {
     "StateRestoreManager._previous_overlay_states": "state_restore",
     "StateRestoreManager._consecutive_cleared": "state_restore",
     "TadoDataUpdateCoordinator.entity_data": "entity_data",
+    # A confirmed removal takes the room out of the built-ids record and clears its once-only reload marker.
+    "TadoDataUpdateCoordinator.entity_zone_ids": "entity_registry_rows",
+    "TadoDataUpdateCoordinator.entity_zone_identity": "entity_registry_rows",
+    "coordinator._ZONE_RELOADS_REQUESTED": "entity_registry_rows",
     # The clamp flag lives in the data_loader cache and in the published poll data, so the key is the coordinator's `data`.
     "TadoDataUpdateCoordinator.data": "offset_clamps",
     # The repair owners hold no attribute: the key is the issue spec each one dismisses.
@@ -78,15 +83,12 @@ ZONE_STATE_EXEMPT: Final[dict[str, str]] = {
     "TadoDataUpdateCoordinator._zone_drops_done": "drop bookkeeping: an id leaves when the zone is listed again",
     "TadoDataUpdateCoordinator._zone_absent_polls": "drop bookkeeping: a counter removed when the zone returns or its drop is confirmed",
     "TadoDataUpdateCoordinator._zones_awaiting_listing": "bookkeeping of new ids, intersected with the zones still in the state list on every poll",
-    "TadoDataUpdateCoordinator.entity_zone_ids": "one frozenset of ids replaced at setup, not per-zone state",
-    "TadoDataUpdateCoordinator.entity_zone_identity": "one dict replaced at setup, a record of what the platforms built, not per-zone state",
     "TadoDataUpdateCoordinator._zone_fingerprint": "the source of the added/removed delta that triggers every drop",
     "TadoDataUpdateCoordinator._last_known_zone_types": "the baseline id-reuse detection compares against, persisted",
     "TadoDataUpdateCoordinator._last_known_zone_dates": "the baseline id-reuse detection compares against, persisted",
     "TadoDataUpdateCoordinator._zone_transition_locks": "one Lock per zone ever seen, holds no state; popping a held lock would split mutual exclusion",
     "TadoDataUpdateCoordinator._cloud_only_logged": "one value-compared log dedupe replaced on every poll",
     "TadoDataUpdateCoordinator.entity_freshness": "keyed by entity id and expiry-cleaned",
-    "coordinator._ZONE_RELOADS_REQUESTED": "once-per-process marker that stops a reload loop, deliberately never cleared",
     "helpers._merge_logged": "DEBUG log dedupe only, holds no zone state",
     "zone_signals._class_gate_logged": "DEBUG log dedupe only, holds no zone state",
     "zone_signals._zone_power_logged": "DEBUG log dedupe only, holds no zone state",

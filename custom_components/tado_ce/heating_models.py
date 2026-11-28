@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from .helpers import parse_iso_datetime
 from .models import HeatingCycleReading
 
-__all__ = ["HeatingCycle", "HeatingCycleConfig", "HeatingCycleReading"]
+__all__ = ["MIN_CYCLE_DURATION", "HeatingCycle", "HeatingCycleConfig", "HeatingCycleReading"]
+
+MIN_CYCLE_DURATION = timedelta(minutes=3)  # shorter than this cannot be a real heating cycle
 
 
 @dataclass
@@ -27,6 +29,7 @@ class HeatingCycle:
     completed: bool
     interrupted: bool
     interrupt_reason: str | None
+    heating_seen: bool | None = None  # None: no heating signal fed or an older record; False: fed and none seen; True: seen
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to dictionary for JSON storage."""
@@ -42,6 +45,7 @@ class HeatingCycle:
             "completed": self.completed,
             "interrupted": self.interrupted,
             "interrupt_reason": self.interrupt_reason,
+            "heating_seen": self.heating_seen,
         }
 
     @classmethod
@@ -59,6 +63,7 @@ class HeatingCycle:
             completed=data["completed"],
             interrupted=data["interrupted"],
             interrupt_reason=data["interrupt_reason"],
+            heating_seen=data.get("heating_seen"),
         )
 
 
@@ -70,12 +75,3 @@ class HeatingCycleConfig:
     rolling_window_days: int = 7
     inertia_threshold_celsius: float = 0.1
     min_cycles: int = 3
-
-    def validate(self) -> None:
-        """Validate configuration values."""
-        if not 1 <= self.rolling_window_days <= 30:
-            raise ValueError("rolling_window_days must be between 1 and 30")
-        if not 0.05 <= self.inertia_threshold_celsius <= 0.5:
-            raise ValueError("inertia_threshold_celsius must be between 0.05 and 0.5")
-        if not 1 <= self.min_cycles <= 10:
-            raise ValueError("min_cycles must be between 1 and 10")

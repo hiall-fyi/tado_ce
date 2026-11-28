@@ -24,6 +24,8 @@ _LOGGER = logging.getLogger(__name__)
 STORAGE_VERSION = "1.0"
 # Grace period: if an insight disappears for less than this, treat as same occurrence
 REAPPEARANCE_GRACE_HOURS = 1
+HISTORY_RETENTION_DAYS = 30
+RETIRED_INSIGHT_TYPES = frozenset({"window_predicted"})
 # Debounce delay for Store writes: coalesces per-poll `last_seen` updates to
 # reduce SD flash wear on HA OS installs. HA's EVENT_HOMEASSISTANT_FINAL_WRITE
 # flushes pending writes on shutdown, so no data loss.
@@ -141,14 +143,14 @@ class InsightHistoryTracker:
         """Update history with current poll cycle's insights."""
         now_iso = now.isoformat()
         current_keys: set[str] = set()
+        grace_cutoff = now - timedelta(hours=REAPPEARANCE_GRACE_HOURS)
 
         for insight in current_insights:
             key = self._make_key(insight.insight_type, insight.zone_name)
             current_keys.add(key)
 
-            if key in self._entries:
+            if key in self._entries and "resolved_at" not in self._entries[key]:
                 self._entries[key]["last_seen"] = now_iso
-                self._dirty = True
             else:
                 self._entries[key] = {
                     "first_seen": now_iso,
@@ -156,25 +158,21 @@ class InsightHistoryTracker:
                     "base_priority": insight.priority.value
                     if hasattr(insight.priority, "value")
                     else int(insight.priority),
-                    "occurrence_count": 1,
                 }
+            self._dirty = True
+
+        for key, entry in self._entries.items():
+            if key in current_keys or "resolved_at" in entry:
+                continue
+            try:
+                absent_past_grace = parse_iso_datetime(entry.get("last_seen", "")) <= grace_cutoff
+            except (ValueError, TypeError):
+                continue
+            if absent_past_grace:
+                entry["resolved_at"] = now_iso
                 self._dirty = True
 
-        grace_cutoff = now - timedelta(hours=REAPPEARANCE_GRACE_HOURS)
-        keys_to_remove = []
-        for key in self._entries:
-            if key not in current_keys:
-                last_seen_str = self._entries[key].get("last_seen", "")
-                try:
-                    last_seen = parse_iso_datetime(last_seen_str)
-                    if last_seen <= grace_cutoff:
-                        keys_to_remove.append(key)
-                except (ValueError, TypeError):
-                    keys_to_remove.append(key)
-
-        for key in keys_to_remove:
-            del self._entries[key]
-            self._dirty = True
+        self._drop_entries(now - timedelta(days=HISTORY_RETENTION_DAYS))
 
         self._active_keys = current_keys
 
@@ -238,18 +236,23 @@ class InsightHistoryTracker:
         result.sort(key=_sort_key, reverse=True)
         return result
 
-    def prune_old_entries(self, max_age_days: int = 30) -> int:
+    def prune_old_entries(self, max_age_days: int = HISTORY_RETENTION_DAYS) -> int:
         """Remove entries with last_seen older than max_age_days."""
-        cutoff = dt_util.utcnow() - timedelta(days=max_age_days)
+        return self._drop_entries(dt_util.utcnow() - timedelta(days=max_age_days))
+
+    def _drop_entries(self, cutoff: datetime) -> int:
+        """Drop entries last seen before the cutoff, with an unreadable timestamp or of a retired type; return how many."""
         keys_to_remove = []
 
         for key, entry in self._entries.items():
+            if key.split(":", 1)[0] in RETIRED_INSIGHT_TYPES:
+                keys_to_remove.append(key)
+                continue
             try:
                 last_seen = parse_iso_datetime(entry["last_seen"])
                 if last_seen < cutoff:
                     keys_to_remove.append(key)
             except (ValueError, KeyError, TypeError):
-                # Invalid entry: prune it
                 keys_to_remove.append(key)
 
         for key in keys_to_remove:

@@ -14,5 +14,5 @@
   "requirements": [
     "aiohomekit>=4.0.0"
   ],
-  "version": "5.0.0-beta.1"
+  "version": "5.0.0-beta.2"
 }

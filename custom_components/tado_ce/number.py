@@ -85,15 +85,12 @@ class TadoBoilerMaxOutputTemperatureNumber(
     _attr_native_step = FLOW_TEMP_STEP
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
     _attr_device_class = NumberDeviceClass.TEMPERATURE
-    _attr_icon = "mdi:thermometer-water"
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
         super().__init__(coordinator)
         _meta = ENTITY_REGISTRY["number_boiler_max_output_temp"]
         self._attr_translation_key = _meta.translation_key
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
-        if _meta.icon:
-            self._attr_icon = _meta.icon
         self._attr_entity_category = get_entity_category(_meta)
         self._attr_device_info = get_hub_device_info(coordinator.home_id)
         self._data_present = False

@@ -57,6 +57,8 @@ class _AuthHost(Protocol):
     _data_loader: DataLoader | None
     _config_entry: ConfigEntry | None
     _last_noted_event: CloudEvent | None
+    _refresh_failure_streak: int
+    _rotation_logged: bool
 
     @property
     def _cloud_health(self) -> CloudHealth | None: ...
@@ -66,6 +68,7 @@ class _AuthHost(Protocol):
     async def _load_config(self) -> dict[str, Any]: ...
     async def _save_config(self, config: dict[str, Any]) -> None: ...
     async def _refresh_token(self) -> str | None: ...
+    def _log_refresh_failure(self, msg: str, *args: object, exc_info: bool = False) -> None: ...
 
 
 class TadoAuthMixin:
@@ -86,6 +89,12 @@ class TadoAuthMixin:
 
     # The last classified outcome, so a caller can tell what its own token attempt just recorded.
     _last_noted_event: CloudEvent | None = None
+
+    # Failed token refresh attempts since the last success, so a streak warns once.
+    _refresh_failure_streak: int = 0
+
+    # Set after the first refresh-token rotation of this client was logged at INFO.
+    _rotation_logged: bool = False
 
     @property
     def has_valid_credentials(self: _AuthHost) -> bool:
@@ -143,6 +152,15 @@ class TadoAuthMixin:
 
             return await self._refresh_token()
 
+    def _log_refresh_failure(self: _AuthHost, msg: str, *args: object, exc_info: bool = False) -> None:
+        """Log a transient token refresh failure: a WARNING for the first of a streak, DEBUG for the repeats."""
+        first = self._refresh_failure_streak == 0
+        self._refresh_failure_streak += 1
+        if first:
+            _LOGGER.warning(msg, *args, exc_info=exc_info)
+        else:
+            _LOGGER.debug(msg, *args, exc_info=exc_info)
+
     async def _handle_successful_token_response(
         self: _AuthHost, data: dict[str, Any], config: dict[str, Any], refresh_token: str,
     ) -> str | None:
@@ -151,20 +169,34 @@ class TadoAuthMixin:
         new_refresh_token = data.get("refresh_token")
 
         if not self._access_token:
-            _LOGGER.warning(
+            self._log_refresh_failure(
                 "Auth: token refresh response had no access_token field, "
                 "next API call will trigger another refresh attempt",
             )
             return None
 
+        if self._refresh_failure_streak:
+            _LOGGER.info(
+                "Auth: Tado token refresh works again after %d failed attempts",
+                self._refresh_failure_streak,
+            )
+            self._refresh_failure_streak = 0
+
         if new_refresh_token and new_refresh_token != refresh_token:
             config["refresh_token"] = new_refresh_token
             self._injected_refresh_token = new_refresh_token
             await self._save_config(config)
-            _LOGGER.debug(
-                "Auth: refresh token rotated by Tado, new token saved "
-                "to ConfigEntry",
-            )
+            if not self._rotation_logged:
+                self._rotation_logged = True
+                _LOGGER.info(
+                    "Auth: Tado rotated the refresh token and it was saved to the config entry, "
+                    "later rotations are logged at DEBUG",
+                )
+            else:
+                _LOGGER.debug(
+                    "Auth: refresh token rotated by Tado, new token saved "
+                    "to ConfigEntry",
+                )
 
         # RFC 6749 §5.1: honour `expires_in` when present. Fall back
         # to TOKEN_CACHE_DURATION when missing, malformed, or
@@ -234,7 +266,7 @@ class TadoAuthMixin:
 
             # WHY: a CDN or proxy error body that mentions invalid_grant is an outage, not a rejected credential.
             if resp.status >= HTTPStatus.INTERNAL_SERVER_ERROR:
-                _LOGGER.warning(
+                self._log_refresh_failure(
                     "Auth: refresh failed with HTTP %s: %s",
                     resp.status, error_text[:200],
                 )
@@ -265,7 +297,7 @@ class TadoAuthMixin:
                 raise TadoAuthError(
                     f"Token refresh rejected (HTTP {resp.status}): {error_text[:80]}",
                 )
-            _LOGGER.warning(
+            self._log_refresh_failure(
                 "Auth: refresh failed with HTTP %s: %s",
                 resp.status, error_text[:200],
             )
@@ -300,7 +332,7 @@ class TadoAuthMixin:
                 raise
             except aiohttp.ClientError:
                 if attempt >= MAX_RETRY_ATTEMPTS:
-                    _LOGGER.warning(
+                    self._log_refresh_failure(
                         "Auth: network error during token refresh, "
                         "exhausted %s retries, will retry on next poll",
                         MAX_RETRY_ATTEMPTS,
@@ -310,14 +342,14 @@ class TadoAuthMixin:
                     return None
             except TimeoutError:
                 # The token timeout is not retried, so the one attempt is the exhaustion.
-                _LOGGER.warning(
+                self._log_refresh_failure(
                     "Auth: token refresh timed out, will retry on next poll",
                     exc_info=True,
                 )
                 self.note_cloud(CloudEvent.TOKEN_TIMEOUT)  # type: ignore[attr-defined]
                 return None
             except Exception:
-                _LOGGER.warning(
+                self._log_refresh_failure(
                     "Auth: unexpected error during token refresh, "
                     "will retry on next poll",
                     exc_info=True,

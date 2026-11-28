@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from homeassistant.components.climate import ClimateEntity
 from homeassistant.components.climate.const import HVACAction, HVACMode
 from homeassistant.const import UnitOfTemperature
-from homeassistant.core import CALLBACK_TYPE, callback
+from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import async_get_platforms
@@ -24,7 +24,6 @@ from .climate_helpers import (
     observed_climate_state,
     read_external_sensor,
     setup_climate_external_sensor_subscription,
-    unsubscribe_external_sensors,
 )
 from .const import DOMAIN, SIGNAL_HOMEKIT_UPDATE
 from .device_manager import get_zone_device_info
@@ -152,9 +151,6 @@ class TadoClimateBase(PerEntityAvailabilityMixin, ZoneEntityMixin, CoordinatorEn
         self._expected_target_temperature: float | None = None
         self._expected_overlay_present: bool | None = None
 
-        # Unsubscribe callbacks for external sensor state change listeners
-        self._unsub_external_sensors: list[CALLBACK_TYPE] = []
-
         self._last_write_sequence: int | None = None
 
     def _write_ledger(self) -> ZoneWriteLedger | None:
@@ -267,22 +263,17 @@ class TadoClimateBase(PerEntityAvailabilityMixin, ZoneEntityMixin, CoordinatorEn
             ),
         )
     async def async_will_remove_from_hass(self) -> None:
-        """Drop the held resend, cancel the resend tasks and release the external-sensor listeners."""
+        """Drop the held resend and cancel the resend tasks."""
         self.coordinator.write_ledger.cancel_resends(self._zone_id)
-        self._unsubscribe_external_sensors()
         await super().async_will_remove_from_hass()
 
     @callback
     def _subscribe_external_sensors(self) -> None:
         """Subscribe to external sensor state changes for real-time updates."""
-        self._unsub_external_sensors = setup_climate_external_sensor_subscription(
-            self, self._zone_id, self._unsub_external_sensors, label=f"{self._SENSOR_LABEL_PREFIX}{self._zone_name}",
-        )
-
-    @callback
-    def _unsubscribe_external_sensors(self) -> None:
-        """Unsubscribe from external sensor state change listeners."""
-        unsubscribe_external_sensors(self._unsub_external_sensors)
+        for unsub in setup_climate_external_sensor_subscription(
+            self, self._zone_id, label=f"{self._SENSOR_LABEL_PREFIX}{self._zone_name}",
+        ):
+            self.async_on_remove(unsub)
 
     def _update_sensor_data(self, zone_data: dict[str, Any]) -> tuple[float | None, str, float | None, str]:
         """Set current temperature and humidity with external > HomeKit > cloud priority; return both values and sources."""

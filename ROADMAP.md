@@ -16,7 +16,7 @@ For completed features, see [CHANGELOG.md](CHANGELOG.md).
   - The dropdown options in Zone Configuration and the hub's Override duration follow your language
   - A new action shows the flow temperature setting Tado keeps for an OpenTherm system
   - Tado CE sets up again on Home Assistant before 2026.7, and timers shorter than 15 minutes go out as you set them
-- Beta: v5.0.0-beta.1 (2026-11-14), a pre-release you opt into. It needs Home Assistant 2026.11 or newer, and the [release notes](https://github.com/hiall-fyi/tado_ce/releases/tag/v5.0.0-beta.1) say what changed and how to install it
+- Beta: v5.0.0-beta.2 (2026-11-28), a pre-release you opt into. It needs Home Assistant 2026.11 or newer, and the [release notes](https://github.com/hiall-fyi/tado_ce/releases/tag/v5.0.0-beta.2) say what changed and how to install it
 - Supported versions: v4.1.0 and later
 
 ### Next Release
@@ -83,6 +83,14 @@ v5.0.0 removes migration code for versions older than v4.1.0, so it will refuse 
 
 **When:** v5.0.0 release
 
+### Rename: the zone services
+
+**What changes:** Each zone service now says which kind of zone it works on, for example `resume_schedule` becomes `resume_climate_schedule` and `resume_water_heater_schedule`, and `set_schedule_temperature` becomes `set_climate_schedule_temperature`. The services that covered heating, AC and hot water are split in two, so a call that targeted a heating room together with the hot water zone needs two calls. The full old and new list is in the [CHANGELOG](CHANGELOG.md) under 5.0.0-beta.2.
+
+**User impact:** Automations and scripts that call an old name fail with "action not found" until you change the name. There is no deprecation window. The zone services also follow Home Assistant's standard target rules (an area, device, floor or label works, an entity that is not a matching Tado CE zone is skipped), and `set_climate_open_window_mode` takes `time_period` as text like `"00:30:00"` instead of `duration` in seconds. A bare number is refused on it and on the two timer services.
+
+**When:** v5.0.0 release (first in 5.0.0-beta.2)
+
 ---
 
 *Additional breaking changes to be documented as v5.0 development progresses. Check back before upgrading.*
@@ -138,10 +146,7 @@ Skipping that step now fails loudly rather than quietly. An entry too old to upg
 
 Planned removals:
 
-- **Entity-naming polish** — a doubled calendar slug and a couple of internal naming inconsistencies get a clean baseline. These change entity IDs, so they ride the breaking-change boundary with a migration step rather than stranding your existing entities.
+- **Entity-naming polish** — a couple of internal naming inconsistencies get a clean baseline. These change entity IDs, so they ride the breaking-change boundary with a migration step rather than stranding your existing entities.
 - **Hand-pinned entity IDs retired** — a couple of entities (the heating-circuit select, the Identify button) set their `entity_id` by hand to sidestep a Home Assistant 2026.6 quirk that doubles the slug when a zone device shares its area name (`select.lounge_lounge_heating_circuit`). Home Assistant made the doubling configurable in 2026.6 rather than fixing it outright, and the default still doubles, so the pins are still doing real work today. This stays on the list for whenever that changes, or for a decision to drop them anyway and accept the doubled slug on a fresh install.
-- **Climate AC + Heating share a base class** — the two climate entity files repeat nearly the same setup code; sharing a base saves a good chunk and moves the write path to async. Gated on a thorough test pass first, since the two paths are deliberately cloned today. This also unblocks a per-zone override-duration read and a tighter error guard that were parked in v4.1.0-beta.3.
-- **Translation-key cleanup** — six error-message keys whose names never settled on one convention get renamed in step across the source and all seven languages. (The v3.x migration branches this bullet also used to name are already gone: `async_migrate_entry` has no version-stepping left, version 13 is both the floor and the current schema.) Those six keys are all still in use, so this is a rename, not a deletion. Nothing you see changes; the messages read the same.
-- **Service-call consistency** — three older services use a plain entity field instead of the entity picker. Separately, the two timer services take a `time_period` written as a clock value (`01:30:00`) while open-window mode takes a `duration` in seconds (`900`), so the same idea has two field names and two units depending on which service you call. Both are aligned here, with the old form kept working through a deprecation window, since changing them affects how you call the service from automations.
 
 No timeline yet.
